@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Backend runtime data
+backend/db/*.db
+backend/db/*.sqlite3
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Data & model artifacts populated in later phases
+data/clips/*
+!data/clips/.gitkeep
+data/pilot_annotations/*
+!data/pilot_annotations/.gitkeep
+models/*
+!models/.gitkeep
+
+# Env
+.env
+.env.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

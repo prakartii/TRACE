@@ -1,0 +1,9 @@
+[project]
+name = "trace-backend"
+version = "0.1.0"
+description = "TRACE backend: perception, world model, risk lenses, and the Safe Action Planner."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".."]
