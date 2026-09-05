@@ -3,3 +3,10 @@ uvicorn[standard]==0.34.0
 pydantic==2.10.4
 pytest==8.3.4
 httpx==0.28.1
+# opencv-python (not -headless): ultralytics unconditionally depends on
+# full opencv-python, and installing both packages side by side corrupts
+# the shared `cv2` install (they occupy the same path). Consolidated onto
+# one here rather than fighting that.
+opencv-python==4.10.0.84
+ultralytics==8.3.40
+supervision==0.25.1

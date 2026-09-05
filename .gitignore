@@ -20,8 +20,20 @@ data/clips/*
 !data/clips/.gitkeep
 data/pilot_annotations/*
 !data/pilot_annotations/.gitkeep
+
+# Challenge-provided input videos (large binary assets, kept local only)
+data/challenge_videos/*
+!data/challenge_videos/.gitkeep
 models/*
 !models/.gitkeep
+
+# Pilot fine-tune training run artifacts (checkpoints, logs, plots) —
+# regenerable via training/train_pilot_model.py; the scripts themselves
+# are tracked. Also covers Ultralytics' own default output path
+# (./runs/...) for any ad-hoc `model.val()`/`model.predict()` call made
+# without an explicit project= — same kind of generated artifact.
+training/runs/
+/runs/
 
 # Env
 .env

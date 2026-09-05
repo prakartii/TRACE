@@ -1,0 +1,12 @@
+# TRACE pilot perception dataset (Phase 4 remediation).
+# See training/README.md for the full annotation/split methodology and
+# honesty notes. Paths are relative to this file's directory.
+
+path: ../data/pilot_annotations
+train: images/train
+val: images/val
+
+names:
+  0: person
+  1: box
+  2: pallet

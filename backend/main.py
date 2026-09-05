@@ -1,7 +1,11 @@
 """TRACE FastAPI application entrypoint.
 
-Phase 1 scaffold: health/metadata endpoints and database initialization
-only. Perception, world model, lenses, planner, and every other reasoning
+Phase 4 (+ perception-strengthening remediation): health/metadata
+endpoints, database initialization, the video registry/ingestion API,
+the perception (detection + tracking) API — now with an explicit,
+opt-in pilot model adding box/pallet alongside the stock person-only
+model, see training/README.md — and the world model / scene graph API.
+Risk lenses, predictive risk, the planner, and every later reasoning
 layer are added in their own phase (see CLAUDE.md §4).
 """
 
@@ -10,11 +14,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.findings import router as findings_router
+from backend.api.perception import router as perception_router
+from backend.api.scene import router as scene_router
+from backend.api.videos import router as videos_router
 from backend.db.db import create_database
 
 APP_NAME = "TRACE"
-APP_VERSION = "0.1.0"
-BUILD_PHASE = "Phase 1 - foundation scaffold"
+APP_VERSION = "0.5.0"
+BUILD_PHASE = "Phase 5 - evidence-aware risk lenses (behaviour/structural/conformance/environmental)"
 
 
 @asynccontextmanager
@@ -31,6 +39,11 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+app.include_router(videos_router)
+app.include_router(perception_router)
+app.include_router(scene_router)
+app.include_router(findings_router)
 
 
 @app.get("/health")

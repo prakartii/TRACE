@@ -10,7 +10,7 @@ detection, or reasoning logic lives here.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -97,6 +97,35 @@ class BoundingBox(BaseModel):
     y2: float
 
 
+class VideoMetadata(BaseModel):
+    """Technical media metadata for one decoded video source (Phase 2B —
+    video ingestion). Read from the file itself, never from a filename."""
+
+    duration: float = Field(ge=0.0)
+    width: int = Field(ge=0)
+    height: int = Field(ge=0)
+    fps: float = Field(ge=0.0)
+    frame_count: Optional[int] = None
+    codec: Optional[str] = None
+    has_audio: Optional[bool] = None
+    # Reserved for a future perception-defined content region of interest
+    # (e.g. excluding NVMS UI chrome/burned-in captions on the challenge
+    # footage — see docs/VIDEO_AUDIT.md). Not computed or set in Phase 2B.
+    content_roi: Optional[BoundingBox] = None
+
+
+class VideoSourceInfo(BaseModel):
+    """Registry entry returned by the video API. Deliberately excludes any
+    filesystem path — the frontend and future perception code address a
+    video only by its stable `id`."""
+
+    id: str
+    filename: str
+    file_size: int
+    duplicate_of: Optional[str] = None
+    metadata: VideoMetadata
+
+
 class Entity(BaseModel):
     """A single per-frame detection/tracking result — Layer 1's contract
     with the world model."""
@@ -110,6 +139,24 @@ class Entity(BaseModel):
     keypoints: Optional[list[tuple[float, float]]] = None
 
 
+class PerceptionFrameResult(BaseModel):
+    """One sampled frame's perception output (Phase 3) — the wire shape
+    for GET /api/videos/{id}/entities. A thin envelope around a list of
+    `Entity`, analogous to `SceneGraphSnapshot`; it does not compete with
+    or replace the `Entity` contract itself."""
+
+    source_id: str
+    timestamp: float
+    frame_index: Optional[int] = None
+    entities: list[Entity] = Field(default_factory=list)
+    # Which model produced `entities` (e.g. "stock-coco-yolov8n" or
+    # "trace-pilot-v1" — see backend/perception/config.py). Always
+    # explicit, never inferred by a client from what classes happen to be
+    # present, so a stock-model response can never be mistaken for a
+    # pilot-model one (Phase 4 perception-strengthening gate).
+    model_identity: str = "stock-coco-yolov8n"
+
+
 class ProductMetadata(BaseModel):
     product_id: str
     class_name: str
@@ -120,11 +167,21 @@ class ProductMetadata(BaseModel):
 
 
 class SceneGraphNode(BaseModel):
+    """One tracked entity's spatial state at a snapshot's timestamp
+    (Phase 4 — world model). `position` and `footprint` are normalized
+    image-space coordinates in [0, 1] relative to the source frame's
+    width/height — NOT the absolute-pixel convention `Entity.bbox` uses,
+    and NOT real-world/metric coordinates (no camera calibration exists
+    yet). See docs/WORLD_MODEL.md."""
+
     entity_id: str
     entity_class: EntityClass
     position: tuple[float, float]
     footprint: Optional[BoundingBox] = None
+    # None in Phase 4: no pose/orientation signal is produced anywhere
+    # upstream (Entity.keypoints is always None — see backend/perception).
     orientation: Optional[float] = None
+    # None in Phase 4: no product-metadata linkage exists yet.
     product_id: Optional[str] = None
 
 
@@ -133,6 +190,12 @@ class SceneGraphEdge(BaseModel):
     target_id: str
     edge_type: SceneGraphEdgeType
     weight: float = Field(ge=0.0, le=1.0)
+    # Auditable basis for the relationship (e.g. {"iou": 0.34} for
+    # CONTACT, {"distance": 0.08, "threshold": 0.12} for PROXIMITY,
+    # {"vertical_gap": 0.01, "horizontal_overlap_ratio": 0.6} for
+    # SUPPORT) — see docs/WORLD_MODEL.md. Never a semantic claim, only
+    # the geometric measurement that produced this edge.
+    evidence: dict[str, float] = Field(default_factory=dict)
 
 
 class SceneGraphSnapshot(BaseModel):
@@ -141,17 +204,41 @@ class SceneGraphSnapshot(BaseModel):
     edges: list[SceneGraphEdge]
 
 
+class FindingStatus(str, Enum):
+    """How much the evidence actually backs a finding — never inflate
+    this because a detector was confident about one thing (CLAUDE.md
+    honesty rule): a strong PERSON detection with no BOX detection is
+    INSUFFICIENT_EVIDENCE for a box-handling finding, not SUPPORTED."""
+
+    SUPPORTED = "supported"
+    PROBABLE = "probable"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    UNSUPPORTED = "unsupported"
+
+
 class RiskEvent(BaseModel):
+    """Phase 1 risk-event contract, extended in Phase 5 for evidence-
+    aware findings. All Phase 5 fields are additive/defaulted so the
+    original shape (event_id..clip_path) stays backward compatible."""
+
     event_id: Optional[int] = None
     timestamp: float
     event_type: EventType
     lens: RiskLens
     entity_id: str
-    score: float
-    band: RiskBand
+    score: Optional[float] = None
+    band: Optional[RiskBand] = None
     confidence: ConfidenceLevel
     factor_breakdown: dict[str, float] = Field(default_factory=dict)
     clip_path: Optional[str] = None
+    # Phase 5 — evidence-aware finding fields.
+    status: FindingStatus = FindingStatus.INSUFFICIENT_EVIDENCE
+    scenario: Optional[str] = None
+    entities: list[str] = Field(default_factory=list)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    explanation: str = ""
+    recommended_action: Optional[str] = None
+    limitations: list[str] = Field(default_factory=list)
 
 
 class PlacementCandidate(BaseModel):

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import Header from './components/Header.jsx'
 import NavRail from './components/NavRail.jsx'
 import { API_BASE_URL } from './config.js'
+import LiveView from './screens/LiveView.jsx'
+import PlaceholderScreen from './screens/PlaceholderScreen.jsx'
 
 const SCREENS = [
   'Live View',
@@ -43,11 +45,11 @@ export default function App() {
       <div className="mx-auto flex max-w-6xl">
         <NavRail screens={SCREENS} active={activeScreen} onSelect={setActiveScreen} />
         <main className="flex-1 border-l border-line px-8 py-6">
-          <h1 className="text-lg font-medium">{activeScreen}</h1>
-          <p className="mt-2 max-w-prose text-sm text-neutral-600">
-            Phase 1 scaffold — this screen has no functionality yet. It will be built out
-            in its corresponding development phase.
-          </p>
+          {activeScreen === 'Live View' ? (
+            <LiveView />
+          ) : (
+            <PlaceholderScreen name={activeScreen} />
+          )}
         </main>
       </div>
     </div>
