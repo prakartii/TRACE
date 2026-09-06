@@ -42,10 +42,23 @@ export default function PerceptionOverlay({ entities, sourceWidth, sourceHeight,
             style={{ left, top, width, height, borderColor: color }}
           >
             <span
-              className="absolute left-0 top-0 -translate-y-full whitespace-nowrap px-1 py-0.5 text-[10px] font-medium leading-tight text-white"
+              className="absolute left-0 top-0 -translate-y-full inline-flex items-center gap-1 whitespace-nowrap px-1.5 py-0.5 text-[10px] font-medium leading-tight text-white shadow-sm"
               style={{ backgroundColor: color }}
             >
-              {entity.entity_class} {Math.round(entity.confidence * 100)}% · id {entity.track_id}
+              <span>{entity.entity_class} {Math.round(entity.confidence * 100)}% · id {entity.track_id}</span>
+              {entity.tracking_status && (
+                <span
+                  className={`px-1 py-[1px] text-[8.5px] font-bold uppercase tracking-wider rounded-sm ${
+                    entity.tracking_status === 'REACQUIRED'
+                      ? 'bg-emerald-500 text-white shadow-sm ring-1 ring-white'
+                      : entity.tracking_status === 'TEMPORARILY_LOST'
+                        ? 'bg-amber-400 text-neutral-950 font-semibold'
+                        : 'bg-white/20 text-neutral-100'
+                  }`}
+                >
+                  {entity.tracking_status}
+                </span>
+              )}
             </span>
           </div>
         )

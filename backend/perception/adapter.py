@@ -85,6 +85,7 @@ def tracked_objects_to_entities(
                 confidence=min(max(obj.confidence, 0.0), 1.0),
                 timestamp=timestamp,
                 keypoints=None,  # pose estimation is not implemented in Phase 3/4
+                tracking_status=getattr(obj, "tracking_status", "TRACKED"),
             )
         )
     return entities

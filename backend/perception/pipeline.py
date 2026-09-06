@@ -11,6 +11,7 @@ from backend.contracts.models import PerceptionFrameResult
 from backend.perception.adapter import tracked_objects_to_entities
 from backend.perception.config import DEFAULT_CONFIG, PerceptionConfig
 from backend.perception.detector import YoloDetector
+from backend.perception.sampling import resolve_sampling_policy
 from backend.perception.tracker import ObjectTracker
 from backend.video.source import Frame, VideoSource
 
@@ -28,7 +29,13 @@ class PerceptionPipeline:
         self._detector = detector or YoloDetector(config)
 
     def process_frame(
-        self, frame: Frame, tracker: ObjectTracker
+        self,
+        frame: Frame,
+        tracker: ObjectTracker,
+        *,
+        analysis_fps: float = 3.0,
+        source_fps: float = 30.0,
+        sampling_mode: str = "normal",
     ) -> PerceptionFrameResult:
         """Detects + advances `tracker` by exactly one frame. The caller
         owns the tracker's lifetime/scope (see `process_video` for the
@@ -48,6 +55,9 @@ class PerceptionPipeline:
             frame_index=frame.frame_index,
             entities=entities,
             model_identity=self._config.model_identity,
+            analysis_fps=analysis_fps,
+            source_fps=source_fps,
+            sampling_mode=sampling_mode,
         )
 
     def process_video(
@@ -57,15 +67,18 @@ class PerceptionPipeline:
         start_time: float = 0.0,
         end_time: float | None = None,
         sample_fps: float | None = None,
+        sampling_mode: str | None = None,
     ) -> list[PerceptionFrameResult]:
-        """Sequentially samples `source` and runs ONE tracker across the
-        whole run, so track IDs are meaningful within the returned list.
-        Deliberately sparse by default (`sample_fps`, not every frame) and
-        hard-capped (`max_samples_per_run`) so one call can't trigger
-        unbounded CPU inference."""
-        sample_fps = sample_fps or self._config.default_sample_fps
-        meta = source.metadata()
-        frame_step = max(1, round(meta.fps / sample_fps)) if meta.fps > 0 else 1
+        """Sequentially samples `source` using adaptive sampling policy and runs
+        ONE tracker across the whole run, so track IDs are meaningful within the returned list.
+        Deliberately deterministic and hard-capped (`max_samples_per_run`) so one call
+        can't trigger unbounded CPU inference."""
+        decision = resolve_sampling_policy(
+            source,
+            requested_mode=sampling_mode,
+            requested_fps=sample_fps,
+        )
+        frame_step = decision.frame_step
 
         tracker = ObjectTracker(self._config)
         results: list[PerceptionFrameResult] = []
@@ -74,5 +87,13 @@ class PerceptionPipeline:
         ):
             if len(results) >= self._config.max_samples_per_run:
                 break
-            results.append(self.process_frame(frame, tracker))
+            results.append(
+                self.process_frame(
+                    frame,
+                    tracker,
+                    analysis_fps=decision.analysis_fps,
+                    source_fps=decision.source_fps,
+                    sampling_mode=decision.sampling_mode.value,
+                )
+            )
         return results

@@ -26,6 +26,21 @@ class RiskConfig:
     # Total normalized displacement over the window before a box counts
     # as "moving" evidence (never labeled as a specific action).
     behaviour_box_displacement_threshold: float = 0.08
+    # Minimum net straight-line displacement required to distinguish true
+    # physical translation from random bounding-box jitter in place.
+    behaviour_box_min_net_displacement: float = 0.04
+    # Minimum trajectory linearity (net_displacement / total_displacement)
+    # to filter out stationary jitter oscillations.
+    behaviour_box_min_linearity: float = 0.35
+    # Minimum consecutive temporal samples required before evaluating velocity.
+    behaviour_box_min_samples_for_velocity: int = 3
+
+    # CONFORMANCE — perspective tolerance bands for 2D bbox aspect ratio (width / height).
+    # Angled dock camera views project top facets; 1.35 provides perspective tolerance
+    # for upright vertical cartons, avoiding false alarms on boxes with slight projection tilt.
+    conformance_aspect_ratio_vertical_min: float = 1.35
+    conformance_aspect_ratio_horizontal_max: float = 0.70
+    conformance_min_box_area: float = 0.005
 
     # How many of the most-recent cached, sampled frames (ending at the
     # requested timestamp) feed the temporal evidence window — bounded and

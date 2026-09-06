@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react'
 import Header from './components/Header.jsx'
 import NavRail from './components/NavRail.jsx'
 import { API_BASE_URL } from './config.js'
+import { LiveViewProvider } from './LiveViewContext.jsx'
+import EventFeed from './screens/EventFeed.jsx'
 import LiveView from './screens/LiveView.jsx'
 import PlaceholderScreen from './screens/PlaceholderScreen.jsx'
+import PlannerView from './screens/PlannerView.jsx'
+import SupervisorSettings from './screens/SupervisorSettings.jsx'
 
 const SCREENS = [
   'Live View',
@@ -40,18 +44,27 @@ export default function App() {
   const [activeScreen, setActiveScreen] = useState(SCREENS[0])
 
   return (
-    <div className="min-h-screen bg-paper text-ink">
-      <Header backendStatus={backendStatus} />
-      <div className="mx-auto flex max-w-6xl">
-        <NavRail screens={SCREENS} active={activeScreen} onSelect={setActiveScreen} />
-        <main className="flex-1 border-l border-line px-8 py-6">
-          {activeScreen === 'Live View' ? (
-            <LiveView />
-          ) : (
-            <PlaceholderScreen name={activeScreen} />
-          )}
-        </main>
+    <LiveViewProvider>
+      <div className="min-h-screen bg-paper text-ink">
+        <Header backendStatus={backendStatus} />
+        <div className="mx-auto flex max-w-6xl">
+          <NavRail screens={SCREENS} active={activeScreen} onSelect={setActiveScreen} />
+          <main className="flex-1 border-l border-line px-8 py-6">
+            {activeScreen === 'Live View' ? (
+              <LiveView />
+            ) : activeScreen === 'Safe Action Planner' ? (
+              <PlannerView />
+            ) : activeScreen === 'Event Feed' ? (
+              <EventFeed />
+            ) : activeScreen === 'Settings' ? (
+              <SupervisorSettings />
+            ) : (
+              <PlaceholderScreen name={activeScreen} />
+            )}
+          </main>
+        </div>
       </div>
-    </div>
+    </LiveViewProvider>
   )
 }
+

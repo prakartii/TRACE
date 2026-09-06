@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS scene_states (
 -- Events (unifies risk alerts, planner recommendations, behaviour catches)
 CREATE TABLE IF NOT EXISTS events (
     event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id TEXT,
     timestamp REAL,
     event_type TEXT,           -- 'risk' | 'planner_rec' | 'behaviour' | 'near_miss' | 'prevented' | 'confirmed_damage'
     lens TEXT,                 -- 'structural' | 'behaviour' | 'conformance' | 'environmental'
@@ -31,10 +32,13 @@ CREATE TABLE IF NOT EXISTS events (
     score REAL,
     band TEXT,                 -- Low/Medium/High/Critical
     confidence TEXT,           -- High/Medium/Low
+    status TEXT,               -- 'supported' | 'probable' | 'insufficient_evidence' | 'unsupported'
+    scenario TEXT,
     factor_breakdown_json TEXT,
     clip_path TEXT,
     reviewed INTEGER DEFAULT 0,
-    review_status TEXT         -- 'confirmed_damage' | 'false_positive' | NULL
+    review_status TEXT,        -- 'confirmed_damage' | 'false_positive' | NULL
+    dedup_key TEXT UNIQUE
 );
 
 -- Planner recommendations (child of events, for planner-specific fields)
@@ -45,7 +49,8 @@ CREATE TABLE IF NOT EXISTS planner_recommendations (
     recommended_position TEXT,
     expected_delta REAL,
     followed INTEGER,          -- was it followed? (observed post-hoc)
-    outcome_state_id INTEGER REFERENCES scene_states(state_id)
+    outcome_state_id INTEGER REFERENCES scene_states(state_id),
+    recommendation_json TEXT
 );
 
 -- Product rules (micro-training)

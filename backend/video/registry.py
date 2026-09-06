@@ -127,7 +127,12 @@ class VideoRegistry:
         for group in by_hash.values():
             if len(group) < 2:
                 continue
-            group.sort(key=lambda r: r.filename)
+            # Canonical should prefer clean original names without copy suffixes like " (1)"
+            def _canonical_key(r: VideoRecord) -> tuple[int, str]:
+                has_copy_suffix = 1 if (" (" in r.filename or "copy" in r.filename.lower()) else 0
+                return (has_copy_suffix, r.filename)
+
+            group.sort(key=_canonical_key)
             canonical = group[0]
             for duplicate in group[1:]:
                 duplicate.duplicate_of = canonical.id

@@ -137,6 +137,7 @@ class Entity(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     timestamp: float
     keypoints: Optional[list[tuple[float, float]]] = None
+    tracking_status: str = "TRACKED"
 
 
 class PerceptionFrameResult(BaseModel):
@@ -155,6 +156,9 @@ class PerceptionFrameResult(BaseModel):
     # present, so a stock-model response can never be mistaken for a
     # pilot-model one (Phase 4 perception-strengthening gate).
     model_identity: str = "stock-coco-yolov8n"
+    analysis_fps: float = 3.0
+    source_fps: float = 30.0
+    sampling_mode: str = "normal"
 
 
 class ProductMetadata(BaseModel):
@@ -239,6 +243,33 @@ class RiskEvent(BaseModel):
     explanation: str = ""
     recommended_action: Optional[str] = None
     limitations: list[str] = Field(default_factory=list)
+    # Phase 7B — Structured ActionRecommendation contract
+    planner_recommendation: Optional[ActionRecommendation] = None
+    # Phase 9.1 — Event persistence and review extensions
+    video_id: Optional[str] = None
+    reviewed: bool = False
+    review_status: Optional[str] = None
+
+
+class StabilityBreakdown(BaseModel):
+    """Component scores of the TRACE Stability Score (0-100 scale)."""
+
+    support_alignment: float = 0.0
+    centering: float = 0.0
+    mass_order: float = 0.0
+    orientation_alignment: float = 0.0
+    overhang_penalty: float = 0.0
+
+
+class StabilityScore(BaseModel):
+    """TRACE Stability Score — an image-space decision-support metric,
+    not a certified physical stability measurement."""
+
+    score: float = Field(ge=0.0, le=100.0)
+    classification: str
+    breakdown: StabilityBreakdown
+    support_overlap: float = 0.0
+    limitations: list[str] = Field(default_factory=list)
 
 
 class PlacementCandidate(BaseModel):
@@ -249,9 +280,93 @@ class PlacementCandidate(BaseModel):
     position: tuple[float, float]
     orientation: Optional[float] = None
     score: float
-    band: RiskBand
-    hard_constraints_passed: bool
+    band: RiskBand = RiskBand.LOW
+    hard_constraints_passed: bool = True
     factor_breakdown: dict[str, float] = Field(default_factory=dict)
+    # Phase 7B extensions
+    id: Optional[str] = None
+    description: Optional[str] = None
+    footprint: Optional[BoundingBox] = None
+    support_relationship: Optional[str] = None
+    score_breakdown: Optional[StabilityBreakdown] = None
+    score_delta: Optional[float] = None
+    feasibility: bool = True
+    limitations: list[str] = Field(default_factory=list)
+
+
+class ActionRecommendation(BaseModel):
+    """Evidence-aware recommended action produced by the Safe Action Planner."""
+
+    scenario_key: Optional[str] = None
+    status: FindingStatus
+    confidence: ConfidenceLevel
+    action: str
+    rationale: str
+    basis: str
+    limitations: list[str] = Field(default_factory=list)
+    alternative_actions: list[str] = Field(default_factory=list)
+    what_if_eligible: bool = False
+    risk_title: Optional[str] = None
+
+
+class WhatIfCurrentState(BaseModel):
+    """Observed placement state before hypothetical intervention."""
+
+    stability_score: float
+    classification: str
+    support_overlap: float
+    breakdown: StabilityBreakdown
+    entity_id: str
+    footprint: Optional[BoundingBox] = None
+    supporting_entity_id: Optional[str] = None
+    supporting_footprint: Optional[BoundingBox] = None
+
+
+class WhatIfSimulation(BaseModel):
+    """Transparent comparison between observed state and candidate placements."""
+
+    video_id: str
+    timestamp: float
+    finding_scenario: str
+    finding_status: FindingStatus
+    simulation_available: bool
+    simulation_notice: str
+    current: Optional[WhatIfCurrentState] = None
+    alternatives: list[PlacementCandidate] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
+class WhatIfRequest(BaseModel):
+    timestamp: float = Field(ge=0.0)
+    finding_scenario: Optional[str] = None
+    entity_id: Optional[str] = None
+    candidate_id: Optional[str] = None
+    model: str = "pilot"
+
+
+class ProductMetadataCreate(BaseModel):
+    product_id: str
+    class_name: str
+    mass_class: MassClass
+    fragility: Fragility = Fragility.LOW
+    required_orientation: Optional[str] = None
+    max_stack_height: Optional[int] = None
+
+
+class EnvironmentalZoneConfig(BaseModel):
+    zone_id: str
+    zone_type: str
+    polygon: list[tuple[float, float]]
+    severity_multiplier: float = 1.0
+
+
+class ManifestAssignmentRequest(BaseModel):
+    source_id: str
+    manifest_id: str
+    bay_name: str
+    product_ids: list[str] = Field(default_factory=list)
+    primary_product_id: Optional[str] = None
+    zone_ids: list[str] = Field(default_factory=list)
 
 
 class PlannerRecommendation(BaseModel):
@@ -273,3 +388,4 @@ class Rule(BaseModel):
     condition: Optional[dict] = None
     created_by: str
     created_at: float
+

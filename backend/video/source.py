@@ -90,6 +90,10 @@ class LocalMP4VideoSource(VideoSource):
         self._cap: Optional[cv2.VideoCapture] = None
         self._metadata: Optional[VideoMetadata] = None
 
+    @property
+    def path(self) -> Path:
+        return self._path
+
     def open(self) -> None:
         if self._cap is not None:
             return

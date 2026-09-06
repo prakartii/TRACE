@@ -14,15 +14,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.events import router as events_router
 from backend.api.findings import router as findings_router
 from backend.api.perception import router as perception_router
 from backend.api.scene import router as scene_router
+from backend.api.simulation import router as simulation_router
+from backend.api.supervisor import router as supervisor_router
 from backend.api.videos import router as videos_router
 from backend.db.db import create_database
 
 APP_NAME = "TRACE"
-APP_VERSION = "0.5.0"
-BUILD_PHASE = "Phase 5 - evidence-aware risk lenses (behaviour/structural/conformance/environmental)"
+APP_VERSION = "0.7.2"
+BUILD_PHASE = "Phase 9.1 - Event Persistence & API + Responsible AI Review"
 
 
 @asynccontextmanager
@@ -36,7 +39,7 @@ app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -44,6 +47,9 @@ app.include_router(videos_router)
 app.include_router(perception_router)
 app.include_router(scene_router)
 app.include_router(findings_router)
+app.include_router(events_router)
+app.include_router(simulation_router)
+app.include_router(supervisor_router)
 
 
 @app.get("/health")

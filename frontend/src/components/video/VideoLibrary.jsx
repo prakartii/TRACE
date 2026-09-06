@@ -42,8 +42,13 @@ export default function VideoLibrary({ videos, selectedId, onSelect, loading, er
                 <span>{formatBytes(video.file_size)}</span>
               </div>
               {video.duplicate_of && (
-                <div className="mt-1.5 inline-block border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700">
-                  Duplicate content
+                <div className="mt-1.5 border border-amber-300 bg-amber-50 px-2 py-1 text-left">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                    Duplicate content
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-amber-700 leading-tight">
+                    Same source content as canonical video. TRACE reuses the existing perception result.
+                  </div>
                 </div>
               )}
             </button>

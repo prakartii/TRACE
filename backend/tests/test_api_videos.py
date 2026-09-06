@@ -118,3 +118,16 @@ def test_stream_supports_head_request(client):
     assert response.status_code == 200
     assert response.headers["content-type"] == "video/mp4"
     assert response.content == b""
+
+
+def test_get_sampling_policy(client):
+    video_id = client.get("/api/videos").json()[0]["id"]
+    response = client.get(f"/api/videos/{video_id}/sampling")
+    assert response.status_code == 200
+    data = response.json()
+    assert "analysis_fps" in data
+    assert "source_fps" in data
+    assert "sampling_mode" in data
+    assert data["analysis_fps"] > 0
+    assert data["sampling_mode"] in ("normal", "motion_dense")
+

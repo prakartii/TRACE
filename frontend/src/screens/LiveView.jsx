@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { getEntities, getFindings, getScene, listVideos, streamUrl } from '../api/videos.js'
+import { getEntities, getFindings, getSamplingPolicy, getScene, getWhatIf, listVideos, streamUrl } from '../api/videos.js'
+import { useLiveViewContext } from '../LiveViewContext.jsx'
 import FindingsPanel from '../components/video/FindingsPanel.jsx'
+import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
+import LiveAnalysisSummary from '../components/video/LiveAnalysisSummary.jsx'
 import MetadataPanel from '../components/video/MetadataPanel.jsx'
 import PerceptionOverlay from '../components/video/PerceptionOverlay.jsx'
 import SceneOverlay from '../components/video/SceneOverlay.jsx'
 import VideoLibrary from '../components/video/VideoLibrary.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
+import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
 
 export default function LiveView() {
+  const { setLiveState } = useLiveViewContext()
+
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -22,7 +28,15 @@ export default function LiveView() {
   const [sceneEnabled, setSceneEnabled] = useState(false)
   const [findingsEnabled, setFindingsEnabled] = useState(false)
   const [pilotModelEnabled, setPilotModelEnabled] = useState(false)
+  const [samplingPolicy, setSamplingPolicy] = useState(null)
   const [videoBoxSize, setVideoBoxSize] = useState({ width: 0, height: 0 })
+  const [showMethodologyNotes, setShowMethodologyNotes] = useState(false)
+
+  // Phase 7B: What-If simulation state
+  const [whatIfSimulation, setWhatIfSimulation] = useState(null)
+  const [whatIfLoading, setWhatIfLoading] = useState(false)
+  const [whatIfError, setWhatIfError] = useState(null)
+  const [selectedCandidateId, setSelectedCandidateId] = useState(null)
 
   const videoRef = useRef(null)
   const modelName = pilotModelEnabled ? 'pilot' : 'stock'
@@ -30,6 +44,53 @@ export default function LiveView() {
   const perception = useOverlayData(getEntities, overlayEnabled, selectedId, currentTime, modelName)
   const scene = useOverlayData(getScene, sceneEnabled, selectedId, currentTime, modelName)
   const findings = useOverlayData(getFindings, findingsEnabled, selectedId, currentTime, modelName)
+
+  // Sync current live state into shared context so PlannerView can consume it
+  const selectedVideo = videos.find((v) => v.id === selectedId) ?? null
+  useEffect(() => {
+    setLiveState({
+      selectedId,
+      selectedFilename: selectedVideo?.filename ?? null,
+      currentTime,
+      findings: findings.data,
+      findingsLoading: findings.loading,
+      findingsError: findings.error,
+      modelName,
+    })
+  }, [selectedId, selectedVideo?.filename, currentTime, findings.data, findings.loading, findings.error, modelName, setLiveState])
+
+  useEffect(() => {
+    if (!selectedId) {
+      setSamplingPolicy(null)
+      return
+    }
+    let cancelled = false
+    getSamplingPolicy(selectedId)
+      .then((policy) => {
+        if (!cancelled) setSamplingPolicy(policy)
+      })
+      .catch(() => {
+        if (!cancelled) setSamplingPolicy(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedId])
+
+  async function handleSimulateWhatIf(finding) {
+    if (!selectedId) return
+    setWhatIfLoading(true)
+    setWhatIfError(null)
+    try {
+      const sim = await getWhatIf(selectedId, currentTime, finding.scenario, null, modelName)
+      setWhatIfSimulation(sim)
+      setSelectedCandidateId(sim.alternatives?.[0]?.id || null)
+    } catch (err) {
+      setWhatIfError(err.message)
+    } finally {
+      setWhatIfLoading(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -75,6 +136,8 @@ export default function LiveView() {
     setPlaying(false)
     setCurrentTime(0)
     setDuration(0)
+    setWhatIfSimulation(null)
+    setWhatIfError(null)
   }
 
   function handleTogglePlay() {
@@ -90,16 +153,32 @@ export default function LiveView() {
   function handleSeekRatio(ratio) {
     const el = videoRef.current
     if (!el || !duration) return
-    el.currentTime = ratio * duration
-    setCurrentTime(el.currentTime)
+    const newTime = ratio * duration
+    el.currentTime = newTime
+    setCurrentTime(newTime)
+    // Clear What-If simulation on seek to ensure it remains frame-specific
+    setWhatIfSimulation(null)
+    setWhatIfError(null)
+    // Immediately fetch new frame's data without waiting for throttle
+    if (overlayEnabled) perception.fetchImmediate(newTime)
+    if (sceneEnabled) scene.fetchImmediate(newTime)
+    if (findingsEnabled) findings.fetchImmediate(newTime)
   }
 
-  const selectedVideo = videos.find((video) => video.id === selectedId) ?? null
   const entities = perception.data?.entities ?? []
 
   return (
     <div className="grid grid-cols-[1fr_280px] gap-6">
       <div>
+        {/* Top-Level 4-Step Operational Summary */}
+        <LiveAnalysisSummary
+          video={selectedVideo}
+          findings={findings.data}
+          loading={findings.loading}
+          findingsEnabled={findingsEnabled}
+          currentTime={currentTime}
+        />
+
         {selectedVideo ? (
           <VideoViewport
             ref={videoRef}
@@ -113,6 +192,10 @@ export default function LiveView() {
             onTimeUpdate={(event) => {
               const t = event.currentTarget.currentTime
               setCurrentTime(t)
+              if (whatIfSimulation && Math.abs(t - whatIfSimulation.timestamp) > 0.35) {
+                setWhatIfSimulation(null)
+                setWhatIfError(null)
+              }
               if (overlayEnabled) perception.fetchThrottled(t)
               if (sceneEnabled) scene.fetchThrottled(t)
               if (findingsEnabled) findings.fetchThrottled(t)
@@ -137,6 +220,17 @@ export default function LiveView() {
                 sourceHeight={selectedVideo.metadata.height}
               />
             )}
+            {whatIfSimulation?.current && (
+              <HypotheticalOverlay
+                candidate={
+                  whatIfSimulation.alternatives?.find((c) => c.id === selectedCandidateId) ||
+                  whatIfSimulation.alternatives?.[0]
+                }
+                current={whatIfSimulation.current}
+                sourceWidth={selectedVideo.metadata.width}
+                sourceHeight={selectedVideo.metadata.height}
+              />
+            )}
           </VideoViewport>
         ) : (
           <div className="flex h-64 items-center justify-center border border-line bg-white text-sm text-neutral-500">
@@ -144,40 +238,66 @@ export default function LiveView() {
           </div>
         )}
 
-        <div className="mt-4 flex flex-col gap-2 border border-line bg-white px-4 py-2.5">
+        {/* Operational Control Toggles */}
+        <div className="mt-4 flex flex-col gap-2.5 border border-line bg-white px-4 py-3">
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex items-center gap-2 text-xs font-semibold text-ink cursor-pointer">
               <input
                 type="checkbox"
                 checked={overlayEnabled}
                 disabled={!selectedVideo}
-                onChange={(event) => setOverlayEnabled(event.target.checked)}
+                onChange={(event) => {
+                  const checked = event.target.checked
+                  setOverlayEnabled(checked)
+                  if (checked) {
+                    setPilotModelEnabled(true)
+                  }
+                }}
               />
-              Perception overlay (detection + tracking)
+              <span>Perception Overlay</span>
+              <span className="text-[11px] font-normal text-neutral-500">— Detection & tracking</span>
             </label>
-            <span className="text-xs text-neutral-500">
-              {perception.error
-                ? perception.error
-                : overlayEnabled && perception.loading
-                  ? 'Running detection on this video (first look can take up to ~1 min; cached after that)…'
-                  : overlayEnabled
-                    ? `${entities.length} object${entities.length === 1 ? '' : 's'} detected at this frame`
-                    : ''}
-            </span>
+            <div className="flex items-center gap-2">
+              {overlayEnabled && (perception.data?.analysis_fps || samplingPolicy?.analysis_fps) && (
+                <span
+                  className={`px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-wider rounded uppercase ${
+                    (perception.data?.sampling_mode || samplingPolicy?.sampling_mode) === 'motion_dense'
+                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                      : 'bg-neutral-100 text-neutral-700 border border-line'
+                  }`}
+                  title={samplingPolicy?.rationale || 'Adaptive analysis sampling rate'}
+                >
+                  {perception.data?.analysis_fps || samplingPolicy?.analysis_fps} FPS{' '}
+                  {(perception.data?.sampling_mode || samplingPolicy?.sampling_mode) === 'motion_dense'
+                    ? 'MOTION-DENSE'
+                    : 'NORMAL'}
+                </span>
+              )}
+              <span className="text-xs text-neutral-500">
+                {perception.error
+                  ? perception.error
+                  : overlayEnabled && perception.loading
+                    ? 'Running perception…'
+                    : overlayEnabled
+                      ? `${entities.length} object${entities.length === 1 ? '' : 's'} tracked`
+                      : ''}
+              </span>
+            </div>
           </div>
 
           {(overlayEnabled || sceneEnabled) && (
             <div className="flex items-center justify-between border-t border-line pt-2">
-              <label className="flex items-center gap-2 text-sm text-ink">
+              <label className="flex items-center gap-2 text-xs font-semibold text-ink cursor-pointer">
                 <input
                   type="checkbox"
                   checked={pilotModelEnabled}
                   onChange={(event) => setPilotModelEnabled(event.target.checked)}
                 />
-                Use pilot model (experimental: adds box + pallet)
+                <span>Pilot Model Fine-Tune</span>
+                <span className="text-[11px] font-normal text-neutral-500">— Adds box + pallet</span>
               </label>
               {pilotModelEnabled && (
-                <span className="flex items-center gap-2 text-[11px] text-neutral-500">
+                <span className="flex items-center gap-2 text-[10px] text-neutral-500">
                   <span className="flex items-center gap-1">
                     <span className="inline-block h-2 w-2" style={{ backgroundColor: '#18181b' }} />
                     person
@@ -195,64 +315,38 @@ export default function LiveView() {
             </div>
           )}
 
-          {pilotModelEnabled && (
-            <p className="border-t border-line pt-2 text-xs leading-relaxed text-neutral-500">
-              Pilot fine-tune trained on 52 hand-annotated real frames — person detection is
-              strong (unchanged from the production model), box detection is real but weak,
-              and pallet detection did not learn reliably (too few training instances). See{' '}
-              <code className="text-[11px]">training/README.md</code> for the measured
-              per-class results before treating this as more than a pilot.
-            </p>
-          )}
-
           <div className="flex items-center justify-between border-t border-line pt-2">
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex items-center gap-2 text-xs font-semibold text-ink cursor-pointer">
               <input
                 type="checkbox"
                 checked={sceneEnabled}
                 disabled={!selectedVideo}
                 onChange={(event) => setSceneEnabled(event.target.checked)}
               />
-              Scene graph (spatial relationships)
+              <span>Spatial Scene Graph</span>
+              <span className="text-[11px] font-normal text-neutral-500">— Support & proximity relationships</span>
             </label>
             <span className="text-xs text-neutral-500">
               {scene.error
                 ? scene.error
                 : sceneEnabled && scene.loading
-                  ? 'Computing scene graph…'
+                  ? 'Computing…'
                   : sceneEnabled && scene.data
-                    ? `${scene.data.nodes.length} node${scene.data.nodes.length === 1 ? '' : 's'}, ${scene.data.edges.length} relationship${scene.data.edges.length === 1 ? '' : 's'}`
+                    ? `${scene.data.nodes.length} nodes, ${scene.data.edges.length} edges`
                     : ''}
             </span>
           </div>
 
-          {sceneEnabled && (
-            <p className="border-t border-line pt-2 text-xs leading-relaxed text-neutral-500">
-              <svg width="20" height="10" className="mr-1 inline-block align-middle">
-                <line x1="0" y1="5" x2="20" y2="5" stroke="#18181b" strokeWidth="2.5" />
-              </svg>
-              support (image-space hypothesis, not verified 3D contact)
-              <svg width="20" height="10" className="mx-1 inline-block align-middle">
-                <line x1="0" y1="5" x2="20" y2="5" stroke="#52525b" strokeWidth="2" />
-              </svg>
-              contact
-              <svg width="20" height="10" className="mx-1 inline-block align-middle">
-                <line x1="0" y1="5" x2="20" y2="5" stroke="#a1a1aa" strokeWidth="2" strokeDasharray="4 3" />
-              </svg>
-              proximity — geometric observations only, not risk or behaviour claims. See
-              docs/WORLD_MODEL.md.
-            </p>
-          )}
-
           <div className="flex items-center justify-between border-t border-line pt-2">
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex items-center gap-2 text-xs font-semibold text-ink cursor-pointer">
               <input
                 type="checkbox"
                 checked={findingsEnabled}
                 disabled={!selectedVideo}
                 onChange={(event) => setFindingsEnabled(event.target.checked)}
               />
-              Risk findings (behaviour / structural / conformance / environmental)
+              <span>Multi-Lens Risk Evaluation</span>
+              <span className="text-[11px] font-normal text-neutral-500">— Behaviour, structural & conformance</span>
             </label>
             <span className="text-xs text-neutral-500">
               {findings.error
@@ -260,31 +354,64 @@ export default function LiveView() {
                 : findingsEnabled && findings.loading
                   ? 'Evaluating…'
                   : findingsEnabled && findings.data
-                    ? `${findings.data.length} finding${findings.data.length === 1 ? '' : 's'} at this frame`
+                    ? `${findings.data.length} finding${findings.data.length === 1 ? '' : 's'}`
                     : ''}
             </span>
           </div>
 
-          {findingsEnabled && (
-            <p className="border-t border-line pt-2 text-xs leading-relaxed text-neutral-500">
-              Every finding is evidence-graded (SUPPORTED / PROBABLE / INSUFFICIENT EVIDENCE /
-              UNSUPPORTED) — a low-evidence finding is never shown as a confirmed hazard. See{' '}
-              <code className="text-[11px]">docs/RISK_LENSES.md</code>.
-            </p>
-          )}
+          {/* Progressive disclosure toggle for technical methodology */}
+          <div className="border-t border-line pt-2">
+            <button
+              type="button"
+              onClick={() => setShowMethodologyNotes(!showMethodologyNotes)}
+              className="text-[10px] font-mono text-neutral-500 hover:text-ink flex items-center gap-1 cursor-pointer"
+            >
+              <span>{showMethodologyNotes ? '▼' : '▶'}</span>
+              <span>{showMethodologyNotes ? 'Hide technical calibration & methodology notes' : 'View technical calibration & methodology notes'}</span>
+            </button>
+            {showMethodologyNotes && (
+              <div className="mt-2 text-[11px] text-neutral-600 bg-neutral-50 p-2.5 border border-line flex flex-col gap-2">
+                <p>
+                  <strong>Pilot Model:</strong> Fine-tuned on 52 hand-annotated real frames — person detection is strong, box detection is operational, pallet detection did not learn reliably. See <code className="text-[10px]">training/README.md</code>.
+                </p>
+                <p>
+                  <strong>Scene Graph Edges:</strong> Solid black = support hypothesis (image-space overlap), gray = contact, dashed = proximity. Geometric observations only; not definitive 3D contact. See <code className="text-[10px]">docs/WORLD_MODEL.md</code>.
+                </p>
+                <p>
+                  <strong>Epistemic Safeguards:</strong> Findings are evidence-graded (SUPPORTED / PROBABLE / INSUFFICIENT EVIDENCE / UNSUPPORTED). A weak or uncalibrated observation never generates an ungrounded direct instruction. See <code className="text-[10px]">docs/RISK_LENSES.md</code>.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         {findingsEnabled && (
           <div className="mt-4 border border-line bg-white p-4">
-            <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
-              Findings at this frame
-            </h2>
-            <FindingsPanel findings={findings.data} loading={findings.loading} error={findings.error} />
+            <FindingsPanel
+              findings={findings.data}
+              loading={findings.loading}
+              error={findings.error}
+              currentTime={currentTime}
+              onSimulateWhatIf={handleSimulateWhatIf}
+            />
+          </div>
+        )}
+
+        {(whatIfSimulation || whatIfLoading || whatIfError) && (
+          <div className="mt-4">
+            <WhatIfPanel
+              simulation={whatIfSimulation}
+              loading={whatIfLoading}
+              error={whatIfError}
+              selectedCandidateId={selectedCandidateId}
+              onSelectCandidate={setSelectedCandidateId}
+              onClose={() => setWhatIfSimulation(null)}
+            />
           </div>
         )}
 
         <div className="mt-4 border border-line bg-white p-4">
-          <MetadataPanel video={selectedVideo} />
+          <MetadataPanel video={selectedVideo} samplingPolicy={samplingPolicy} />
         </div>
       </div>
 

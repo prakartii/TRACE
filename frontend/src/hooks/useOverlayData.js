@@ -12,46 +12,45 @@ export function useOverlayData(fetchFn, enabled, videoId, currentTime, model = '
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const lastFetchAtRef = useRef(0)
-  // Identifies the (video, model) this hook currently wants data for.
-  // A fetch started under an older key must never overwrite `data` once
-  // the key has moved on — otherwise a slow request for the previous
-  // model (e.g. a not-yet-cached 'pilot' pass) can resolve after a fast
-  // one for the new model (e.g. an already-cached 'stock' pass) and
-  // silently clobber it with stale-model results. This isn't
-  // hypothetical: React StrictMode's double-invoked effects and rapid
-  // toggling both make it easy to have two requests in flight for two
-  // different keys at once. Also tracks which key currently has a fetch
-  // in flight, so switching keys always starts a fresh request rather
-  // than being silently dropped by an unrelated in-flight fetch.
   const currentKeyRef = useRef(null)
   const inFlightKeyRef = useRef(null)
+  const requestIdRef = useRef(0)
 
-  function fetchNow(timestamp) {
+  function fetchNow(timestamp, force = false) {
     const key = `${videoId}::${model}`
-    if (inFlightKeyRef.current === key) return
+    if (!force && inFlightKeyRef.current === key) return
     inFlightKeyRef.current = key
+    const reqId = ++requestIdRef.current
     setLoading(true)
+
     fetchFn(videoId, timestamp, model)
       .then((result) => {
-        if (currentKeyRef.current !== key) return // superseded — discard
+        if (currentKeyRef.current !== key || requestIdRef.current !== reqId) return
         setData(result)
         setError(null)
       })
       .catch((err) => {
-        if (currentKeyRef.current !== key) return
+        if (currentKeyRef.current !== key || requestIdRef.current !== reqId) return
         setError(err.message)
       })
       .finally(() => {
-        if (inFlightKeyRef.current === key) inFlightKeyRef.current = null
-        if (currentKeyRef.current === key) setLoading(false)
+        if (requestIdRef.current === reqId) {
+          inFlightKeyRef.current = null
+          setLoading(false)
+        }
       })
+  }
+
+  function fetchImmediate(timestamp) {
+    lastFetchAtRef.current = performance.now()
+    fetchNow(timestamp, true)
   }
 
   function fetchThrottled(timestamp) {
     const now = performance.now()
     if (now - lastFetchAtRef.current < THROTTLE_MS) return
     lastFetchAtRef.current = now
-    fetchNow(timestamp)
+    fetchNow(timestamp, false)
   }
 
   useEffect(() => {
@@ -62,11 +61,11 @@ export function useOverlayData(fetchFn, enabled, videoId, currentTime, model = '
       return
     }
     setData(null) // don't show the previous model's/video's results while loading
-    fetchNow(currentTime)
+    fetchNow(currentTime, true)
     // Only re-run on toggle/video/model change — ongoing playback is
     // handled by the throttled fetch the caller drives from onTimeUpdate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, videoId, model])
 
-  return { data, loading, error, fetchThrottled }
+  return { data, loading, error, fetchThrottled, fetchImmediate }
 }

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 
 from backend.contracts.models import VideoSourceInfo
+from backend.perception.sampling import resolve_sampling_policy
 from backend.video.registry import VideoRegistry
 from backend.video.source import VideoDecodeError
 
@@ -101,3 +102,25 @@ def stream_video(
         filename=record.filename,
         content_disposition_type="inline",
     )
+
+
+@router.get("/{video_id}/sampling")
+def get_sampling_policy(
+    video_id: str, registry: VideoRegistry = Depends(get_registry)
+) -> dict:
+    """Returns the deterministic adaptive temporal sampling policy for the video."""
+    _get_record_or_404(registry, video_id)
+    source = registry.open_source(video_id)
+    try:
+        decision = resolve_sampling_policy(source)
+        return {
+            "video_id": video_id,
+            "analysis_fps": decision.analysis_fps,
+            "source_fps": decision.source_fps,
+            "sampling_mode": decision.sampling_mode.value,
+            "frame_step": decision.frame_step,
+            "rationale": decision.rationale,
+        }
+    finally:
+        source.close()
+

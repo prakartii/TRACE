@@ -43,7 +43,12 @@ from backend.world_model.geometry import (
 
 
 def entity_to_scene_node(
-    entity: Entity, frame_width: int, frame_height: int
+    entity: Entity,
+    frame_width: int,
+    frame_height: int,
+    *,
+    product_id: str | None = None,
+    orientation: float | None = None,
 ) -> SceneGraphNode | None:
     """Deterministic Entity -> SceneGraphNode conversion. Returns None for
     a degenerate bbox (x2<=x1 or y2<=y1) rather than fabricating a node
@@ -60,8 +65,8 @@ def entity_to_scene_node(
         entity_class=entity.entity_class,
         position=position,
         footprint=footprint,
-        orientation=None,  # no pose signal exists upstream in Phase 3/4
-        product_id=None,  # no product-metadata linkage exists yet
+        orientation=orientation,
+        product_id=product_id,
     )
 
 
@@ -108,10 +113,31 @@ class WorldModel:
         frame_width: int,
         frame_height: int,
         timestamp: float,
+        product_id_by_entity_id: dict[str, str] | None = None,
+        default_product_id: str | None = None,
+        compute_aspect_orientation: bool = False,
     ) -> SceneGraphSnapshot:
         nodes: list[SceneGraphNode] = []
         for entity in entities:
-            node = entity_to_scene_node(entity, frame_width, frame_height)
+            pid = None
+            if product_id_by_entity_id and entity.id in product_id_by_entity_id:
+                pid = product_id_by_entity_id[entity.id]
+            elif default_product_id and entity.entity_class.value == "box":
+                pid = default_product_id
+
+            ori = None
+            if compute_aspect_orientation and not bbox_is_degenerate(entity.bbox):
+                w = abs(entity.bbox.x2 - entity.bbox.x1)
+                h = abs(entity.bbox.y2 - entity.bbox.y1)
+                ori = round(w / max(h, 1e-6), 3)
+
+            node = entity_to_scene_node(
+                entity,
+                frame_width,
+                frame_height,
+                product_id=pid,
+                orientation=ori,
+            )
             if node is not None:
                 nodes.append(node)
 

@@ -60,6 +60,7 @@ class TrackedObject:
     y1: float
     x2: float
     y2: float
+    tracking_status: str = "TRACKED"
 
 
 class ObjectTracker:
@@ -76,6 +77,10 @@ class ObjectTracker:
         self._config = config
         self._trackers_by_class: dict[str, "object"] = {}
         self._class_index: dict[str, int] = {}
+        self._active_ids_prev: set[int] = set()
+        self._all_seen_ids: set[int] = set()
+        self._lost_ids: set[int] = set()
+        self._reacquired_ids: set[int] = set()
 
     def _new_backend(self):
         import supervision as sv
@@ -98,6 +103,24 @@ class ObjectTracker:
         the class_name<->index namespace assignment."""
         self._trackers_by_class = {}
         self._class_index = {}
+        self._active_ids_prev = set()
+        self._all_seen_ids = set()
+        self._lost_ids = set()
+        self._reacquired_ids = set()
+
+    def get_track_status(self, track_id: int) -> str:
+        """Explicit tracking lifecycle status: TRACKED, REACQUIRED, or TEMPORARILY_LOST."""
+        if track_id in self._active_ids_prev:
+            return "REACQUIRED" if track_id in self._reacquired_ids else "TRACKED"
+        if track_id in self._lost_ids:
+            return "TEMPORARILY_LOST"
+        return "UNKNOWN"
+
+    def lost_track_ids(self) -> set[int]:
+        return set(self._lost_ids)
+
+    def reacquired_track_ids(self) -> set[int]:
+        return set(self._reacquired_ids)
 
     def update(self, detections: list[RawDetection]) -> list[TrackedObject]:
         """Advances every class's tracker by one frame and returns the
@@ -146,15 +169,34 @@ class ObjectTracker:
                 if local_id is None:
                     continue
                 x1, y1, x2, y2 = (float(v) for v in tracked.xyxy[i])
+                track_id = class_index * ID_NAMESPACE_SIZE + int(local_id)
+
+                if track_id in self._active_ids_prev:
+                    status = "TRACKED"
+                elif track_id in self._all_seen_ids:
+                    status = "REACQUIRED"
+                    self._reacquired_ids.add(track_id)
+                    self._lost_ids.discard(track_id)
+                else:
+                    status = "TRACKED"
+                    self._all_seen_ids.add(track_id)
+
                 results.append(
                     TrackedObject(
-                        track_id=class_index * ID_NAMESPACE_SIZE + int(local_id),
+                        track_id=track_id,
                         class_name=class_name,
                         confidence=float(tracked.confidence[i]),
                         x1=x1,
                         y1=y1,
                         x2=x2,
                         y2=y2,
+                        tracking_status=status,
                     )
                 )
+
+        curr_ids = {t.track_id for t in results}
+        just_lost = self._active_ids_prev - curr_ids
+        self._lost_ids.update(just_lost)
+        self._active_ids_prev = curr_ids
+
         return results

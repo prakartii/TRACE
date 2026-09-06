@@ -93,13 +93,15 @@ def get_cached_results(
     """Public for the same reason as `find_nearest_result` above —
     backend/api/scene.py builds scene graphs from these same cached
     per-frame entities rather than re-running perception."""
-    cache_key = (model_name, video_id)
+    record = registry.get(video_id)
+    canonical_id = record.duplicate_of if (record and record.duplicate_of) else video_id
+    cache_key = (model_name, canonical_id)
     with _cache_lock:
         cached = _cache.get(cache_key)
     if cached is not None:
         return cached
 
-    source = registry.open_source(video_id)
+    source = registry.open_source(canonical_id)
     try:
         results = pipeline.process_video(source)
     finally:

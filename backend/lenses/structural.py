@@ -20,6 +20,8 @@ from __future__ import annotations
 from backend.contracts.models import (
     EntityClass,
     EventType,
+    MassClass,
+    ProductMetadata,
     RiskEvent,
     RiskLens,
     SceneGraphEdgeType,
@@ -46,6 +48,7 @@ def evaluate_structural(
     *,
     entity_confidence: dict[str, float],
     config: RiskConfig = DEFAULT_RISK_CONFIG,
+    product_metadata_by_id: dict[str, ProductMetadata] | None = None,
 ) -> list[RiskEvent]:
     """`entity_confidence` maps Entity.id -> detection confidence for the
     same frame the snapshot was built from — SceneGraphNode itself carries
@@ -79,6 +82,59 @@ def evaluate_structural(
         )
         status, confidence = status_and_confidence(score, config)
 
+        overlap_ratio = edge.evidence.get("horizontal_overlap_ratio", 1.0)
+        scenario = "image_space_support_hypothesis"
+        explanation = (
+            f"{supported.entity_class.value} appears, in 2D image space, to rest on "
+            f"{supporter.entity_class.value} (vertical_gap="
+            f"{edge.evidence.get('vertical_gap')}, horizontal_overlap_ratio="
+            f"{edge.evidence.get('horizontal_overlap_ratio')}). This is an image-space "
+            "support HYPOTHESIS, not verified physical support — no camera calibration "
+            "or depth exists to confirm actual contact."
+        )
+
+        # Scenario 1: Heavy-on-light stacking when product metadata is linked
+        if product_metadata_by_id and supporter.product_id and supported.product_id:
+            supporter_meta = product_metadata_by_id.get(supporter.product_id)
+            supported_meta = product_metadata_by_id.get(supported.product_id)
+            if supporter_meta and supported_meta:
+                mass_order = {MassClass.LIGHT: 1, MassClass.MEDIUM: 2, MassClass.HEAVY: 3}
+                supp_rank = mass_order.get(supporter_meta.mass_class, 0)
+                suppd_rank = mass_order.get(supported_meta.mass_class, 0)
+                if suppd_rank > supp_rank:
+                    scenario = "heavy_on_light_stacking"
+                    explanation = (
+                        f"Heavy item '{supported.product_id}' ({supported_meta.mass_class.value}) rests on "
+                        f"lighter item '{supporter.product_id}' ({supporter_meta.mass_class.value}). "
+                        "Reverse-mass stacking creates severe carton crushing and stack instability risk."
+                    )
+
+        # Scenario 8 & 14: Pallet/Box Overhang and Unsupported Bending Placement
+        if scenario == "image_space_support_hypothesis" and supported.entity_class == EntityClass.BOX and supporter.entity_class in (EntityClass.PALLET, EntityClass.BOX):
+            if overlap_ratio < 0.50:
+                scenario = "unsupported_bending_placement"
+                explanation = (
+                    f"Box has only {overlap_ratio:.0%} horizontal support on {supporter.entity_class.value} "
+                    "(greater than 50% overhang), leaving the span unsupported and subject to excessive bending and tipping. "
+                    "This is an image-space projection hypothesis, not verified physical load-bearing contact."
+                )
+            elif overlap_ratio < 0.75:
+                scenario = "pallet_overhang" if supporter.entity_class == EntityClass.PALLET else "box_overhang"
+                explanation = (
+                    f"Box has significant base overhang past {supporter.entity_class.value} support "
+                    f"({overlap_ratio:.0%} horizontal overlap ratio). Base overhang creates eccentric loading and tipping risk. "
+                    "This is an image-space projection hypothesis, not verified physical load-bearing contact."
+                )
+        elif scenario == "image_space_support_hypothesis" and supported.entity_class == EntityClass.PERSON and supporter.entity_class == EntityClass.BOX:
+            scenario = "stepping_on_carton"
+            explanation = (
+                f"Worker appears, in 2D image space, to rest on box (vertical_gap="
+                f"{edge.evidence.get('vertical_gap')}, horizontal_overlap_ratio="
+                f"{edge.evidence.get('horizontal_overlap_ratio')}). Worker body weight "
+                "applied to carton creates packaging collapse and personnel fall hazards. "
+                "This is an image-space support hypothesis, not verified physical contact."
+            )
+
         findings.append(
             RiskEvent(
                 timestamp=snapshot.timestamp,
@@ -87,7 +143,7 @@ def evaluate_structural(
                 entity_id=supported.entity_id,
                 confidence=confidence,
                 status=status,
-                scenario="image_space_support_hypothesis",
+                scenario=scenario,
                 entities=[supporter.entity_id, supported.entity_id],
                 evidence={
                     **edge.evidence,
@@ -95,15 +151,8 @@ def evaluate_structural(
                     "supported_class": supported.entity_class.value,
                     "mean_detection_confidence": mean_conf,
                 },
-                explanation=(
-                    f"{supported.entity_class.value} appears, in 2D image space, to rest on "
-                    f"{supporter.entity_class.value} (vertical_gap="
-                    f"{edge.evidence.get('vertical_gap')}, horizontal_overlap_ratio="
-                    f"{edge.evidence.get('horizontal_overlap_ratio')}). This is an image-space "
-                    "support HYPOTHESIS, not verified physical support — no camera calibration "
-                    "or depth exists to confirm actual contact."
-                ),
-                recommended_action=recommended_action("image_space_support_hypothesis", status),
+                explanation=explanation,
+                recommended_action=recommended_action(scenario, status),
                 limitations=["image_space_only", "no_depth_or_calibration"],
             )
         )
