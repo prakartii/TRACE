@@ -15,6 +15,7 @@ from typing import Any, Optional
 from backend.contracts.models import (
     ActionRecommendation,
     ConfidenceLevel,
+    EpistemicLevel,
     EventType,
     FindingStatus,
     RiskBand,
@@ -109,6 +110,11 @@ def persist_findings(
                 else str(f.confidence)
             )
             status_str = f.status.value if hasattr(f.status, "value") else str(f.status)
+            epistemic_str = (
+                f.epistemic_level.value
+                if hasattr(f.epistemic_level, "value")
+                else str(f.epistemic_level)
+            )
 
             if existing:
                 event_id = existing["event_id"]
@@ -119,10 +125,10 @@ def persist_findings(
                 cur.execute(
                     """
                     UPDATE events
-                    SET score = ?, band = ?, confidence = ?, status = ?, factor_breakdown_json = ?
+                    SET score = ?, band = ?, confidence = ?, status = ?, factor_breakdown_json = ?, epistemic_level = ?
                     WHERE event_id = ?
                     """,
-                    (f.score, band_str, conf_str, status_str, factor_json, event_id),
+                    (f.score, band_str, conf_str, status_str, factor_json, epistemic_str, event_id),
                 )
             else:
                 cur.execute(
@@ -130,8 +136,8 @@ def persist_findings(
                     INSERT INTO events (
                         video_id, timestamp, event_type, lens, entity_id, score, band,
                         confidence, status, scenario, factor_breakdown_json, clip_path,
-                        reviewed, review_status, dedup_key
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+                        reviewed, review_status, dedup_key, epistemic_level
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
                     """,
                     (
                         video_id,
@@ -147,6 +153,7 @@ def persist_findings(
                         factor_json,
                         clip_ref,
                         dedup_key,
+                        epistemic_str,
                     ),
                 )
                 event_id = cur.lastrowid
@@ -231,6 +238,13 @@ def row_to_risk_event(row: sqlite3.Row, conn: Optional[sqlite3.Connection] = Non
             except Exception:
                 planner_rec = None
 
+    epistemic_level = EpistemicLevel.INFERRED
+    if "epistemic_level" in row.keys() and row["epistemic_level"]:
+        try:
+            epistemic_level = EpistemicLevel(row["epistemic_level"])
+        except ValueError:
+            epistemic_level = EpistemicLevel.INFERRED
+
     return RiskEvent(
         event_id=row["event_id"],
         timestamp=row["timestamp"],
@@ -255,6 +269,7 @@ def row_to_risk_event(row: sqlite3.Row, conn: Optional[sqlite3.Connection] = Non
         video_id=video_id,
         reviewed=bool(row["reviewed"]),
         review_status=row["review_status"],
+        epistemic_level=epistemic_level,
     )
 
 

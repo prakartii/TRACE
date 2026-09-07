@@ -168,6 +168,8 @@ class ProductMetadata(BaseModel):
     fragility: Fragility
     required_orientation: Optional[str] = None
     max_stack_height: Optional[int] = None
+    allowed_equipment: Optional[list[str]] = None
+    loading_sequence: Optional[int] = None
 
 
 class SceneGraphNode(BaseModel):
@@ -206,6 +208,17 @@ class SceneGraphSnapshot(BaseModel):
     timestamp: float
     nodes: list[SceneGraphNode]
     edges: list[SceneGraphEdge]
+
+
+class EpistemicLevel(str, Enum):
+    """4-tier epistemic inspection taxonomy (ARCHITECTURE.md & CLAUDE.md §14).
+    Distinguishes direct visual facts from mechanical deductions, counterfactuals,
+    and post-intervention confirmations."""
+
+    OBSERVED = "OBSERVED"
+    INFERRED = "INFERRED"
+    PREDICTED = "PREDICTED"
+    VERIFIED = "VERIFIED"
 
 
 class FindingStatus(str, Enum):
@@ -249,6 +262,8 @@ class RiskEvent(BaseModel):
     video_id: Optional[str] = None
     reviewed: bool = False
     review_status: Optional[str] = None
+    # 4-tier epistemic inspection taxonomy (OBSERVED, INFERRED, PREDICTED, VERIFIED)
+    epistemic_level: EpistemicLevel = EpistemicLevel.INFERRED
 
 
 class StabilityBreakdown(BaseModel):
@@ -344,6 +359,56 @@ class WhatIfRequest(BaseModel):
     model: str = "pilot"
 
 
+class TrajectoryPoint(BaseModel):
+    """Single temporal evaluation point in a What-If stability trajectory."""
+
+    timestamp: float
+    stability_score: float  # 0-100 scale
+    risk_score: float  # 0-100 scale
+    band: RiskBand
+    is_alert: bool = False
+    is_placement_moment: bool = False
+    active_scenarios: list[str] = Field(default_factory=list)
+    breakdown: Optional[StabilityBreakdown] = None
+
+
+class WhatIfTrajectoryRequest(BaseModel):
+    """Request payload for multi-frame temporal what-if counterfactual simulation (Phase 11)."""
+
+    event_id: Optional[int] = None
+    video_id: Optional[str] = None
+    timestamp: Optional[float] = None
+    scenario: Optional[str] = None
+    entity_id: Optional[str] = None
+    alternative_candidate: Optional[str] = None
+    model: str = "pilot"
+    window_before: float = Field(default=3.0, ge=0.0)
+    window_after: float = Field(default=4.0, ge=0.0)
+
+
+class WhatIfTrajectoryResult(BaseModel):
+    """Complete temporal comparison between original and counterfactual stability curves (Screen 9)."""
+
+    event_id: Optional[int] = None
+    video_id: str
+    intervention_timestamp: float
+    candidate_id: str
+    candidate_label: str
+    instruction: str
+    simulation_available: bool = True
+    simulation_notice: Optional[str] = None
+    original_trajectory: list[TrajectoryPoint] = Field(default_factory=list)
+    simulated_trajectory: list[TrajectoryPoint] = Field(default_factory=list)
+    stability_gain_at_placement: float = 0.0
+    overall_stability_delta: float = 0.0
+    original_peak_risk: float = 0.0
+    simulated_peak_risk: float = 0.0
+    risk_transition: str = ""
+    explanation: str = ""
+    available_candidates: list[PlacementCandidate] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
 class ProductMetadataCreate(BaseModel):
     product_id: str
     class_name: str
@@ -351,6 +416,8 @@ class ProductMetadataCreate(BaseModel):
     fragility: Fragility = Fragility.LOW
     required_orientation: Optional[str] = None
     max_stack_height: Optional[int] = None
+    allowed_equipment: Optional[list[str]] = None
+    loading_sequence: Optional[int] = None
 
 
 class EnvironmentalZoneConfig(BaseModel):
@@ -388,4 +455,121 @@ class Rule(BaseModel):
     condition: Optional[dict] = None
     created_by: str
     created_at: float
+
+
+class ConditionCheckResult(BaseModel):
+    """Result of an individual condition in the 3-condition prevention check."""
+
+    condition_number: int
+    name: str
+    satisfied: bool
+    description: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    limitations: list[str] = Field(default_factory=list)
+
+
+class ThreeConditionCheck(BaseModel):
+    """The 3-condition prevention check specified in ARCHITECTURE.md §5.7."""
+
+    condition_1_risk_predicted: ConditionCheckResult
+    condition_2_action_observed: ConditionCheckResult
+    condition_3_state_improved: ConditionCheckResult
+    all_satisfied: bool
+
+
+class OutcomeMeasurement(BaseModel):
+    """Complete auditable outcome record linking an event to its post-action verification."""
+
+    outcome_id: Optional[int] = None
+    event_id: int
+    video_id: Optional[str] = None
+    initial_timestamp: float
+    outcome_timestamp: Optional[float] = None
+    response_window_sec: float = 5.0
+    classification: PreventionClassification
+    three_condition_check: ThreeConditionCheck
+    initial_score: Optional[float] = None
+    outcome_score: Optional[float] = None
+    initial_band: Optional[RiskBand] = None
+    outcome_band: Optional[RiskBand] = None
+    followed_recommendation: Optional[bool] = None
+    human_review_status: Optional[str] = None
+    explanation: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    limitations: list[str] = Field(default_factory=list)
+    evaluated_at: float
+
+
+class PreventionSummary(BaseModel):
+    """Three separate counters and breakdowns as specified in ARCHITECTURE.md §5.7 / Screen 6."""
+
+    total_evaluated: int
+    prevented_count: int
+    near_miss_count: int
+    outcome_unclear_count: int
+    confirmed_damage_count: int
+    by_lens: dict[str, dict[str, int]] = Field(default_factory=dict)
+    by_band: dict[str, dict[str, int]] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Phase 12 — Behaviour Recognition Contracts (ARCHITECTURE.md Part 3 & 9, CLAUDE.md §14)
+# ---------------------------------------------------------------------------
+
+class BehaviourScenarioInfo(BaseModel):
+    """Catalog metadata for a supported behaviour scenario (Phase 12)."""
+
+    scenario_id: str
+    name: str
+    lens: RiskLens = RiskLens.BEHAVIOUR
+    required_signals: list[str] = Field(default_factory=list)
+    description: str
+    epistemic_status: FindingStatus
+    confidence: ConfidenceLevel
+    risk_band: RiskBand
+    limitations: list[str] = Field(default_factory=list)
+    recommended_action: str
+
+
+class KinematicProfile(BaseModel):
+    """Calculated kinematic and temporal properties for a tracked entity."""
+
+    entity_id: str
+    sample_count: int
+    duration: float
+    total_displacement: float
+    net_displacement: float
+    trajectory_linearity: float
+    average_speed: Optional[float] = None
+    net_speed: Optional[float] = None
+    peak_speed: Optional[float] = None
+    peak_downward_speed: Optional[float] = None
+    peak_acceleration: Optional[float] = None
+    aspect_ratio_min: Optional[float] = None
+    aspect_ratio_max: Optional[float] = None
+    aspect_ratio_range: Optional[float] = None
+    aspect_oscillation_count: int = 0
+    ground_tier: bool = False
+
+
+class BehaviourEvaluationRequest(BaseModel):
+    """Request to evaluate behaviour over perception frames."""
+
+    video_id: Optional[str] = None
+    timestamp: Optional[float] = None
+    window_samples: Optional[int] = None
+    default_product_id: Optional[str] = None
+
+
+class BehaviourEvaluationResponse(BaseModel):
+    """Response containing recognized behaviour events and kinematics."""
+
+    timestamp: float
+    video_id: Optional[str] = None
+    findings: list[RiskEvent] = Field(default_factory=list)
+    kinematics: dict[str, KinematicProfile] = Field(default_factory=dict)
+    active_scenarios: list[str] = Field(default_factory=list)
+    epistemic_notice: str = ""
+
+
 

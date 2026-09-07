@@ -87,3 +87,34 @@ CREATE TABLE IF NOT EXISTS session_ratings (
     rating INTEGER,            -- 1-5
     created_at REAL
 );
+
+-- Phase 10: Outcome measurements and prevention classification ledger (Layer 8)
+CREATE TABLE IF NOT EXISTS outcome_measurements (
+    outcome_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(event_id),
+    video_id TEXT,
+    initial_timestamp REAL NOT NULL,
+    outcome_timestamp REAL,
+    response_window_sec REAL DEFAULT 5.0,
+    classification TEXT NOT NULL, -- 'prevented' | 'near_miss' | 'outcome_unclear' | 'confirmed_damage'
+    condition_1_satisfied INTEGER NOT NULL,
+    condition_2_satisfied INTEGER NOT NULL,
+    condition_3_satisfied INTEGER NOT NULL,
+    three_condition_json TEXT NOT NULL,
+    initial_score REAL,
+    outcome_score REAL,
+    initial_band TEXT,
+    outcome_band TEXT,
+    followed_recommendation INTEGER,
+    human_review_status TEXT,
+    explanation TEXT,
+    evidence_json TEXT,
+    limitations_json TEXT,
+    evaluated_at REAL NOT NULL,
+    dedup_key TEXT UNIQUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_outcomes_event ON outcome_measurements(event_id);
+CREATE INDEX IF NOT EXISTS idx_outcomes_class ON outcome_measurements(classification);
+CREATE INDEX IF NOT EXISTS idx_outcomes_video ON outcome_measurements(video_id);
+

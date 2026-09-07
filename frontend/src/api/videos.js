@@ -1,10 +1,13 @@
 import { API_BASE_URL } from '../config.js'
 
-export async function listVideos() {
+export async function listVideos(options = {}) {
   const res = await fetch(`${API_BASE_URL}/api/videos`)
   if (!res.ok) throw new Error(`Failed to list videos (HTTP ${res.status})`)
-  return res.json()
+  const videos = await res.json()
+  if (options?.includeDuplicates) return videos
+  return videos.filter((v) => !v.duplicate_of)
 }
+
 
 export async function getVideo(id) {
   const res = await fetch(`${API_BASE_URL}/api/videos/${id}`)
@@ -71,16 +74,17 @@ export async function getFindings(id, timestamp, model = 'stock') {
 
 // What-If Simulation (Phase 7B): deterministic counterfactual simulation comparing
 // current placement stability against alternative placement candidates.
-export async function getWhatIf(id, timestamp, scenario = null, candidateId = null, model = 'pilot') {
+export async function getWhatIf(id, timestamp, scenario = null, candidateId = null, model = 'pilot', entityId = null) {
   let url = `${API_BASE_URL}/api/videos/${id}/what-if?timestamp=${timestamp}&model=${model}`
   if (scenario) url += `&scenario=${encodeURIComponent(scenario)}`
   if (candidateId) url += `&candidate_id=${encodeURIComponent(candidateId)}`
+  if (entityId) url += `&entity_id=${encodeURIComponent(entityId)}`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Failed to run what-if simulation (HTTP ${res.status})`)
   return res.json()
 }
 
-export async function simulatePlacement(id, timestamp, scenario = null, candidateId = null, model = 'pilot') {
+export async function simulatePlacement(id, timestamp, scenario = null, candidateId = null, model = 'pilot', entityId = null) {
   const res = await fetch(`${API_BASE_URL}/api/videos/${id}/simulate-placement`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -88,6 +92,7 @@ export async function simulatePlacement(id, timestamp, scenario = null, candidat
       timestamp,
       finding_scenario: scenario,
       candidate_id: candidateId,
+      entity_id: entityId,
       model,
     }),
   })

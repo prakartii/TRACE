@@ -9,6 +9,7 @@ never real velocity — there is no camera calibration (docs/WORLD_MODEL.md).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 from backend.contracts.models import BoundingBox, EntityClass, PerceptionFrameResult
 from backend.world_model.geometry import bbox_center, bbox_is_degenerate, euclidean_distance, normalize_bbox
@@ -208,3 +209,78 @@ def common_sample_count(history_a: TrackHistory, history_b: TrackHistory) -> int
     weighed against (2 shared samples is much weaker evidence than 20)."""
     timestamps_b = {s.timestamp for s in history_b.samples}
     return sum(1 for a in history_a.samples if a.timestamp in timestamps_b)
+
+
+def velocity_sequence(history: TrackHistory) -> list[tuple[float, float, float]]:
+    """Calculates instantaneous velocity vectors [(t, vx, vy)] between consecutive samples.
+    Normalized image-space per second (dx/dt, dy/dt)."""
+    if len(history.samples) < 2:
+        return []
+    velocities: list[tuple[float, float, float]] = []
+    for s1, s2 in zip(history.samples, history.samples[1:]):
+        dt = s2.timestamp - s1.timestamp
+        if dt > 1e-4:
+            vx = (s2.position[0] - s1.position[0]) / dt
+            vy = (s2.position[1] - s1.position[1]) / dt
+            velocities.append((s2.timestamp, vx, vy))
+    return velocities
+
+
+def acceleration_sequence(history: TrackHistory) -> list[tuple[float, float, float]]:
+    """Calculates instantaneous acceleration vectors [(t, ax, ay)] across consecutive velocity intervals.
+    Normalized image-space per second squared (dvx/dt, dvy/dt)."""
+    vels = velocity_sequence(history)
+    if len(vels) < 2:
+        return []
+    accelerations: list[tuple[float, float, float]] = []
+    for v1, v2 in zip(vels, vels[1:]):
+        dt = v2[0] - v1[0]
+        if dt > 1e-4:
+            ax = (v2[1] - v1[1]) / dt
+            ay = (v2[2] - v1[2]) / dt
+            accelerations.append((v2[0], ax, ay))
+    return accelerations
+
+
+def rolling_downward_speed(history: TrackHistory, window_size: int = 2) -> float:
+    """Calculates the maximum sustained downward speed (dy / dt) across rolling
+    sub-windows of `window_size` samples. More sensitive to rapid drops that occur
+    within a longer stationary/handling window than global net_speed."""
+    if len(history.samples) < window_size + 1:
+        return 0.0
+    max_down_spd = 0.0
+    for i in range(len(history.samples) - window_size):
+        s_start = history.samples[i]
+        s_end = history.samples[i + window_size]
+        dt = s_end.timestamp - s_start.timestamp
+        if dt > 1e-4:
+            dy = s_end.position[1] - s_start.position[1]
+            if dy > 0:
+                spd = dy / dt
+                if spd > max_down_spd:
+                    max_down_spd = spd
+    return max_down_spd
+
+
+def is_ground_sliding(
+    history: TrackHistory, min_ground_y2: float = 0.50, max_y2_variance: float = 0.035
+) -> bool:
+    """Verifies that the object's bottom edge (y2) remains consistently along the floor plane
+    throughout translation with low vertical variance (sliding vs carrying)."""
+    footprints = [s.footprint for s in history.samples if s.footprint is not None]
+    if len(footprints) < 2:
+        return False
+    y2_vals = [f.y2 for f in footprints]
+    if sum(y2 >= min_ground_y2 for y2 in y2_vals) / len(y2_vals) < 0.70:
+        return False
+    mean_y2 = sum(y2_vals) / len(y2_vals)
+    var_y2 = sum((y - mean_y2) ** 2 for y in y2_vals) / len(y2_vals)
+    return math.sqrt(var_y2) <= max_y2_variance
+
+
+def elevation_trend(history: TrackHistory) -> float:
+    """Net vertical displacement from first to last sample (y_last - y_first).
+    Positive = downward movement; negative = upward lift or elevation climb."""
+    if len(history.samples) < 2:
+        return 0.0
+    return history.last.position[1] - history.first.position[1]

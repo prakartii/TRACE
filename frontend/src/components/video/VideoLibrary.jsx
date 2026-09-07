@@ -1,15 +1,37 @@
 import { formatBytes, formatDuration } from '../../lib/format.js'
+import { getVideoScenarioInfo } from '../../lib/scenarios.js'
+import { useLiveViewContext } from '../../LiveViewContext.jsx'
 
-export default function VideoLibrary({ videos, selectedId, onSelect, loading, error }) {
+const RISK_BADGES = {
+  Critical: 'border-red-400 bg-red-50 text-red-800',
+  High: 'border-orange-300 bg-orange-50 text-orange-800',
+  Medium: 'border-amber-300 bg-amber-50 text-amber-800',
+  Low: 'border-neutral-300 bg-neutral-50 text-neutral-700',
+}
+
+export default function VideoLibrary({ videos = [], selectedId, onSelect, loading, error }) {
+  const { navigateTo } = useLiveViewContext()
+
   if (loading) {
-    return <p className="text-sm text-neutral-500">Loading video sources…</p>
+    return (
+      <div className="border border-line bg-white p-4 text-center">
+        <p className="text-xs text-neutral-500 font-mono">Loading 7 canonical video sources…</p>
+      </div>
+    )
   }
 
   if (error) {
-    return <p className="text-sm text-red-600">{error}</p>
+    return (
+      <div className="border border-red-300 bg-red-50 p-3 text-xs text-red-700">
+        {error}
+      </div>
+    )
   }
 
-  if (videos.length === 0) {
+  // Defensively ensure exactly canonical distinct videos are displayed
+  const canonicalVideos = videos.filter((v) => !v.duplicate_of)
+
+  if (canonicalVideos.length === 0) {
     return (
       <p className="text-sm text-neutral-500">
         No videos found in <code className="text-xs">data/challenge_videos/</code>.
@@ -18,43 +40,87 @@ export default function VideoLibrary({ videos, selectedId, onSelect, loading, er
   }
 
   return (
-    <ul className="space-y-1.5">
-      {videos.map((video) => {
-        const active = video.id === selectedId
-        return (
-          <li key={video.id}>
-            <button
-              type="button"
-              onClick={() => onSelect(video.id)}
-              title={video.filename}
-              className={`w-full border px-3 py-2 text-left text-sm transition-colors ${
-                active ? 'border-ink bg-neutral-100' : 'border-line bg-white hover:bg-neutral-50'
-              }`}
-            >
-              <div className="truncate font-medium text-ink">{video.filename}</div>
-              <div className="mt-0.5 flex items-center gap-1.5 text-xs text-neutral-500">
-                <span>{formatDuration(video.metadata.duration)}</span>
-                <span aria-hidden="true">·</span>
-                <span>
-                  {video.metadata.width}×{video.metadata.height}
-                </span>
-                <span aria-hidden="true">·</span>
-                <span>{formatBytes(video.file_size)}</span>
-              </div>
-              {video.duplicate_of && (
-                <div className="mt-1.5 border border-amber-300 bg-amber-50 px-2 py-1 text-left">
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-amber-800">
-                    Duplicate content
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center justify-between px-1 text-[11px] text-neutral-500">
+        <span>7 Monitored Camera Feeds</span>
+        <span className="font-mono">{canonicalVideos.length} distinct scenarios</span>
+      </div>
+
+      <ul className="space-y-2">
+        {canonicalVideos.map((video) => {
+          const active = video.id === selectedId
+          const info = getVideoScenarioInfo(video.id || video.filename)
+          const badgeStyle = RISK_BADGES[info.riskBand] || RISK_BADGES.High
+          const frameCount = video.metadata.frame_count || Math.round(video.metadata.duration * (video.metadata.fps || 10))
+
+          return (
+            <li key={video.id}>
+              <div
+                className={`border p-3 text-left text-xs transition-all flex flex-col gap-2 ${
+                  active
+                    ? 'border-neutral-900 bg-neutral-50/80 shadow-xs ring-1 ring-neutral-900'
+                    : 'border-line bg-white hover:border-neutral-400'
+                }`}
+              >
+                {/* Header: Scenario Title & Severity */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-bold text-neutral-950 text-xs leading-snug">
+                      {info.scenarioTitle}
+                    </span>
+                    <span className="text-[10px] text-neutral-500 font-medium">
+                      {info.cameraName}
+                    </span>
                   </div>
-                  <div className="mt-0.5 text-[10px] text-amber-700 leading-tight">
-                    Same source content as canonical video. TRACE reuses the existing perception result.
-                  </div>
+                  <span className={`px-1.5 py-0.2 text-[9px] font-bold uppercase border shrink-0 ${badgeStyle}`}>
+                    {info.riskBand || 'High'} Risk
+                  </span>
                 </div>
-              )}
-            </button>
-          </li>
-        )
-      })}
-    </ul>
+
+                {/* Primary Risk Description */}
+                <p className="text-[11px] text-neutral-600 leading-snug line-clamp-2">
+                  {info.primaryRisk}
+                </p>
+
+                {/* Metadata details */}
+                <div className="flex items-center gap-1.5 text-[10px] text-neutral-400 font-mono pt-1 border-t border-line/60">
+                  <span>{formatDuration(video.metadata.duration)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{frameCount} frames</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{video.metadata.width}×{video.metadata.height}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{formatBytes(video.file_size)}</span>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onSelect(video.id)}
+                    className={`px-2.5 py-1 text-[11px] font-bold border transition-colors cursor-pointer ${
+                      active
+                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        : 'border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-100'
+                    }`}
+                  >
+                    {active ? '● Selected Feed' : 'Inspect Feed'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => navigateTo('Incident Replay', { videoId: video.id })}
+                    className="text-[11px] font-bold text-neutral-700 hover:text-black flex items-center gap-1 underline cursor-pointer"
+                  >
+                    <span>Replay Incidents</span>
+                    <span>→</span>
+                  </button>
+                </div>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }

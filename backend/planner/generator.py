@@ -271,6 +271,40 @@ def generate_placement_candidates(
                 "supp_meta": support_meta,
                 "relationship": "centered_support",
             })
+        else:
+            # Base-tier / floor-level candidate when no support box was identified
+            floor_y2 = min(0.92, max(0.70, target_box.y2))
+            cand_box = BoundingBox(
+                x1=max(0.02, min(0.98 - target_w, target_box.x1)),
+                y1=max(0.02, floor_y2 - target_h),
+                x2=max(0.02, min(0.98 - target_w, target_box.x1)) + target_w,
+                y2=floor_y2,
+            )
+            raw_candidates.append({
+                "id": "cand_floor_staging",
+                "desc": "Place carton safely at ground/floor level in designated staging footprint",
+                "footprint": _clamp_bbox(cand_box),
+                "is_base": True,
+                "supp_box": None,
+                "supp_meta": None,
+                "relationship": "ground_support",
+            })
+            adj_x1 = max(0.05, min(0.90 - target_w, target_box.x1 + 0.12))
+            adj_box = BoundingBox(
+                x1=adj_x1,
+                y1=max(0.02, floor_y2 - target_h),
+                x2=adj_x1 + target_w,
+                y2=floor_y2,
+            )
+            raw_candidates.append({
+                "id": "cand_floor_adjacent",
+                "desc": "Translate carton to clear floor footprint with adequate clearance",
+                "footprint": _clamp_bbox(adj_box),
+                "is_base": True,
+                "supp_box": None,
+                "supp_meta": None,
+                "relationship": "ground_support",
+            })
 
     # Evaluate each candidate deterministically
     candidates: list[PlacementCandidate] = []

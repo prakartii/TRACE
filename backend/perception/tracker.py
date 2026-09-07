@@ -30,6 +30,7 @@ regression test.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -43,6 +44,59 @@ from backend.perception.detector import RawDetection
 # existing type — no contract change needed downstream). 1,000,000 local
 # ids per class is far beyond anything a single video run could produce.
 ID_NAMESPACE_SIZE = 1_000_000
+
+
+class BoundingBoxSmoother:
+    """Adaptive temporal bounding-box stabilizer.
+
+    Suppresses high-frequency detector boundary jitter when an object is stationary
+    or drifting, while dynamically adapting to fast motion (e.g. falling cartons,
+    rapid projectile release, worker movements) without introducing lag.
+    """
+
+    def __init__(self, alpha_min: float = 0.35, alpha_max: float = 0.95):
+        self.alpha_min = alpha_min
+        self.alpha_max = alpha_max
+        self.prev_box: tuple[float, float, float, float] | None = None
+
+    def reset(self) -> None:
+        self.prev_box = None
+
+    def update(self, box: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        x1, y1, x2, y2 = box
+        if self.prev_box is None:
+            self.prev_box = (x1, y1, x2, y2)
+            return (x1, y1, x2, y2)
+
+        px1, py1, px2, py2 = self.prev_box
+        prev_w = max(1.0, px2 - px1)
+        prev_h = max(1.0, py2 - py1)
+
+        # Relative center displacement scaled by object dimensions
+        cx = (x1 + x2) / 2.0
+        cy = (y1 + y2) / 2.0
+        pcx = (px1 + px2) / 2.0
+        pcy = (py1 + py2) / 2.0
+        rel_disp = math.hypot((cx - pcx) / prev_w, (cy - pcy) / prev_h)
+
+        # Scale alpha: stationary/jitter (rel_disp <= 0.03) uses alpha_min (strong smoothing),
+        # fast motion (rel_disp >= 0.15) ramps smoothly to alpha_max (responsive, no lag).
+        t = min(1.0, max(0.0, (rel_disp - 0.03) / 0.12))
+        alpha = self.alpha_min + t * (self.alpha_max - self.alpha_min)
+
+        sx1 = alpha * x1 + (1.0 - alpha) * px1
+        sy1 = alpha * y1 + (1.0 - alpha) * py1
+        sx2 = alpha * x2 + (1.0 - alpha) * px2
+        sy2 = alpha * y2 + (1.0 - alpha) * py2
+
+        # Sanity check: keep box non-degenerate
+        if sx2 <= sx1 + 1.0:
+            sx2 = sx1 + 1.0
+        if sy2 <= sy1 + 1.0:
+            sy2 = sy1 + 1.0
+
+        self.prev_box = (sx1, sy1, sx2, sy2)
+        return (sx1, sy1, sx2, sy2)
 
 
 @dataclass(frozen=True)
@@ -81,6 +135,7 @@ class ObjectTracker:
         self._all_seen_ids: set[int] = set()
         self._lost_ids: set[int] = set()
         self._reacquired_ids: set[int] = set()
+        self._smoothers: dict[int, BoundingBoxSmoother] = {}
 
     def _new_backend(self):
         import supervision as sv
@@ -107,6 +162,7 @@ class ObjectTracker:
         self._all_seen_ids = set()
         self._lost_ids = set()
         self._reacquired_ids = set()
+        self._smoothers.clear()
 
     def get_track_status(self, track_id: int) -> str:
         """Explicit tracking lifecycle status: TRACKED, REACQUIRED, or TEMPORARILY_LOST."""
@@ -168,7 +224,7 @@ class ObjectTracker:
                 local_id = tracked.tracker_id[i]
                 if local_id is None:
                     continue
-                x1, y1, x2, y2 = (float(v) for v in tracked.xyxy[i])
+                raw_x1, raw_y1, raw_x2, raw_y2 = (float(v) for v in tracked.xyxy[i])
                 track_id = class_index * ID_NAMESPACE_SIZE + int(local_id)
 
                 if track_id in self._active_ids_prev:
@@ -180,6 +236,21 @@ class ObjectTracker:
                 else:
                     status = "TRACKED"
                     self._all_seen_ids.add(track_id)
+
+                # Temporal bounding-box smoothing & jitter suppression
+                if self._config.box_smoothing_enabled:
+                    smoother = self._smoothers.setdefault(
+                        track_id,
+                        BoundingBoxSmoother(
+                            self._config.box_smoothing_alpha_min,
+                            self._config.box_smoothing_alpha_max,
+                        ),
+                    )
+                    if status == "REACQUIRED":
+                        smoother.reset()
+                    x1, y1, x2, y2 = smoother.update((raw_x1, raw_y1, raw_x2, raw_y2))
+                else:
+                    x1, y1, x2, y2 = raw_x1, raw_y1, raw_x2, raw_y2
 
                 results.append(
                     TrackedObject(
@@ -197,6 +268,8 @@ class ObjectTracker:
         curr_ids = {t.track_id for t in results}
         just_lost = self._active_ids_prev - curr_ids
         self._lost_ids.update(just_lost)
+        # Clear reacquired ids that are now confirmed tracked in active set
+        self._reacquired_ids = {tid for tid in self._reacquired_ids if tid not in curr_ids or tid not in self._active_ids_prev}
         self._active_ids_prev = curr_ids
 
         return results

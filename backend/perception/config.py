@@ -68,6 +68,12 @@ class PerceptionConfig:
     # unbounded amount of CPU inference.
     max_samples_per_run: int = 300
 
+    # Bounding-box temporal smoothing & stabilization
+    box_smoothing_enabled: bool = True
+    box_smoothing_alpha_min: float = 0.35  # Jitter suppression when stationary / slow
+    box_smoothing_alpha_max: float = 0.95  # Fast response during rapid motion / drops
+    secondary_confidence_threshold: float = 0.10  # Low-confidence threshold for ByteTrack 2nd stage
+
 
 DEFAULT_CONFIG = PerceptionConfig()
 

@@ -30,6 +30,8 @@ PRODUCT_CATALOG: dict[str, ProductMetadata] = {
         fragility=Fragility.MEDIUM,
         required_orientation="vertical",
         max_stack_height=1,
+        allowed_equipment=["trolley"],
+        loading_sequence=1,
     ),
     "kd_flatpack_packets": ProductMetadata(
         product_id="kd_flatpack_packets",
@@ -38,6 +40,8 @@ PRODUCT_CATALOG: dict[str, ProductMetadata] = {
         fragility=Fragility.LOW,
         required_orientation="horizontal",
         max_stack_height=5,
+        allowed_equipment=["pallet_jack", "trolley"],
+        loading_sequence=2,
     ),
     "heavy_overpack_box": ProductMetadata(
         product_id="heavy_overpack_box",
@@ -46,6 +50,8 @@ PRODUCT_CATALOG: dict[str, ProductMetadata] = {
         fragility=Fragility.MEDIUM,
         required_orientation="vertical",
         max_stack_height=2,
+        allowed_equipment=["trolley", "forklift"],
+        loading_sequence=1,
     ),
     "seating_carton": ProductMetadata(
         product_id="seating_carton",
@@ -54,6 +60,8 @@ PRODUCT_CATALOG: dict[str, ProductMetadata] = {
         fragility=Fragility.MEDIUM,
         required_orientation=None,  # Unconstrained by SKU spec; prevents false positives on standard cartons
         max_stack_height=3,
+        allowed_equipment=None,
+        loading_sequence=None,
     ),
     "general_carton": ProductMetadata(
         product_id="general_carton",
@@ -62,6 +70,8 @@ PRODUCT_CATALOG: dict[str, ProductMetadata] = {
         fragility=Fragility.LOW,
         required_orientation=None,  # Unconstrained standard carton
         max_stack_height=4,
+        allowed_equipment=None,
+        loading_sequence=None,
     ),
 }
 
@@ -104,6 +114,13 @@ DOCK_10_TRUCK_BED_ZONE = EnvironmentalZone(
     zone_type=ZoneType.DOCK_EDGE,
     polygon=[(0.40, 0.20), (0.85, 0.20), (0.95, 0.75), (0.35, 0.75)],
     severity_multiplier=1.4,
+)
+
+DOCK_08_WET_FLOOR_ZONE = EnvironmentalZone(
+    zone_id="dock_08_wet_floor",
+    zone_type=ZoneType.WET_FLOOR,
+    polygon=[(0.05, 0.40), (0.90, 0.40), (0.90, 0.90), (0.05, 0.90)],
+    severity_multiplier=1.3,
 )
 
 # Registry of manifests keyed by source_id or matched by video filename
@@ -152,6 +169,36 @@ _CHALLENGE_MANIFESTS: list[tuple[str, OperationalManifest]] = [
             product_metadata=[PRODUCT_CATALOG["seating_carton"]],
             environmental_zones=[],
             primary_product_id="seating_carton",
+        ),
+    ),
+    (
+        "Rolling and dragging on wet floor",
+        OperationalManifest(
+            manifest_id="manifest_dock_08_wet_floor",
+            bay_name="Dock 08 out 01",
+            product_metadata=[PRODUCT_CATALOG["general_carton"]],
+            environmental_zones=[DOCK_08_WET_FLOOR_ZONE],
+            primary_product_id="general_carton",
+        ),
+    ),
+    (
+        "Rolling and dropping carton",
+        OperationalManifest(
+            manifest_id="manifest_dock_08_rolling_drop",
+            bay_name="Dock 08 inside",
+            product_metadata=[PRODUCT_CATALOG["general_carton"]],
+            environmental_zones=[],
+            primary_product_id="general_carton",
+        ),
+    ),
+    (
+        "Throwing Mattresses",
+        OperationalManifest(
+            manifest_id="manifest_dock_06_mattresses",
+            bay_name="Dock 06 out 01",
+            product_metadata=[PRODUCT_CATALOG["general_carton"]],
+            environmental_zones=[],
+            primary_product_id="general_carton",
         ),
     ),
 ]

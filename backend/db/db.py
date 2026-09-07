@@ -21,12 +21,13 @@ def ensure_schema_migrations(conn: sqlite3.Connection) -> None:
     cur = conn.cursor()
     tables = {r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if "events" in tables:
-        cols = {row["name"] for row in cur.execute("PRAGMA table_info(events)")}
+        cols = {row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in cur.execute("PRAGMA table_info(events)")}
         for col_name, col_type in [
             ("video_id", "TEXT"),
             ("status", "TEXT"),
             ("scenario", "TEXT"),
             ("dedup_key", "TEXT"),
+            ("epistemic_level", "TEXT"),
         ]:
             if col_name not in cols:
                 cur.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type}")
@@ -38,9 +39,42 @@ def ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_events_band ON events(band)")
 
     if "planner_recommendations" in tables:
-        rec_cols = {row["name"] for row in cur.execute("PRAGMA table_info(planner_recommendations)")}
+        rec_cols = {row["name"] if isinstance(row, sqlite3.Row) else row[1] for row in cur.execute("PRAGMA table_info(planner_recommendations)")}
         if "recommendation_json" not in rec_cols:
             cur.execute("ALTER TABLE planner_recommendations ADD COLUMN recommendation_json TEXT")
+
+    if "outcome_measurements" not in tables:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS outcome_measurements (
+                outcome_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL REFERENCES events(event_id),
+                video_id TEXT,
+                initial_timestamp REAL NOT NULL,
+                outcome_timestamp REAL,
+                response_window_sec REAL DEFAULT 5.0,
+                classification TEXT NOT NULL,
+                condition_1_satisfied INTEGER NOT NULL,
+                condition_2_satisfied INTEGER NOT NULL,
+                condition_3_satisfied INTEGER NOT NULL,
+                three_condition_json TEXT NOT NULL,
+                initial_score REAL,
+                outcome_score REAL,
+                initial_band TEXT,
+                outcome_band TEXT,
+                followed_recommendation INTEGER,
+                human_review_status TEXT,
+                explanation TEXT,
+                evidence_json TEXT,
+                limitations_json TEXT,
+                evaluated_at REAL NOT NULL,
+                dedup_key TEXT UNIQUE
+            )
+            """
+        )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_outcomes_event ON outcome_measurements(event_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_outcomes_class ON outcome_measurements(classification)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_outcomes_video ON outcome_measurements(video_id)")
 
     conn.commit()
 

@@ -14,9 +14,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.behaviour import router as behaviour_router
 from backend.api.events import router as events_router
 from backend.api.findings import router as findings_router
 from backend.api.perception import router as perception_router
+from backend.api.measurement import router as measurement_router
+from backend.api.planner_whatif import canonical_router as canonical_whatif_router
+from backend.api.planner_whatif import router as planner_whatif_router
 from backend.api.scene import router as scene_router
 from backend.api.simulation import router as simulation_router
 from backend.api.supervisor import router as supervisor_router
@@ -24,8 +28,8 @@ from backend.api.videos import router as videos_router
 from backend.db.db import create_database
 
 APP_NAME = "TRACE"
-APP_VERSION = "0.7.2"
-BUILD_PHASE = "Phase 9.1 - Event Persistence & API + Responsible AI Review"
+APP_VERSION = "0.10.0"
+BUILD_PHASE = "Phase 12 - Behaviour Recognition"
 
 
 @asynccontextmanager
@@ -49,7 +53,11 @@ app.include_router(scene_router)
 app.include_router(findings_router)
 app.include_router(events_router)
 app.include_router(simulation_router)
+app.include_router(planner_whatif_router)
+app.include_router(canonical_whatif_router)
 app.include_router(supervisor_router)
+app.include_router(measurement_router)
+app.include_router(behaviour_router)
 
 
 @app.get("/health")

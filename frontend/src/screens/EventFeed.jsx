@@ -1,6 +1,15 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { listEvents, getEvent, submitReview } from '../api/events.js'
 import { listVideos } from '../api/videos.js'
+import { useLiveViewContext } from '../LiveViewContext.jsx'
+import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle } from '../lib/scenarios.js'
+import {
+  formatConfidence,
+  formatScore,
+  formatPercentage,
+  formatEntityName,
+  humanizeExplanation,
+} from '../lib/format.js'
 
 const STATUS_STYLE = {
   supported: 'border-emerald-300 bg-emerald-50 text-emerald-800',
@@ -56,7 +65,10 @@ const SCENARIO_TITLES = {
   entity_in_wet_floor_zone: 'Slip/impact hazard: handling in marked wet floor zone',
   box_displacement_near_person: 'Moving cargo in close proximity to worker',
   person_box_sustained_proximity: 'Worker in sustained close proximity to cargo',
+  solo_heavy_handling: 'Ergonomic lift hazard: heavy SKU handled by single worker',
   image_space_support_hypothesis: 'Image-space support alignment hypothesis',
+  unplanned_loading_sequence: 'Loading sequence deviates from optimal manifest',
+  wrong_equipment_usage: 'Unapproved handling equipment used for SKU class',
 }
 
 function formatTimestamp(seconds) {
@@ -84,10 +96,24 @@ function formatEvidenceItem(key, value) {
 }
 
 export default function EventFeed() {
+  const { navigateTo } = useLiveViewContext()
   const [events, setEvents] = useState([])
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  const handleReplayIncident = (ev) => {
+    if (!ev) return
+    navigateTo('Incident Replay', {
+      eventId: ev.event_id,
+      videoId: ev.video_id,
+      timestamp: ev.timestamp,
+      event: ev,
+    })
+  }
+
+  // Incident deduplication / clustering
+  const [groupSimilar, setGroupSimilar] = useState(true)
 
   // Filters
   const [filterLens, setFilterLens] = useState('')
@@ -110,6 +136,56 @@ export default function EventFeed() {
   const [reviewNotes, setReviewNotes] = useState('')
   const [reviewMessage, setReviewMessage] = useState(null)
   const [showTechnical, setShowTechnical] = useState(false)
+
+  // Group consecutive detections within 2 seconds of each other into distinct operational incidents
+  const displayedEvents = useMemo(() => {
+    if (!events?.length) return []
+    if (!groupSimilar) return events
+
+    const clusters = []
+    const sorted = [...events].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+
+    for (const ev of sorted) {
+      const last = clusters[clusters.length - 1]
+      const sameVideo = last && last.video_id === ev.video_id
+      const sameScenario = last && last.scenario === ev.scenario
+      const withinWindow = last && Math.abs((ev.timestamp ?? 0) - last.maxTimestamp) <= 2.0
+
+      if (sameVideo && sameScenario && withinWindow) {
+        last.events.push(ev)
+        last.maxTimestamp = Math.max(last.maxTimestamp, ev.timestamp ?? 0)
+        const evRisk = ev.risk_score ?? (ev.band === 'Critical' ? 90 : ev.band === 'High' ? 70 : 50)
+        const peakRisk = last.peakEvent.risk_score ?? (last.peakEvent.band === 'Critical' ? 90 : last.peakEvent.band === 'High' ? 70 : 50)
+        if (evRisk > peakRisk) {
+          last.peakEvent = ev
+        }
+      } else {
+        clusters.push({
+          video_id: ev.video_id,
+          scenario: ev.scenario,
+          minTimestamp: ev.timestamp ?? 0,
+          maxTimestamp: ev.timestamp ?? 0,
+          events: [ev],
+          peakEvent: ev,
+        })
+      }
+    }
+
+    const results = clusters.map((cl) => ({
+      ...cl.peakEvent,
+      _clusterCount: cl.events.length,
+      _minTimestamp: cl.minTimestamp,
+      _maxTimestamp: cl.maxTimestamp,
+    }))
+
+    if (order === 'desc') {
+      results.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
+    } else {
+      results.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+    }
+
+    return results
+  }, [events, groupSimilar, order])
 
   // Load video list for filter dropdown
   useEffect(() => {
@@ -245,16 +321,13 @@ export default function EventFeed() {
     filterReviewState,
   ].filter(Boolean).length
 
-  // Helper to get video name
+  // Helper to get clean video scenario info
+  const getVideoInfo = (videoId) => {
+    return getVideoScenarioInfo(videoId)
+  }
+
   const getVideoName = (videoId) => {
-    const found = videos.find((v) => v.id === videoId || v.duplicate_of === videoId)
-    if (found) {
-      if (found.duplicate_of) {
-        return `${found.filename} (Canonical Duplicate)`
-      }
-      return found.filename
-    }
-    return videoId || 'Unknown Video'
+    return getVideoScenarioInfo(videoId).cameraName
   }
 
   return (
@@ -265,20 +338,20 @@ export default function EventFeed() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-xl font-bold tracking-tight text-neutral-900">
-                Operational Event Feed
+                Safety Incidents
               </h1>
-              <span className="border border-line bg-neutral-100 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600">
-                SQLite Audit Store
+              <span className="border border-line bg-neutral-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-neutral-600">
+                Safety Incident Inbox
               </span>
             </div>
             <p className="text-xs text-neutral-600 max-w-2xl leading-relaxed">
-              Chronological ledger of warehouse risk detections, epistemic certainty grades, and safe corrective actions recorded from real-time video perception.
+              Detected safety events from monitored warehouse video.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-mono">
+          <div className="flex items-center gap-2 text-xs">
             <span className="border border-line bg-paper px-2.5 py-1 text-neutral-700">
-              Loaded Events: <strong className="font-bold text-neutral-950">{events.length}</strong>
+              Loaded Events: <strong className="font-bold font-mono tabular-nums text-neutral-950">{events.length}</strong>
             </span>
           </div>
         </div>
@@ -286,25 +359,69 @@ export default function EventFeed() {
         {/* 5-Step Operational Triage Trace Banner */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-2 border-t border-line pt-3 mt-1 text-xs">
           <div className="flex flex-col gap-0.5 border-l-2 border-neutral-300 pl-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">1. What Happened</span>
-            <span className="font-mono text-[11px] text-neutral-800">Detected Scenario</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">1. WHAT IS HAPPENING?</span>
+            <span className="text-[11px] text-neutral-800 font-medium">OBSERVED Scenario</span>
           </div>
           <div className="flex flex-col gap-0.5 border-l-2 border-neutral-300 pl-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">2. Where / When</span>
-            <span className="font-mono text-[11px] text-neutral-800">Video & Timestamp</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">2. WHERE / WHEN?</span>
+            <span className="text-[11px] text-neutral-800 font-medium">Video & Timestamp</span>
           </div>
           <div className="flex flex-col gap-0.5 border-l-2 border-neutral-300 pl-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">3. Certainty</span>
-            <span className="font-mono text-[11px] text-neutral-800">Epistemic Status</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">3. CERTAINTY</span>
+            <span className="text-[11px] text-neutral-800 font-medium">Epistemic Status</span>
           </div>
           <div className="flex flex-col gap-0.5 border-l-2 border-neutral-300 pl-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">4. Severity</span>
-            <span className="font-mono text-[11px] text-neutral-800">Risk Band & Score</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">4. WHAT WILL HAPPEN?</span>
+            <span className="text-[11px] text-neutral-800 font-medium">Risk Band & Score</span>
           </div>
           <div className="flex flex-col gap-0.5 border-l-2 border-emerald-500 pl-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">5. Recommended Action</span>
-            <span className="font-mono text-[11px] text-emerald-900 font-semibold">Safe Intervention</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">5. WHAT TO DO NOW?</span>
+            <span className="text-[11px] text-emerald-900 font-semibold">Safe Intervention</span>
           </div>
+        </div>
+      </div>
+
+      {/* Recommended Demo Scenarios (Judge Quick-Select) */}
+      <div className="border border-neutral-300 bg-neutral-50/90 p-3.5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-800">
+            ⭐ Recommended Demos (One-Click Triage):
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEventId(73)
+              handleReplayIncident({ event_id: 73, video_id: 'ac99ff34e1bd2c13', timestamp: 36.67 })
+            }}
+            className="px-2.5 py-1 text-[11px] font-bold bg-white border border-amber-400 text-amber-900 hover:bg-amber-50 shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <span>📦 <span className="font-mono">Event #73</span></span>
+            <span className="text-[10px] text-amber-700 font-normal">Overhang + What-If</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEventId(75)
+              handleReplayIncident({ event_id: 75, video_id: '93e4b1963c6fcd97', timestamp: 1.0 })
+            }}
+            className="px-2.5 py-1 text-[11px] font-bold bg-white border border-emerald-400 text-emerald-900 hover:bg-emerald-50 shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <span>🛡️ <span className="font-mono">Event #75</span></span>
+            <span className="text-[10px] text-emerald-700 font-normal">Verified Prevented</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEventId(105)
+              handleReplayIncident({ event_id: 105, video_id: '93e4b1963c6fcd97', timestamp: 0.0 })
+            }}
+            className="px-2.5 py-1 text-[11px] font-bold bg-white border border-red-400 text-red-900 hover:bg-red-50 shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <span>⚠️ <span className="font-mono">Event #105</span></span>
+            <span className="text-[10px] text-red-700 font-normal">Dock Edge Hazard</span>
+          </button>
         </div>
       </div>
 
@@ -314,15 +431,16 @@ export default function EventFeed() {
           <span className="text-xs font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
             <span>Filters</span>
             {activeFilterCount > 0 && (
-              <span className="bg-neutral-900 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full">
+              <span className="bg-neutral-900 text-white text-[10px] font-mono tabular-nums px-1.5 py-0.2 rounded-full">
                 {activeFilterCount}
               </span>
             )}
           </span>
           {activeFilterCount > 0 && (
             <button
+              type="button"
               onClick={handleResetFilters}
-              className="text-xs text-neutral-600 hover:text-neutral-900 underline font-mono"
+              className="text-xs text-neutral-600 hover:text-neutral-900 underline font-medium cursor-pointer"
             >
               Reset All Filters
             </button>
@@ -339,7 +457,7 @@ export default function EventFeed() {
                 setFilterLens(e.target.value)
                 setOffset(0)
               }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500 font-mono"
+              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
             >
               <option value="">All Lenses</option>
               <option value="structural">Structural</option>
@@ -358,7 +476,7 @@ export default function EventFeed() {
                 setFilterStatus(e.target.value)
                 setOffset(0)
               }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500 font-mono"
+              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
             >
               <option value="">All Statuses</option>
               <option value="supported">Supported</option>
@@ -377,7 +495,7 @@ export default function EventFeed() {
                 setFilterBand(e.target.value)
                 setOffset(0)
               }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500 font-mono"
+              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
             >
               <option value="">All Bands</option>
               <option value="Critical">Critical</option>
@@ -387,23 +505,26 @@ export default function EventFeed() {
             </select>
           </div>
 
-          {/* Source Video Filter */}
+          {/* Camera / Zone Filter */}
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase text-neutral-500">Source Video</label>
+            <label className="text-[10px] font-bold uppercase text-neutral-500">Camera / Zone</label>
             <select
               value={filterVideo}
               onChange={(e) => {
                 setFilterVideo(e.target.value)
                 setOffset(0)
               }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500 truncate font-mono"
+              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500 truncate"
             >
-              <option value="">All Videos</option>
-              {videos.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.filename} {v.duplicate_of ? '(Duplicate)' : ''}
-                </option>
-              ))}
+              <option value="">All Camera Zones</option>
+              {videos.map((v) => {
+                const info = getVideoScenarioInfo(v.id || v.filename)
+                return (
+                  <option key={v.id} value={v.id}>
+                    {info.scenarioTitle} — {info.cameraName}
+                  </option>
+                )
+              })}
             </select>
           </div>
 
@@ -416,7 +537,7 @@ export default function EventFeed() {
                 setFilterReviewState(e.target.value)
                 setOffset(0)
               }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500 font-mono"
+              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
             >
               <option value="">All Reviews</option>
               <option value="unreviewed">Unreviewed Only</option>
@@ -433,7 +554,7 @@ export default function EventFeed() {
             <select
               value={order}
               onChange={(e) => setOrder(e.target.value)}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500 font-mono"
+              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
             >
               <option value="desc">Newest Recorded</option>
               <option value="asc">Chronological</option>
@@ -447,24 +568,40 @@ export default function EventFeed() {
         {/* Left Column: Events Feed (7 cols) */}
         <div className="lg:col-span-7 flex flex-col gap-3">
           <div className="flex items-center justify-between border-b border-line pb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-700">
-              Recorded Incident List ({events.length})
-            </span>
+            <div className="flex items-center gap-2.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-700">
+                Recorded Incident List ({displayedEvents.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => setGroupSimilar(!groupSimilar)}
+                className={`text-[10px] font-bold px-2 py-0.5 border cursor-pointer transition-colors ${
+                  groupSimilar
+                    ? 'border-neutral-900 bg-neutral-900 text-white'
+                    : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100'
+                }`}
+                title="Group repeated frame detections within 2 seconds into distinct incidents"
+              >
+                {groupSimilar ? '✓ Grouped Incidents' : 'Raw Detections'}
+              </button>
+            </div>
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 disabled={offset === 0 || loading}
                 onClick={() => setOffset(Math.max(0, offset - limit))}
-                className="border border-line bg-white px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed font-mono"
+                className="border border-line bg-white px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium cursor-pointer"
               >
                 Previous
               </button>
-              <span className="text-[11px] font-mono text-neutral-500">
-                Offset: {offset}
+              <span className="text-[11px] text-neutral-500">
+                Offset: <span className="font-mono tabular-nums">{offset}</span>
               </span>
               <button
+                type="button"
                 disabled={events.length < limit || loading}
                 onClick={() => setOffset(offset + limit)}
-                className="border border-line bg-white px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed font-mono"
+                className="border border-line bg-white px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium cursor-pointer"
               >
                 Next
               </button>
@@ -475,7 +612,7 @@ export default function EventFeed() {
           {loading && (
             <div className="border border-line bg-white p-8 text-center flex flex-col items-center gap-2">
               <div className="w-5 h-5 border-2 border-neutral-800 border-t-transparent animate-spin" />
-              <span className="text-xs font-mono text-neutral-600">
+              <span className="text-xs text-neutral-600">
                 Loading operational events from SQLite store...
               </span>
             </div>
@@ -489,8 +626,9 @@ export default function EventFeed() {
               </div>
               <p className="font-mono text-[11px]">{error}</p>
               <button
+                type="button"
                 onClick={fetchEvents}
-                className="self-start border border-red-400 bg-white px-3 py-1 font-mono text-xs hover:bg-red-100"
+                className="self-start border border-red-400 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-100 cursor-pointer"
               >
                 Retry Request
               </button>
@@ -510,8 +648,9 @@ export default function EventFeed() {
               </p>
               {activeFilterCount > 0 && (
                 <button
+                  type="button"
                   onClick={handleResetFilters}
-                  className="border border-neutral-800 bg-neutral-900 text-white px-3 py-1 text-xs font-mono hover:bg-neutral-800"
+                  className="border border-neutral-800 bg-neutral-900 text-white px-3 py-1 text-xs font-semibold hover:bg-neutral-800 cursor-pointer"
                 >
                   Clear Active Filters
                 </button>
@@ -520,79 +659,122 @@ export default function EventFeed() {
           )}
 
           {/* Feed List Items */}
-          {!loading && !error && events.length > 0 && (
+          {!loading && !error && displayedEvents.length > 0 && (
             <div className="flex flex-col gap-2">
-              {events.map((ev) => {
+              {displayedEvents.map((ev) => {
                 const isSelected = ev.event_id === selectedEventId
-                const title = ev.planner_recommendation?.risk_title || SCENARIO_TITLES[ev.scenario] || ev.scenario?.replace(/_/g, ' ') || 'Observed Condition'
+                const config = getScenarioConfig(ev.scenario)
+                const title = resolveIncidentTitle(ev) || config.title || 'Observed Condition'
+                const entityName = formatEntityName(ev.entity_id)
+                const explanationText = humanizeExplanation(
+                  ev.explanation || ev.planner_recommendation?.rationale || config.whyItMatters || 'Insufficient support increases tipping and stack instability risk.',
+                  ev.scenario,
+                  ev.entity_id
+                )
                 const statusCls = STATUS_STYLE[ev.status] || STATUS_STYLE.insufficient_evidence
                 const bandCls = ev.band ? (BAND_STYLE[ev.band] || BAND_STYLE.Low) : null
                 const reviewBadge = ev.reviewed && ev.review_status ? REVIEW_BADGES[ev.review_status] : null
+
+                const videoInfo = getVideoInfo(ev.video_id)
 
                 return (
                   <button
                     key={ev.event_id}
                     onClick={() => setSelectedEventId(ev.event_id)}
-                    className={`w-full text-left border bg-white p-3 transition-all flex flex-col gap-2 ${
+                    className={`w-full text-left border bg-white p-3.5 transition-all flex flex-col gap-2.5 ${
                       isSelected
                         ? 'border-neutral-900 ring-1 ring-neutral-900 bg-neutral-50/60 shadow-sm'
                         : 'border-line hover:border-neutral-400'
                     }`}
                   >
-                    {/* Top Row: Event ID, Timestamp, Badges */}
+                    {/* Top Row: Severity Badge, Camera Location, Timestamp, Status */}
                     <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-neutral-900 bg-neutral-100 px-1.5 py-0.5 border border-line text-[11px]">
-                          EVENT #{ev.event_id}
+                        {bandCls && (
+                          <span className={`border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${bandCls}`}>
+                            {ev.band} Risk
+                          </span>
+                        )}
+                        <span className="text-[11px] text-neutral-600 font-medium">
+                          {videoInfo.cameraName}
                         </span>
-                        <span className="font-mono text-[11px] text-neutral-600">
+                        <span className="font-mono text-xs font-bold text-neutral-900 tabular-nums">
                           {formatTimestamp(ev.timestamp)}
                         </span>
-                        <span className={`border px-1.5 py-0.2 text-[10px] font-bold tracking-wide ${statusCls}`}>
-                          {STATUS_LABEL[ev.status] || ev.status?.toUpperCase()}
-                        </span>
+                        {ev._clusterCount > 1 && (
+                          <span className="border border-blue-300 bg-blue-50 text-blue-800 text-[10px] font-bold uppercase px-1.5 py-0.2">
+                            {ev._clusterCount} Detections ({formatTimestamp(ev._minTimestamp)} – {formatTimestamp(ev._maxTimestamp)})
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        {bandCls && (
-                          <span className={`border px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wide ${bandCls}`}>
-                            {ev.band} Severity
+                        <span className={`border px-1.5 py-0.2 text-[10px] font-bold tracking-wide ${statusCls}`}>
+                          {STATUS_LABEL[ev.status] || ev.status?.toUpperCase()}
+                        </span>
+                        {ev.event_type === 'prevented' && (
+                          <span className="border border-emerald-500 bg-emerald-50 text-emerald-800 px-1.5 py-0.2 text-[9px] uppercase tracking-wider font-bold">
+                            PREVENTED
                           </span>
                         )}
-                        <span className="border border-line bg-neutral-100 px-1.5 py-0.2 text-[10px] font-mono uppercase text-neutral-600 font-bold">
-                          {ev.lens}
-                        </span>
-                        {reviewBadge ? (
-                          <span className={`border px-1.5 py-0.2 text-[9px] uppercase tracking-wider ${reviewBadge.style}`}>
-                            {reviewBadge.label}
-                          </span>
-                        ) : (
-                          <span className="border border-neutral-300 bg-neutral-100 text-neutral-500 px-1.5 py-0.2 text-[9px] uppercase tracking-wider font-mono">
-                            UNREVIEWED
+                        {ev.event_type === 'near_miss' && (
+                          <span className="border border-amber-500 bg-amber-50 text-amber-800 px-1.5 py-0.2 text-[9px] uppercase tracking-wider font-bold">
+                            NEAR-MISS
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* Middle Row: Human-Readable Scenario Title */}
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-xs font-bold text-neutral-900 leading-snug">
-                        {title}
-                      </span>
-                      <span className="text-[10px] font-mono text-neutral-500 truncate">
-                        Source: {getVideoName(ev.video_id)}
-                      </span>
+                    {/* Middle Row: Plain-English Incident Title & Explanation */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-neutral-950 leading-snug">
+                          "{title}"
+                        </h3>
+                        {entityName && (
+                          <span className="text-[10px] text-neutral-500 font-mono">
+                            Target: <strong className="text-neutral-700">{entityName}</strong>
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-neutral-700 leading-relaxed font-sans">
+                        <strong>Why it matters:</strong> {explanationText}
+                      </p>
                     </div>
 
-                    {/* Bottom Row: Recommended Safe Action Preview if available */}
-                    {ev.planner_recommendation?.action && (
-                      <div className="border-l-2 border-emerald-500 bg-emerald-50/40 p-1.5 text-[11px] text-emerald-950 font-medium">
-                        <span className="font-bold text-emerald-800 text-[10px] uppercase tracking-wider mr-1">
-                          Safe Action:
-                        </span>
-                        {ev.planner_recommendation.action}
+                    {/* Recommended Action Card */}
+                    {(ev.planner_recommendation?.action || ev.recommended_action || config.recommendedAction) && (
+                      <div className="border-l-2 border-emerald-500 bg-emerald-50/50 p-2 text-xs text-emerald-950">
+                        <strong className="text-emerald-900 text-[10px] uppercase block mb-0.5 font-bold">Recommended Action:</strong>
+                        {ev.planner_recommendation?.action || ev.recommended_action || config.recommendedAction}
                       </div>
                     )}
+
+                    {/* Bottom Action Row: Scenario Title & View Incident CTA */}
+                    <div className="flex items-center justify-between border-t border-line/60 pt-2 mt-0.5 text-xs">
+                      <span className="text-[10px] text-neutral-500 font-medium">
+                        {videoInfo.scenarioTitle}
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleReplayIncident(ev)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.stopPropagation()
+                            handleReplayIncident(ev)
+                          }
+                        }}
+                        className="border border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800 px-3 py-1 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+                        title={`View incident in replay context`}
+                      >
+                        <span>View Incident</span>
+                        <span>→</span>
+                      </span>
+                    </div>
                   </button>
                 )
               })}
@@ -618,7 +800,7 @@ export default function EventFeed() {
             {detailLoading && (
               <div className="p-8 text-center flex flex-col items-center gap-2">
                 <div className="w-4 h-4 border-2 border-neutral-800 border-t-transparent animate-spin" />
-                <span className="text-xs font-mono text-neutral-600">
+                <span className="text-xs text-neutral-600">
                   Retrieving event #{selectedEventId}...
                 </span>
               </div>
@@ -643,8 +825,28 @@ export default function EventFeed() {
             {!detailLoading && !detailError && selectedEvent && (
               <div className="p-4 flex flex-col gap-4 text-xs">
                 {/* Archived Warning Callout */}
-                <div className="border-l-2 border-neutral-400 bg-neutral-100 p-2 text-[11px] text-neutral-700 leading-relaxed font-mono">
-                  <strong>ARCHIVED RECORD:</strong> This finding and recommendation were preserved at snapshot timestamp {formatTimestamp(selectedEvent.timestamp)}.
+                <div className="border-l-2 border-neutral-400 bg-neutral-100 p-2 text-[11px] text-neutral-700 leading-relaxed">
+                  <strong>ARCHIVED RECORD:</strong> This finding and recommendation were preserved at snapshot timestamp <span className="font-mono">{formatTimestamp(selectedEvent.timestamp)}</span>.
+                </div>
+
+                {/* Primary Action Banner: Replay incident */}
+                <div className="flex items-center justify-between bg-neutral-900 text-white p-3 shadow-xs border border-neutral-800">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[10px] uppercase tracking-wider text-neutral-400">
+                      Investigate in Video Context
+                    </span>
+                    <span className="text-xs font-bold text-white">
+                      {selectedEvent.video_id ? getVideoName(selectedEvent.video_id) : 'Source Video'} @ <span className="font-mono">{formatTimestamp(selectedEvent.timestamp)}</span>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleReplayIncident(selectedEvent)}
+                    className="bg-white text-neutral-950 hover:bg-neutral-100 font-bold px-3 py-1.5 text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                  >
+                    <span>Replay incident</span>
+                    <span className="text-[10px]">▶</span>
+                  </button>
                 </div>
 
                 {/* Event Identification */}
@@ -653,12 +855,12 @@ export default function EventFeed() {
                     <span className={`border px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${STATUS_STYLE[selectedEvent.status] || STATUS_STYLE.insufficient_evidence}`}>
                       {STATUS_LABEL[selectedEvent.status] || selectedEvent.status?.toUpperCase()}
                     </span>
-                    <span className="border border-line bg-neutral-100 px-1.5 py-0.5 text-[10px] font-mono font-bold uppercase text-neutral-700">
+                    <span className="border border-line bg-neutral-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-neutral-700">
                       {selectedEvent.lens}
                     </span>
                     {selectedEvent.confidence && (
-                      <span className="font-mono text-[10px] text-neutral-600">
-                        CONF: {selectedEvent.confidence}
+                      <span className="text-[10px] text-neutral-600">
+                        CONF: <span className="font-mono tabular-nums">{formatConfidence(selectedEvent.confidence)}</span>
                       </span>
                     )}
                     {selectedEvent.band && (
@@ -666,16 +868,26 @@ export default function EventFeed() {
                         {selectedEvent.band} Risk
                       </span>
                     )}
+                    {selectedEvent.event_type === 'prevented' && (
+                      <span className="border border-emerald-500 bg-emerald-50 text-emerald-800 px-1.5 py-0.5 text-[10px] font-bold uppercase">
+                        PREVENTED
+                      </span>
+                    )}
+                    {selectedEvent.event_type === 'near_miss' && (
+                      <span className="border border-amber-500 bg-amber-50 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold uppercase">
+                        NEAR-MISS
+                      </span>
+                    )}
                   </div>
 
                   <h2 className="text-sm font-bold text-neutral-900 leading-snug">
-                    {selectedEvent.planner_recommendation?.risk_title || SCENARIO_TITLES[selectedEvent.scenario] || selectedEvent.scenario?.replace(/_/g, ' ')}
+                    {resolveIncidentTitle(selectedEvent)}
                   </h2>
 
-                  <div className="text-[11px] font-mono text-neutral-600 flex flex-col gap-0.5 border-t border-line pt-2">
+                  <div className="text-[11px] text-neutral-600 flex flex-col gap-0.5 border-t border-line pt-2">
                     <div>Video: <span className="text-neutral-900 font-semibold">{getVideoName(selectedEvent.video_id)}</span></div>
-                    <div>Timestamp: <span className="text-neutral-900 font-semibold">{formatTimestamp(selectedEvent.timestamp)} ({selectedEvent.timestamp}s)</span></div>
-                    <div>Entities: <span className="text-neutral-900">{selectedEvent.entity_id || 'Global Scene'}</span></div>
+                    <div>Timestamp: <span className="text-neutral-900 font-semibold"><span className="font-mono">{formatTimestamp(selectedEvent.timestamp)}</span> ({typeof selectedEvent.timestamp === 'number' ? selectedEvent.timestamp.toFixed(1) : selectedEvent.timestamp}s)</span></div>
+                    <div>Entities: <span className="text-neutral-900 font-semibold">{formatEntityName(selectedEvent.entity_id) || 'Global Scene'}</span></div>
                   </div>
                 </div>
 
@@ -685,8 +897,8 @@ export default function EventFeed() {
                     <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
                       1. What TRACE Observed
                     </span>
-                    <p className="text-neutral-800 leading-relaxed bg-paper p-2 border border-line">
-                      {selectedEvent.explanation}
+                    <p className="text-neutral-800 leading-relaxed bg-paper p-2 border border-line font-sans">
+                      {humanizeExplanation(selectedEvent.explanation, selectedEvent.scenario, selectedEvent.entity_id)}
                     </p>
                   </div>
                 )}
@@ -697,7 +909,7 @@ export default function EventFeed() {
                     <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 flex items-center justify-between">
                       <span>2. Recommended Safe Action</span>
                       {selectedEvent.planner_recommendation.what_if_eligible && (
-                        <span className="border border-emerald-300 bg-emerald-50 text-emerald-800 text-[9px] px-1.5 py-0.2">
+                        <span className="border border-emerald-300 bg-emerald-50 text-emerald-800 text-[9px] px-1.5 py-0.2 font-semibold">
                           WHAT-IF ELIGIBLE
                         </span>
                       )}
@@ -735,7 +947,7 @@ export default function EventFeed() {
                         {REVIEW_BADGES[selectedEvent.review_status]?.label}
                       </span>
                     ) : (
-                      <span className="text-[10px] font-mono text-neutral-500">
+                      <span className="text-[10px] text-neutral-500 font-medium">
                         Status: Unreviewed
                       </span>
                     )}
@@ -747,7 +959,7 @@ export default function EventFeed() {
 
                   {reviewMessage && (
                     <div
-                      className={`p-2 text-xs font-mono border ${
+                      className={`p-2 text-xs border ${
                         reviewMessage.type === 'success'
                           ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
                           : 'border-red-300 bg-red-50 text-red-800'
@@ -763,29 +975,32 @@ export default function EventFeed() {
                       placeholder="Optional supervisor review note..."
                       value={reviewNotes}
                       onChange={(e) => setReviewNotes(e.target.value)}
-                      className="border border-line bg-white px-2 py-1 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-neutral-500 font-mono"
+                      className="border border-line bg-white px-2 py-1 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-neutral-500"
                     />
                   </div>
 
                   <div className="grid grid-cols-3 gap-1.5 pt-1">
                     <button
+                      type="button"
                       disabled={reviewLoading}
                       onClick={() => handleReviewSubmit('confirmed_damage')}
-                      className="border border-red-300 bg-white hover:bg-red-50 text-red-800 py-1.5 px-2 text-[10px] font-bold uppercase disabled:opacity-50"
+                      className="border border-red-300 bg-white hover:bg-red-50 text-red-800 py-1.5 px-2 text-[10px] font-bold uppercase disabled:opacity-50 cursor-pointer"
                     >
                       Confirmed Damage
                     </button>
                     <button
+                      type="button"
                       disabled={reviewLoading}
                       onClick={() => handleReviewSubmit('false_positive')}
-                      className="border border-sky-300 bg-white hover:bg-sky-50 text-sky-800 py-1.5 px-2 text-[10px] font-bold uppercase disabled:opacity-50"
+                      className="border border-sky-300 bg-white hover:bg-sky-50 text-sky-800 py-1.5 px-2 text-[10px] font-bold uppercase disabled:opacity-50 cursor-pointer"
                     >
                       False Positive
                     </button>
                     <button
+                      type="button"
                       disabled={reviewLoading}
                       onClick={() => handleReviewSubmit('unresolved')}
-                      className="border border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-700 py-1.5 px-2 text-[10px] font-bold uppercase disabled:opacity-50"
+                      className="border border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-700 py-1.5 px-2 text-[10px] font-bold uppercase disabled:opacity-50 cursor-pointer"
                     >
                       Unresolved
                     </button>
@@ -795,8 +1010,9 @@ export default function EventFeed() {
                 {/* 4. Progressive Disclosure: Technical Evidence & Limitations */}
                 <div className="border-t border-line pt-2">
                   <button
+                    type="button"
                     onClick={() => setShowTechnical(!showTechnical)}
-                    className="text-[11px] font-mono text-neutral-600 hover:text-neutral-900 underline flex items-center gap-1"
+                    className="text-[11px] text-neutral-600 hover:text-neutral-900 underline flex items-center gap-1 cursor-pointer"
                   >
                     <span>{showTechnical ? '▲ Hide Technical Evidence & Limitations' : '▼ View Technical Evidence & Limitations'}</span>
                   </button>
@@ -809,13 +1025,13 @@ export default function EventFeed() {
                           <span className="font-bold text-neutral-700 uppercase text-[10px]">
                             Sensor / Geometric Evidence
                           </span>
-                          <div className="grid grid-cols-2 gap-1 font-mono text-[10px] bg-white p-2 border border-line">
+                          <div className="flex flex-col gap-1.5 font-mono text-[10px] bg-white p-2.5 border border-line">
                             {Object.entries(selectedEvent.evidence).map(([k, v]) => {
                               const item = formatEvidenceItem(k, v)
                               return (
-                                <div key={k} className="flex justify-between border-b border-line/60 pb-0.5">
-                                  <span className="text-neutral-500 capitalize">{item.label}:</span>
-                                  <span className="text-neutral-900 font-semibold">{item.text}</span>
+                                <div key={k} className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line/40 pb-1 last:border-b-0">
+                                  <span className="text-neutral-500 capitalize font-sans">{item.label}:</span>
+                                  <span className="text-neutral-900 font-semibold break-all text-right">{item.text}</span>
                                 </div>
                               )
                             })}
@@ -829,7 +1045,7 @@ export default function EventFeed() {
                           <span className="font-bold text-neutral-700 uppercase text-[10px]">
                             Known Sensor & Camera Limitations
                           </span>
-                          <ul className="list-disc list-inside text-neutral-600 text-[10px] font-mono">
+                          <ul className="list-disc list-inside text-neutral-600 text-[10px]">
                             {selectedEvent.limitations.map((lim, idx) => (
                               <li key={idx}>{lim.replace(/_/g, ' ')}</li>
                             ))}

@@ -24,8 +24,36 @@ export function LiveViewProvider({ children }) {
     modelName: 'pilot',
   })
 
+  const [activeScreen, setActiveScreen] = useState('Dashboard')
+  const [replayTarget, setReplayTarget] = useState(null)
+
+  const SCREEN_ALIASES = {
+    'Safe Action Planner': 'Action Center',
+    'Event Feed': 'Incidents',
+    'What-If Replay': 'What-If Simulation',
+    'What-If': 'What-If Simulation',
+  }
+
+  const navigateTo = (screen, target = null) => {
+    if (target !== undefined && target !== null) {
+      setReplayTarget(target)
+    }
+    const normalized = SCREEN_ALIASES[screen] || screen
+    setActiveScreen(normalized)
+  }
+
   return (
-    <LiveViewContext.Provider value={{ liveState, setLiveState }}>
+    <LiveViewContext.Provider
+      value={{
+        liveState,
+        setLiveState,
+        activeScreen,
+        setActiveScreen,
+        replayTarget,
+        setReplayTarget,
+        navigateTo,
+      }}
+    >
       {children}
     </LiveViewContext.Provider>
   )

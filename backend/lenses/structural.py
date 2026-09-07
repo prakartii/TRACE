@@ -19,9 +19,11 @@ from __future__ import annotations
 
 from backend.contracts.models import (
     EntityClass,
+    EpistemicLevel,
     EventType,
     MassClass,
     ProductMetadata,
+    RiskBand,
     RiskEvent,
     RiskLens,
     SceneGraphEdgeType,
@@ -84,6 +86,8 @@ def evaluate_structural(
 
         overlap_ratio = edge.evidence.get("horizontal_overlap_ratio", 1.0)
         scenario = "image_space_support_hypothesis"
+        epistemic_level = EpistemicLevel.OBSERVED
+        band = RiskBand.LOW
         explanation = (
             f"{supported.entity_class.value} appears, in 2D image space, to rest on "
             f"{supporter.entity_class.value} (vertical_gap="
@@ -103,6 +107,8 @@ def evaluate_structural(
                 suppd_rank = mass_order.get(supported_meta.mass_class, 0)
                 if suppd_rank > supp_rank:
                     scenario = "heavy_on_light_stacking"
+                    epistemic_level = EpistemicLevel.INFERRED
+                    band = RiskBand.HIGH
                     explanation = (
                         f"Heavy item '{supported.product_id}' ({supported_meta.mass_class.value}) rests on "
                         f"lighter item '{supporter.product_id}' ({supporter_meta.mass_class.value}). "
@@ -113,6 +119,8 @@ def evaluate_structural(
         if scenario == "image_space_support_hypothesis" and supported.entity_class == EntityClass.BOX and supporter.entity_class in (EntityClass.PALLET, EntityClass.BOX):
             if overlap_ratio < 0.50:
                 scenario = "unsupported_bending_placement"
+                epistemic_level = EpistemicLevel.INFERRED
+                band = RiskBand.HIGH
                 explanation = (
                     f"Box has only {overlap_ratio:.0%} horizontal support on {supporter.entity_class.value} "
                     "(greater than 50% overhang), leaving the span unsupported and subject to excessive bending and tipping. "
@@ -120,6 +128,8 @@ def evaluate_structural(
                 )
             elif overlap_ratio < 0.75:
                 scenario = "pallet_overhang" if supporter.entity_class == EntityClass.PALLET else "box_overhang"
+                epistemic_level = EpistemicLevel.INFERRED
+                band = RiskBand.MEDIUM
                 explanation = (
                     f"Box has significant base overhang past {supporter.entity_class.value} support "
                     f"({overlap_ratio:.0%} horizontal overlap ratio). Base overhang creates eccentric loading and tipping risk. "
@@ -127,6 +137,8 @@ def evaluate_structural(
                 )
         elif scenario == "image_space_support_hypothesis" and supported.entity_class == EntityClass.PERSON and supporter.entity_class == EntityClass.BOX:
             scenario = "stepping_on_carton"
+            epistemic_level = EpistemicLevel.INFERRED
+            band = RiskBand.HIGH
             explanation = (
                 f"Worker appears, in 2D image space, to rest on box (vertical_gap="
                 f"{edge.evidence.get('vertical_gap')}, horizontal_overlap_ratio="
@@ -143,6 +155,7 @@ def evaluate_structural(
                 entity_id=supported.entity_id,
                 confidence=confidence,
                 status=status,
+                band=band,
                 scenario=scenario,
                 entities=[supporter.entity_id, supported.entity_id],
                 evidence={
@@ -154,6 +167,7 @@ def evaluate_structural(
                 explanation=explanation,
                 recommended_action=recommended_action(scenario, status),
                 limitations=["image_space_only", "no_depth_or_calibration"],
+                epistemic_level=epistemic_level,
             )
         )
 

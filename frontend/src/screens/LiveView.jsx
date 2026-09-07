@@ -24,10 +24,10 @@ export default function LiveView() {
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
 
-  const [overlayEnabled, setOverlayEnabled] = useState(false)
+  const [overlayEnabled, setOverlayEnabled] = useState(true)
   const [sceneEnabled, setSceneEnabled] = useState(false)
-  const [findingsEnabled, setFindingsEnabled] = useState(false)
-  const [pilotModelEnabled, setPilotModelEnabled] = useState(false)
+  const [findingsEnabled, setFindingsEnabled] = useState(true)
+  const [pilotModelEnabled, setPilotModelEnabled] = useState(true)
   const [samplingPolicy, setSamplingPolicy] = useState(null)
   const [videoBoxSize, setVideoBoxSize] = useState({ width: 0, height: 0 })
   const [showMethodologyNotes, setShowMethodologyNotes] = useState(false)
@@ -82,7 +82,7 @@ export default function LiveView() {
     setWhatIfLoading(true)
     setWhatIfError(null)
     try {
-      const sim = await getWhatIf(selectedId, currentTime, finding.scenario, null, modelName)
+      const sim = await getWhatIf(selectedId, currentTime, finding.scenario, null, modelName, finding.entity_id)
       setWhatIfSimulation(sim)
       setSelectedCandidateId(sim.alternatives?.[0]?.id || null)
     } catch (err) {
@@ -364,7 +364,7 @@ export default function LiveView() {
             <button
               type="button"
               onClick={() => setShowMethodologyNotes(!showMethodologyNotes)}
-              className="text-[10px] font-mono text-neutral-500 hover:text-ink flex items-center gap-1 cursor-pointer"
+              className="text-[10px] text-neutral-500 hover:text-ink flex items-center gap-1 cursor-pointer"
             >
               <span>{showMethodologyNotes ? '▼' : '▶'}</span>
               <span>{showMethodologyNotes ? 'Hide technical calibration & methodology notes' : 'View technical calibration & methodology notes'}</span>

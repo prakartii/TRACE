@@ -19,12 +19,15 @@ from enum import Enum
 
 from backend.contracts.models import (
     ConfidenceLevel,
+    EpistemicLevel,
     EventType,
     FindingStatus,
+    RiskBand,
     RiskEvent,
     RiskLens,
     SceneGraphNode,
 )
+from backend.planner.actions import recommended_action
 from backend.world_model.geometry import point_in_polygon
 
 
@@ -66,6 +69,10 @@ def evaluate_environmental(
         for zone in zones:
             if not point_in_polygon(node.position, zone.polygon):
                 continue
+            scen = f"entity_in_{zone.zone_type.value}_zone"
+            status = FindingStatus.SUPPORTED
+            band = RiskBand.HIGH if zone.zone_type == ZoneType.DOCK_EDGE else RiskBand.MEDIUM
+            action = recommended_action(scen, status)
             findings.append(
                 RiskEvent(
                     timestamp=timestamp,
@@ -73,17 +80,24 @@ def evaluate_environmental(
                     lens=RiskLens.ENVIRONMENTAL,
                     entity_id=node.entity_id,
                     confidence=ConfidenceLevel.HIGH,  # geometry, not detection
-                    status=FindingStatus.SUPPORTED,
-                    scenario=f"entity_in_{zone.zone_type.value}_zone",
+                    status=status,
+                    band=band,
+                    scenario=scen,
                     entities=[node.entity_id],
-                    evidence={"zone_id": zone.zone_id, "zone_type": zone.zone_type.value},
+                    evidence={
+                        "zone_id": zone.zone_id,
+                        "zone_type": zone.zone_type.value,
+                        "severity_multiplier": zone.severity_multiplier,
+                        "position": list(node.position),
+                    },
                     explanation=(
                         f"{node.entity_class.value} is inside manually configured zone "
                         f"'{zone.zone_id}' ({zone.zone_type.value}). This zone is operator-"
                         "calibrated, not automatically detected from video."
                     ),
-                    recommended_action=None,
+                    recommended_action=action,
                     limitations=["zone_is_manually_calibrated_not_perceived"],
+                    epistemic_level=EpistemicLevel.OBSERVED,
                 )
             )
     return findings

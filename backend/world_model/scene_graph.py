@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from backend.contracts.models import (
     Entity,
+    EntityClass,
     SceneGraphEdge,
     SceneGraphEdgeType,
     SceneGraphNode,
@@ -35,9 +36,11 @@ from backend.world_model.config import DEFAULT_CONFIG, WorldModelConfig
 from backend.world_model.geometry import (
     bbox_center,
     bbox_is_degenerate,
+    cantilever_overhang_metrics,
     euclidean_distance,
     horizontal_overlap_ratio,
     intersection_over_union,
+    is_ground_plane_aligned,
     normalize_bbox,
 )
 
@@ -91,11 +94,31 @@ def _evaluate_support(
     if abs(vertical_gap) > config.support_max_vertical_gap:
         return None
 
+    # Perspective sanity check: if both boxes have bottom edges (y2) resting at the same
+    # ground plane tier, one is merely in front of the other in camera perspective, not stacked.
+    # We only apply this when supporter and supported are boxes/pallets (not worker stepping).
+    if (
+        supporter.entity_class != EntityClass.PERSON
+        and supported.entity_class != EntityClass.PERSON
+        and is_ground_plane_aligned(supporter_box, supported_box, threshold=0.03)
+    ):
+        return None
+
     overlap_ratio = horizontal_overlap_ratio(supporter_box, supported_box)
     if overlap_ratio < config.support_min_horizontal_overlap:
         return None
 
-    return {"vertical_gap": vertical_gap, "horizontal_overlap_ratio": overlap_ratio}
+    overhang_data = cantilever_overhang_metrics(supporter_box, supported_box)
+
+    return {
+        "vertical_gap": vertical_gap,
+        "horizontal_overlap_ratio": overlap_ratio,
+        "overhang_ratio": overhang_data["overhang_ratio"],
+        "max_cantilever": overhang_data["max_cantilever"],
+        "left_overhang": overhang_data["left_overhang"],
+        "right_overhang": overhang_data["right_overhang"],
+        "is_centered": overhang_data["is_centered"],
+    }
 
 
 class WorldModel:
@@ -187,12 +210,13 @@ class WorldModel:
         iou = intersection_over_union(first.footprint, second.footprint)
         if iou < self._config.contact_iou_threshold:
             return None
+        h_overlap = horizontal_overlap_ratio(first.footprint, second.footprint)
         return SceneGraphEdge(
             source_id=first.entity_id,
             target_id=second.entity_id,
             edge_type=SceneGraphEdgeType.CONTACT,
             weight=max(0.0, min(1.0, iou)),
-            evidence={"iou": iou},
+            evidence={"iou": iou, "horizontal_overlap": h_overlap},
         )
 
     def _support_edge(

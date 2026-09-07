@@ -143,7 +143,13 @@ class VideoRegistry:
 
     def get(self, video_id: str) -> Optional[VideoRecord]:
         self._ensure_scanned()
-        return self._records.get(video_id)
+        rec = self._records.get(video_id)
+        if rec is not None:
+            return rec
+        for r in self._records.values():
+            if r.filename == video_id:
+                return r
+        return None
 
     def open_source(self, video_id: str) -> LocalMP4VideoSource:
         record = self.get(video_id)

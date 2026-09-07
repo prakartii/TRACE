@@ -392,14 +392,14 @@ export default function SupervisorSettings() {
                         {z.zone_type}
                       </span>
                     </div>
-                    <p className="mt-1 text-[11px] text-neutral-500 font-mono">
-                      Polygon Vertices ({z.polygon.length} points):{' '}
-                      {JSON.stringify(z.polygon.map(([x, y]) => [Number(x.toFixed(2)), Number(y.toFixed(2))]))}
+                    <p className="mt-1 text-[11px] text-neutral-500">
+                      Polygon Vertices (<span className="font-mono tabular-nums">{z.polygon.length}</span> points):{' '}
+                      <span className="font-mono text-[10px]">{JSON.stringify(z.polygon.map(([x, y]) => [Number(x.toFixed(2)), Number(y.toFixed(2))]))}</span>
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-mono font-semibold text-neutral-700">
-                      Severity: {z.severity_multiplier}x
+                    <span className="text-xs font-semibold text-neutral-700">
+                      Severity: <span className="font-mono tabular-nums">{z.severity_multiplier}x</span>
                     </span>
                     {deleteConfirmZoneId === z.zone_id ? (
                       <div className="inline-flex items-center gap-1.5">

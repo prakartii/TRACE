@@ -94,3 +94,47 @@ def horizontal_overlap_ratio(a: BoundingBox, b: BoundingBox) -> float:
     if narrower <= 0.0:
         return 0.0
     return overlap / narrower
+
+
+def vertical_overlap_ratio(a: BoundingBox, b: BoundingBox) -> float:
+    """Vertical overlap as a fraction of the shorter box's height. 0.0
+    if the boxes don't overlap vertically at all."""
+    overlap = min(a.y2, b.y2) - max(a.y1, b.y1)
+    if overlap <= 0.0:
+        return 0.0
+    h_a = a.y2 - a.y1
+    h_b = b.y2 - b.y1
+    shorter = min(h_a, h_b)
+    if shorter <= 0.0:
+        return 0.0
+    return overlap / shorter
+
+
+def cantilever_overhang_metrics(supporter: BoundingBox, supported: BoundingBox) -> dict[str, float]:
+    """Computes exact 2D cantilever overhang ratios relative to the supported box width.
+    Distinguishes centered stacking from eccentric overhangs on the left or right edges."""
+    supported_w = max(1e-6, supported.x2 - supported.x1)
+    overlap = max(0.0, min(supporter.x2, supported.x2) - max(supporter.x1, supported.x1))
+    overlap_ratio = min(1.0, overlap / supported_w)
+
+    left_overhang = max(0.0, supporter.x1 - supported.x1) / supported_w
+    right_overhang = max(0.0, supported.x2 - supporter.x2) / supported_w
+    max_cantilever = max(left_overhang, right_overhang)
+
+    is_centered = abs(left_overhang - right_overhang) < 0.10
+
+    return {
+        "horizontal_overlap_ratio": overlap_ratio,
+        "overhang_ratio": max(0.0, 1.0 - overlap_ratio),
+        "max_cantilever": max_cantilever,
+        "left_overhang": left_overhang,
+        "right_overhang": right_overhang,
+        "is_centered": 1.0 if is_centered else 0.0,
+    }
+
+
+def is_ground_plane_aligned(a: BoundingBox, b: BoundingBox, threshold: float = 0.04) -> bool:
+    """Returns True if both boxes have bottom edges (y2) resting at the same ground tier
+    in perspective (lower half of the frame). Distinguishes true vertical stacking from
+    two objects co-located on the warehouse floor whose 2D boxes overlap in camera perspective."""
+    return abs(a.y2 - b.y2) <= threshold and min(a.y2, b.y2) >= 0.45
