@@ -29,6 +29,7 @@ from backend.contracts.models import (
     SceneGraphSnapshot,
 )
 from backend.main import app
+from backend.planner.stability import risk_band_from_stability
 from backend.planner.whatif import (
     evaluate_trajectory_point,
     run_what_if_trajectory,
@@ -105,8 +106,11 @@ def test_evaluate_trajectory_point_missing_entity_fallback():
     snap = SceneGraphSnapshot(timestamp=2.5, nodes=[], edges=[])
     pt = evaluate_trajectory_point(snap, "non_existent")
     assert pt.timestamp == 2.5
+    # Non-evidential baseline: the requested track was not in this frame.
     assert pt.stability_score == 50.0
-    assert pt.band == RiskBand.MEDIUM
+    assert pt.evidence == "target_absent"
+    # Band is derived from the single shared stability->band mapping.
+    assert pt.band == risk_band_from_stability(50.0)
 
 
 # ---------------------------------------------------------------------------
@@ -138,12 +142,15 @@ def test_whatif_trajectory_unknown_video():
     res = run_what_if_trajectory(
         video_id="unknown_video",
         timestamp=2.0,
+        scenario="box_overhang",  # eligible, so the video lookup is reached
+        entity_id="box_1",
         registry=FakeVideoRegistry(),
         pipelines={},
         world_model=wm,
     )
     assert res.simulation_available is False
     assert "Unknown video" in (res.simulation_notice or "")
+    assert "video_not_found" in res.limitations
 
 
 def test_whatif_trajectory_worker_entity_refusal():
