@@ -15,7 +15,7 @@ import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
 
 export default function LiveView() {
-  const { setLiveState } = useLiveViewContext()
+  const { setLiveState, navigateTo } = useLiveViewContext()
 
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -391,6 +391,9 @@ export default function LiveView() {
             selectedCandidateId={selectedCandidateId}
             onSelectCandidate={setSelectedCandidateId}
             onClose={() => setWhatIfSimulation(null)}
+            onOpenReplay={() =>
+              navigateTo('What-If Simulation', { videoId: selectedId, timestamp: currentTime })
+            }
           />
         )}
 

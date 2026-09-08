@@ -59,6 +59,7 @@ export default function WhatIfPanel({
   selectedCandidateId,
   onSelectCandidate,
   onClose,
+  onOpenReplay,
 }) {
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false)
 
@@ -108,6 +109,15 @@ export default function WhatIfPanel({
           <p className="mt-2 text-caption text-ink-faint">
             <span className="font-medium text-ink">operational basis:</span> {simulation.limitations.join('; ')}
           </p>
+        )}
+        {onOpenReplay && (
+          <button
+            type="button"
+            onClick={onOpenReplay}
+            className="mt-3 inline-flex items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
+          >
+            open the full What-If Replay for a recorded incident →
+          </button>
         )}
       </div>
     )
