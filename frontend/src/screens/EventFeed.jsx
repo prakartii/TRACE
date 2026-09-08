@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { listEvents, getEvent, submitReview } from '../api/events.js'
+import { getActionPlan } from '../api/actions.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle } from '../lib/scenarios.js'
@@ -101,9 +102,10 @@ export default function EventFeed() {
   const [offset, setOffset] = useState(0)
   const limit = 25
 
-  // Selected event & detail
+  // Selected event & Safe Action Plan
   const [selectedEventId, setSelectedEventId] = useState(null)
   const [selectedEvent, setSelectedEvent] = useState(null)
+  const [actionPlan, setActionPlan] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(null)
 
@@ -211,6 +213,7 @@ export default function EventFeed() {
         }
       } else {
         setSelectedEvent(null)
+        setActionPlan(null)
         setSelectedEventId(null)
       }
     } catch (err) {
@@ -224,10 +227,11 @@ export default function EventFeed() {
     fetchEvents()
   }, [fetchEvents])
 
-  // Load single event detail when selectedEventId changes
+  // Load single event detail & Safe Action Plan when selectedEventId changes
   useEffect(() => {
     if (!selectedEventId) {
       setSelectedEvent(null)
+      setActionPlan(null)
       return
     }
     let active = true
@@ -235,14 +239,22 @@ export default function EventFeed() {
     setDetailError(null)
     setReviewMessage(null)
 
-    getEvent(selectedEventId)
-      .then((data) => {
+    // Parallel fetch: Event entity + Safe Action Plan
+    Promise.all([
+      getEvent(selectedEventId),
+      getActionPlan(selectedEventId).catch((err) => {
+        console.warn('Action plan API error, using event-derived plan:', err)
+        return null
+      }),
+    ])
+      .then(([evData, planData]) => {
         if (active) {
-          setSelectedEvent(data)
+          setSelectedEvent(evData)
+          setActionPlan(planData)
         }
       })
       .catch((err) => {
-        if (active) setDetailError(err.message || 'Failed to load event detail.')
+        if (active) setDetailError(err.message || 'Failed to load incident detail.')
       })
       .finally(() => {
         if (active) setDetailLoading(false)
@@ -344,7 +356,7 @@ export default function EventFeed() {
               className="px-2.5 py-1 text-xs font-semibold bg-white border border-amber-300 text-amber-900 hover:bg-amber-50 shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <span>📦 Event #73</span>
-              <span className="text-[11px] text-amber-700 font-normal">· Overhang &amp; What-If</span>
+              <span className="text-[11px] text-amber-700 font-normal">· Overhang &amp; Safe Action</span>
             </button>
             <button
               type="button"
@@ -414,7 +426,7 @@ export default function EventFeed() {
             </select>
           </div>
 
-          {/* Evidence Status (formerly Epistemic Status) */}
+          {/* Evidence Status */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase text-neutral-500">Evidence Status</label>
             <select
@@ -510,7 +522,7 @@ export default function EventFeed() {
         </div>
       </div>
 
-      {/* 3. Main Workspace: Primary Recorded Incident List & Incident Evidence Drawer */}
+      {/* 3. Main Workspace: Primary Recorded Incident List & Safe Action Planner Drawer */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Recorded Incidents (Primary Focus, 7 cols) */}
         <div className="lg:col-span-7 flex flex-col gap-3">
@@ -684,7 +696,7 @@ export default function EventFeed() {
                       <p>{explanationText}</p>
                     </div>
 
-                    {/* 4. ACTION */}
+                    {/* 4. ACTION (Immediate Action) */}
                     {action && (
                       <div className="text-xs text-emerald-950 bg-emerald-50/60 border border-emerald-200/80 p-2.5 leading-relaxed">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block mb-0.5">
@@ -694,7 +706,7 @@ export default function EventFeed() {
                       </div>
                     )}
 
-                    {/* 5. Bottom row: View evidence & Replay */}
+                    {/* 5. Bottom row: View Safe Action & Replay */}
                     <div className="flex items-center justify-between border-t border-line/60 pt-2 mt-0.5 text-xs">
                       <span className="text-[11px] text-neutral-500">
                         {videoInfo.scenarioTitle}
@@ -707,7 +719,7 @@ export default function EventFeed() {
                               : 'text-neutral-600 hover:text-neutral-950'
                           }`}
                         >
-                          <span>View evidence</span>
+                          <span>Safe action plan</span>
                           <span>→</span>
                         </span>
                         <button
@@ -731,14 +743,14 @@ export default function EventFeed() {
           )}
         </div>
 
-        {/* Right Column: Incident Evidence (Investigation Drawer, 5 cols) */}
+        {/* Right Column: FEATURE 3 — SAFE ACTION PLANNER (Investigation & Action Drawer, 5 cols) */}
         <div className="lg:col-span-5 sticky top-6">
           <div className="border border-line bg-white shadow-xs flex flex-col">
             <div className="border-b border-line p-3.5 bg-neutral-50 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                  Incident Evidence
+                <span className="text-xs font-bold uppercase tracking-wider text-neutral-900">
+                  Safe Action Plan
                 </span>
               </div>
               {selectedEvent && (
@@ -753,7 +765,7 @@ export default function EventFeed() {
               <div className="p-8 text-center flex flex-col items-center gap-2">
                 <div className="w-4 h-4 border-2 border-neutral-900 border-t-transparent animate-spin" />
                 <span className="text-xs text-neutral-600">
-                  Loading incident #{selectedEventId}...
+                  Evaluating safe action plan for incident #{selectedEventId}...
                 </span>
               </div>
             )}
@@ -769,15 +781,15 @@ export default function EventFeed() {
             {/* No Event Selected State */}
             {!detailLoading && !detailError && !selectedEvent && (
               <div className="p-8 text-center text-xs text-neutral-500 flex flex-col items-center gap-2">
-                <span>Select an incident from the list to inspect video evidence and action guidance.</span>
+                <span>Select an incident from the list to view its prioritized safe action plan and video evidence.</span>
               </div>
             )}
 
-            {/* Selected Event Details: Clean Investigation Drawer */}
+            {/* Selected Event: Grounded Safe Action Plan */}
             {!detailLoading && !detailError && selectedEvent && (
-              <div className="p-4 flex flex-col gap-4 text-xs">
-                {/* 1. Video / Replay Context Hero */}
-                <div className="bg-neutral-900 text-white p-3.5 border border-neutral-800 flex items-center justify-between gap-3 shadow-2xs">
+              <div className="p-4 flex flex-col gap-3.5 text-xs">
+                {/* 1. Video Context Hero Bar */}
+                <div className="bg-neutral-900 text-white p-3 border border-neutral-800 flex items-center justify-between gap-3 shadow-2xs">
                   <div className="flex flex-col gap-0.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
                       Video Evidence Clip
@@ -793,13 +805,14 @@ export default function EventFeed() {
                     type="button"
                     onClick={() => handleReplayIncident(selectedEvent)}
                     className="bg-white text-neutral-950 hover:bg-neutral-100 font-bold px-3 py-1.5 text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer shrink-0"
+                    title="View video replay for this incident"
                   >
                     <span>Replay</span>
                     <span className="text-[10px]">▶</span>
                   </button>
                 </div>
 
-                {/* 2. Incident Heading & Location */}
+                {/* 2. Incident Title & Risk Band */}
                 <div className="flex flex-col gap-1 pb-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${BAND_STYLE[selectedEvent.band] || BAND_STYLE.Low}`}>
@@ -820,60 +833,98 @@ export default function EventFeed() {
                     )}
                   </div>
                   <h2 className="text-base font-bold text-neutral-950 leading-snug mt-1">
-                    {resolveIncidentTitle(selectedEvent)}
+                    {actionPlan?.title || resolveIncidentTitle(selectedEvent)}
                   </h2>
                   <div className="text-xs text-neutral-500 font-medium">
                     {getVideoName(selectedEvent.video_id)} · <span className="font-mono font-bold text-neutral-700">{formatTimestamp(selectedEvent.timestamp)}</span>
                   </div>
                 </div>
 
-                {/* 3. WHAT WAS DETECTED */}
-                <div className="flex flex-col gap-1 border-t border-line pt-3">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                    WHAT WAS DETECTED
-                  </span>
-                  <p className="text-xs text-neutral-800 leading-relaxed font-sans bg-neutral-50 p-2.5 border border-line">
-                    {humanizeExplanation(selectedEvent.explanation, selectedEvent.scenario, selectedEvent.entity_id)}
-                  </p>
-                </div>
-
-                {/* 4. WHY IT MATTERS */}
+                {/* 3. WHY THIS MATTERS */}
                 <div className="flex flex-col gap-1 border-t border-line pt-3">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
-                    WHY IT MATTERS
+                    WHY:
                   </span>
                   <p className="text-xs text-neutral-800 leading-relaxed font-sans bg-amber-50/40 p-2.5 border border-amber-200/60">
-                    {selectedEvent.planner_recommendation?.rationale || getScenarioConfig(selectedEvent.scenario).whyItMatters || 'Uncorrected handling hazards directly escalate risk to personnel safety and product integrity.'}
+                    {actionPlan?.reason || selectedEvent.planner_recommendation?.rationale || getScenarioConfig(selectedEvent.scenario).whyItMatters || 'Uncorrected handling hazards directly escalate risk to personnel safety and product integrity.'}
                   </p>
                 </div>
 
-                {/* 5. RECOMMENDED ACTION */}
-                <div className="flex flex-col gap-1 border-t border-line pt-3">
+                {/* 4. DO THIS NOW (Prioritized Action Guidance) */}
+                <div className="flex flex-col gap-1.5 border-t border-line pt-3">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 flex items-center justify-between">
-                    <span>RECOMMENDED ACTION</span>
-                    {selectedEvent.planner_recommendation?.what_if_eligible && (
-                      <span className="border border-emerald-300 bg-emerald-50 text-emerald-800 text-[9px] px-1.5 py-0.2 font-semibold">
-                        WHAT-IF TESTABLE
+                    <span>DO THIS NOW</span>
+                    {selectedEvent.band === 'Critical' && (
+                      <span className="bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.2 uppercase tracking-wide">
+                        IMMEDIATE
                       </span>
                     )}
                   </span>
-                  <div className="border border-emerald-300 bg-emerald-50/70 p-3 text-xs text-emerald-950 flex flex-col gap-1.5">
-                    <span className="font-bold leading-relaxed">
-                      {selectedEvent.planner_recommendation?.action || selectedEvent.recommended_action || getScenarioConfig(selectedEvent.scenario).recommendedAction}
-                    </span>
+
+                  <div className="border border-emerald-400 bg-emerald-50/70 p-3 text-xs text-emerald-950 flex flex-col gap-2 shadow-2xs">
+                    {actionPlan?.steps && actionPlan.steps.length > 1 ? (
+                      <ol className="flex flex-col gap-1.5 list-none p-0 m-0">
+                        {actionPlan.steps.map((step, idx) => (
+                          <li key={idx} className="flex items-start gap-2 leading-relaxed">
+                            <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                              {idx + 1}
+                            </span>
+                            <span className={idx === 0 ? "font-bold text-emerald-950" : "font-medium text-emerald-900"}>
+                              {step.replace(/^\d+\.\s*/, '')}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="font-bold leading-relaxed">
+                        {actionPlan?.immediate_action || selectedEvent.planner_recommendation?.action || selectedEvent.recommended_action || getScenarioConfig(selectedEvent.scenario).recommendedAction}
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                {/* 6. Primary Replay Action Button */}
-                <div className="border-t border-line pt-3">
+                {/* 5. ✓ VERIFY */}
+                <div className="flex flex-col gap-1 border-t border-line pt-3">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
+                    <span className="text-emerald-600 font-bold">✓</span>
+                    <span>VERIFY</span>
+                  </span>
+                  <div className="bg-neutral-50 border border-line p-2.5 text-xs text-neutral-800 leading-relaxed">
+                    <p className="font-medium">
+                      {actionPlan?.verification || "Confirm the corrective action is completed before resuming work."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 6. Primary Action Buttons */}
+                <div className="border-t border-line pt-3 flex flex-col gap-2">
                   <button
                     type="button"
                     onClick={() => handleReplayIncident(selectedEvent)}
                     className="w-full border border-neutral-900 bg-neutral-900 hover:bg-neutral-800 text-white font-bold py-2.5 px-3 text-xs flex items-center justify-center gap-2 shadow-2xs transition-colors cursor-pointer"
                   >
-                    <span>Replay Incident Footage</span>
+                    <span>View Video Evidence / Replay Incident</span>
                     <span className="text-xs">▶</span>
                   </button>
+
+                  {/* What-If Simulation Option if eligible */}
+                  {(actionPlan?.what_if_eligible || selectedEvent.planner_recommendation?.what_if_eligible) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigateTo('What-If Simulation', {
+                          eventId: selectedEvent.event_id,
+                          videoId: selectedEvent.video_id,
+                          timestamp: selectedEvent.timestamp,
+                          scenario: selectedEvent.scenario,
+                          entityId: selectedEvent.entity_id,
+                        })
+                      }}
+                      className="w-full border border-emerald-600 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold py-2 px-3 text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <span>Simulate Alternative Safe Placement →</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* 7. Operator Review */}
@@ -939,14 +990,14 @@ export default function EventFeed() {
                   </div>
                 </div>
 
-                {/* 8. Collapsible Technical Details */}
+                {/* 8. Progressive Disclosure: Why This Action? / Technical Details */}
                 <div className="border-t border-line pt-2">
                   <button
                     type="button"
                     onClick={() => setShowTechnical(!showTechnical)}
                     className="text-[11px] text-neutral-600 hover:text-neutral-900 font-medium flex items-center justify-between w-full py-1 cursor-pointer"
                   >
-                    <span>Technical details</span>
+                    <span>Why this action? (Technical details)</span>
                     <span className="font-mono text-[10px]">{showTechnical ? '▲' : '▾'}</span>
                   </button>
 
@@ -954,11 +1005,16 @@ export default function EventFeed() {
                     <div className="mt-2 flex flex-col gap-2.5 bg-neutral-50 p-3 border border-line text-[11px]">
                       <div className="grid grid-cols-2 gap-2 text-[10px]">
                         <div><span className="text-neutral-500">Event ID:</span> <span className="font-mono font-bold text-neutral-800">#{selectedEvent.event_id}</span></div>
-                        <div><span className="text-neutral-500">Evidence Status:</span> <span className="font-bold text-neutral-800">{STATUS_LABEL[selectedEvent.status] || selectedEvent.status}</span></div>
-                        <div><span className="text-neutral-500">Entity:</span> <span className="font-bold text-neutral-800">{formatEntityName(selectedEvent.entity_id) || 'Global scene'}</span></div>
+                        <div><span className="text-neutral-500">Evidence Status:</span> <span className="font-bold text-neutral-800">{actionPlan?.evidence_status || STATUS_LABEL[selectedEvent.status] || selectedEvent.status}</span></div>
+                        <div><span className="text-neutral-500">Target Entity:</span> <span className="font-bold text-neutral-800">{formatEntityName(selectedEvent.entity_id) || 'Global scene'}</span></div>
                         <div><span className="text-neutral-500">Confidence:</span> <span className="font-mono font-bold text-neutral-800">{formatConfidence(selectedEvent.confidence)}</span></div>
                         <div><span className="text-neutral-500">Risk Score:</span> <span className="font-mono font-bold text-neutral-800">{formatScore(selectedEvent.risk_score)}</span></div>
                         <div><span className="text-neutral-500">Internal Scenario:</span> <span className="font-mono text-neutral-700">{selectedEvent.scenario}</span></div>
+                      </div>
+
+                      {/* Rule Source */}
+                      <div className="text-[10px] text-neutral-600 border-t border-line/60 pt-1.5">
+                        <span className="text-neutral-500">Grounded Source:</span> <span className="font-semibold text-neutral-800">{actionPlan?.source || "TRACE Operational Safety Catalog (deterministic rule)"}</span>
                       </div>
 
                       {/* Video Evidence Measurements */}

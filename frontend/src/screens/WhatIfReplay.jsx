@@ -40,7 +40,7 @@ export default function WhatIfReplay() {
   // 1. Initial Load: populate videos and recent events
   useEffect(() => {
     let active = true
-    Promise.all([listVideos(), listEvents({ limit: 40 })]).then(([vidList, evList]) => {
+    Promise.all([listVideos(), listEvents({ limit: 300 })]).then(([vidList, evList]) => {
       if (!active) return
       setVideos(vidList || [])
       setRecentEvents(evList || [])

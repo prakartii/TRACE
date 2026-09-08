@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { getEvent, listEvents, submitReview } from '../api/events.js'
 import { getEventOutcome, verifyEventOutcome } from '../api/measurement.js'
+import { getActionPlan } from '../api/actions.js'
 import { getEntities, getScene, getWhatIf, listVideos, streamUrl } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
@@ -133,6 +134,10 @@ export default function IncidentReplay() {
   const [reviewNotes, setReviewNotes] = useState('')
   const [reviewMessage, setReviewMessage] = useState(null)
 
+  // Safe Action Plan state (Feature 3)
+  const [safePlan, setSafePlan] = useState(null)
+  const [safePlanLoading, setSafePlanLoading] = useState(false)
+
   // Progressive Disclosure Accordions State
   const [showHowTraceKnows, setShowHowTraceKnows] = useState(false)
   const [showSensorLimitations, setShowSensorLimitations] = useState(false)
@@ -156,10 +161,10 @@ export default function IncidentReplay() {
     }
   }, [])
 
-  // 2. Load recent events for quick switcher
+  // 2. Load recent events for quick switcher (all events)
   useEffect(() => {
     let active = true
-    listEvents({ limit: 40, order: 'desc' })
+    listEvents({ limit: 300, order: 'desc' })
       .then((data) => {
         if (!active) return
         setRecentEvents(data || [])
@@ -274,6 +279,18 @@ export default function IncidentReplay() {
       })
       .finally(() => {
         if (active) setOutcomeLoading(false)
+      })
+
+    setSafePlanLoading(true)
+    getActionPlan(selectedEventId)
+      .then((plan) => {
+        if (active) setSafePlan(plan)
+      })
+      .catch(() => {
+        if (active) setSafePlan(null)
+      })
+      .finally(() => {
+        if (active) setSafePlanLoading(false)
       })
 
     return () => {
@@ -469,7 +486,20 @@ export default function IncidentReplay() {
         setHasSeekedToInitial(false)
       }
     } else {
-      setIncidentEvent(null)
+      const preset = DEMO_PRESETS.find((d) => d.id === targetId)
+      if (preset) {
+        setTargetTimestamp(preset.timestamp)
+        setIncidentEvent({
+          event_id: preset.id,
+          video_id: preset.videoId,
+          timestamp: preset.timestamp,
+          scenario: preset.scenario,
+          band: 'High',
+        })
+        setHasSeekedToInitial(false)
+      } else {
+        setIncidentEvent(null)
+      }
     }
   }
 
@@ -732,18 +762,42 @@ export default function IncidentReplay() {
               </p>
             </div>
 
-            {/* 4. WHAT SHOULD BE DONE ABOUT IT */}
-            <div className="border-2 border-emerald-600 bg-emerald-50/60 p-3.5 flex flex-col justify-between gap-1.5 shadow-xs">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900">
-                  4. Recommended Action
-                </span>
+            {/* 4. WHAT SHOULD BE DONE ABOUT IT (Safe Action Plan) */}
+            <div className="border-2 border-emerald-600 bg-emerald-50/70 p-3.5 flex flex-col justify-between gap-2 shadow-xs">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900">
+                    4. Safe Action Plan
+                  </span>
+                  {safePlan?.evidence_status && (
+                    <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      {safePlan.evidence_status}
+                    </span>
+                  )}
+                </div>
                 <strong className="text-xs font-bold text-emerald-950 leading-tight">
-                  {actionText?.split('.')[0] || 'REPOSITION CARGO SAFELY'}
+                  {safePlan?.immediate_action || actionText?.split('.')[0] || 'REPOSITION CARGO SAFELY'}
                 </strong>
-                <p className="text-[11px] text-emerald-900 leading-relaxed mt-0.5">
-                  {actionText}
-                </p>
+                {safePlan?.steps && safePlan.steps.length > 1 ? (
+                  <div className="flex flex-col gap-1 pt-1 border-t border-emerald-200/60">
+                    <span className="text-[9.5px] font-bold uppercase tracking-wider text-emerald-900">Action Steps:</span>
+                    <ol className="list-decimal list-inside space-y-0.5 text-[11px] text-emerald-950 font-medium">
+                      {safePlan.steps.map((step, idx) => (
+                        <li key={idx} className="leading-tight">{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-emerald-900 leading-relaxed mt-0.5">
+                    {safePlan?.immediate_action || actionText}
+                  </p>
+                )}
+                {safePlan?.verification && (
+                  <div className="mt-1 bg-white/80 border border-emerald-300 p-2 text-[10px] text-emerald-950 flex items-start gap-1.5">
+                    <span className="font-bold text-emerald-700 shrink-0">✓ Verify:</span>
+                    <span className="leading-tight">{safePlan.verification}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

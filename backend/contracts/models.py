@@ -324,6 +324,26 @@ class ActionRecommendation(BaseModel):
     risk_title: Optional[str] = None
 
 
+class SafeActionPlan(BaseModel):
+    """Structured, operational action plan produced by the Safe Action Planner (Feature 3)."""
+
+    event_id: int
+    video_id: Optional[str] = None
+    timestamp: float = 0.0
+    risk_band: str = "Medium"
+    title: str
+    immediate_action: str
+    secondary_actions: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    verification: str
+    reason: str
+    evidence_status: str = "Seen in video"
+    evidence_summary: Optional[str] = None
+    what_if_eligible: bool = False
+    source: str = "TRACE Operational Safety Catalog (deterministic rule)"
+    limitations: list[str] = Field(default_factory=list)
+
+
 class WhatIfCurrentState(BaseModel):
     """Observed placement state before hypothetical intervention."""
 
