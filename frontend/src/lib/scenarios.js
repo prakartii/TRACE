@@ -494,6 +494,23 @@ export function formatEvidenceKey(key) {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+/**
+ * Supervisor rule escalations ride in `evidence` so they are always carried
+ * with the finding, but they are policy, not telemetry — they get their own
+ * presentation (SupervisorRuleNotice) and must stay out of the metric grids.
+ */
+export const SUPERVISOR_RULES_KEY = 'supervisor_rules_applied'
+
+export function supervisorRulesFrom(evidence) {
+  const v = evidence?.[SUPERVISOR_RULES_KEY]
+  return Array.isArray(v) ? v : []
+}
+
+/** `evidence` minus non-telemetry keys, for the observed-metric grids. */
+export function telemetryEntries(evidence) {
+  return Object.entries(evidence || {}).filter(([k]) => k !== SUPERVISOR_RULES_KEY)
+}
+
 export function formatEvidenceValue(key, value) {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'

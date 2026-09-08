@@ -7,7 +7,9 @@ import {
   EPISTEMIC_LEVELS,
   formatEvidenceKey,
   formatEvidenceValue,
+  telemetryEntries,
 } from '../../lib/scenarios.js'
+import SupervisorRuleNotice from '../SupervisorRuleNotice.jsx'
 
 function formatTimestamp(seconds) {
   if (typeof seconds !== 'number' || isNaN(seconds)) return '00:00.0'
@@ -69,7 +71,7 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
     ['structural', 'conformance'].includes(finding.lens)
   )
 
-  const evidenceEntries = Object.entries(finding.evidence || {})
+  const evidenceEntries = telemetryEntries(finding.evidence)
   const hasEvidence = evidenceEntries.length > 0 || plan?.basis
 
   const riskBand = finding.band || config.defaultBand || 'Medium'
@@ -203,6 +205,8 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
               </span>
             </div>
             <p className="text-caption text-ink-soft">{epistemicMeta.desc}</p>
+
+            <SupervisorRuleNotice evidence={finding.evidence} />
 
             {hasEvidence && (
               <div className="border-t border-line pt-2">

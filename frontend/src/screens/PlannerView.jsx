@@ -4,7 +4,8 @@ import { listEvents, getEvent } from '../api/events.js'
 import { getActionPlan } from '../api/actions.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS, formatEvidenceKey, formatEvidenceValue } from '../lib/scenarios.js'
+import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS, formatEvidenceKey, formatEvidenceValue, telemetryEntries } from '../lib/scenarios.js'
+import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
 import { formatConfidence, formatEntityName } from '../lib/format.js'
 
 const REFERENCE_SCENARIOS = [
@@ -182,7 +183,7 @@ export default function PlannerView() {
   const confVal = formatConfidence(activeEvent?.confidence)
 
   // Up to three real evidence values from this finding, whatever its scenario records.
-  const evidenceMetrics = Object.entries(evidence)
+  const evidenceMetrics = telemetryEntries(evidence)
     .slice(0, 3)
     .map(([key, value]) => ({
       key,
@@ -368,6 +369,7 @@ export default function PlannerView() {
             No supporting evidence values were recorded for this finding.
           </div>
         )}
+        <SupervisorRuleNotice evidence={evidence} className="border-x-0 border-b-0" />
         <div className="border-t border-line px-4 py-3 text-small text-ink-soft">
           {safePlan?.reason || whyActionText || 'These optical measurements indicate elevated operational risk requiring corrective intervention.'}
         </div>

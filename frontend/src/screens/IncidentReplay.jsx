@@ -24,7 +24,9 @@ import {
   formatTimestampContext,
   formatEvidenceKey,
   formatEvidenceValue,
+  telemetryEntries,
 } from '../lib/scenarios.js'
+import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
 import {
   formatConfidence,
   formatScore,
@@ -1184,7 +1186,7 @@ export default function IncidentReplay() {
                     : 'not recorded'
                 }
                 factors={[
-                  ...Object.entries(evidence).map(([k, v]) => ({
+                  ...telemetryEntries(evidence).map(([k, v]) => ({
                     label: formatEvidenceKey(k),
                     value: formatEvidenceValue(k, v),
                     contrib: 'recorded evidence',
@@ -1197,12 +1199,13 @@ export default function IncidentReplay() {
                   })),
                 ]}
               />
-              {Object.keys(evidence).length === 0 &&
+              {telemetryEntries(evidence).length === 0 &&
                 Object.keys(incidentEvent?.factor_breakdown || {}).length === 0 && (
                   <p className="mt-2 text-caption text-ink-faint">
                     No factor breakdown was recorded for this finding.
                   </p>
                 )}
+              <SupervisorRuleNotice evidence={evidence} className="mt-2" />
             </div>
 
             <div className="border-l-2 border-line-strong bg-paper p-3 text-caption leading-relaxed text-ink-soft">
