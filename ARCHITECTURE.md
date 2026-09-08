@@ -942,8 +942,19 @@ Map the combined score to High/Medium/Low bands with fixed thresholds you pick a
 ### 5.6 What-if simulation (`planner/whatif.py`)
 - Load a stored sequence of scene states for a past event from `scene_states`.
 - Clone the sequence, swap in the planner's recommended candidate at the relevant timestep.
-- Re-run the Structural + Conformance scoring across the cloned sequence.
-- Return two time series (original stability curve, simulated stability curve) for the What-If Replay screen's chart.
+- Re-run the single unified stability scoring engine (`planner/stability.py`, CLAUDE.md §12)
+  across the cloned sequence — the same geometric support/centering/mass/orientation/overhang
+  score used by the single-frame engine and the Safe Action Planner. (This is a geometric
+  image-space score, not a re-invocation of the full Structural/Conformance risk lenses.)
+- Restrict the comparison to the contiguous run of frames where the same target track is
+  actually detected, so the observed and counterfactual curves are always like-for-like on
+  the same entity.
+- Return two time series (original stability curve, simulated stability curve) plus a
+  `comparison_caveat` (the observed curve after the intervention moment is real footage and
+  may already include the outcome; the counterfactual holds the cargo static) and a
+  `confidence` flag for the What-If Replay screen's chart.
+- Applicability, worker-entity, and evidence-status refusals go through the single shared
+  gate in `planner/eligibility.py` — the same gate the single-frame engine uses.
 
 ### 5.7 Prevention 3-condition check (`measurement/prevention.py`)
 A `planner_recommendations` row (or a plain risk event) is bucketed as:

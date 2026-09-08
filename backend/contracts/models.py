@@ -390,6 +390,9 @@ class TrajectoryPoint(BaseModel):
     is_placement_moment: bool = False
     active_scenarios: list[str] = Field(default_factory=list)
     breakdown: Optional[StabilityBreakdown] = None
+    # "observed" when the same target track was actually detected in this frame;
+    # "target_absent" when it was not (score is then a non-evidential baseline).
+    evidence: str = "observed"
 
 
 class WhatIfTrajectoryRequest(BaseModel):
@@ -427,6 +430,14 @@ class WhatIfTrajectoryResult(BaseModel):
     explanation: str = ""
     available_candidates: list[PlacementCandidate] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+    # "normal" | "low" — "low" when the usable same-track window is short.
+    confidence: str = "normal"
+    # Always populated for an available simulation: states the observed-vs-
+    # counterfactual asymmetry so the UI cannot present it as symmetric.
+    comparison_caveat: str = ""
+    # True when the intervention frame had no usable target and a nearby frame
+    # was substituted; `intervention_timestamp` then reflects the frame used.
+    adjusted_intervention: bool = False
 
 
 class ProductMetadataCreate(BaseModel):

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
-import { ArrowLeft, ArrowRight, RotateCcw } from 'lucide-react'
+import { ArrowLeft, RotateCcw } from 'lucide-react'
 import { listEvents } from '../api/events.js'
 import { listVideos } from '../api/videos.js'
 import { getEventTrajectory, getTrajectoryWhatIf } from '../api/whatif.js'
@@ -9,49 +9,90 @@ import {
   getVideoScenarioInfo,
   resolveIncidentTitle,
   formatTimestamp,
-  DEMO_PRESETS,
 } from '../lib/scenarios.js'
-import {
-  formatConfidence,
-  formatScore,
-  formatPercentage,
-  formatEntityName,
-  humanizeExplanation,
-} from '../lib/format.js'
+import { humanizeExplanation } from '../lib/format.js'
+
+// A known-good sequence kept as a quick-select. It is only offered when the
+// backend actually reports an event with this id — never as a value that gets
+// silently substituted into the display. #73 (carton overhang past the pallet
+// deck) is the clearest end-to-end demo: the recorded overhang is scored High
+// and a feasible inward-shift alternative measurably corrects it.
+const CANONICAL_DEMO = { eventId: 73, label: 'Event #73 — carton overhang' }
+
+// Structural/conformance scenarios the backend will actually simulate
+// (mirrors backend/planner/actions.py::WHAT_IF_ELIGIBLE_SCENARIOS). Worker-
+// positioning and environmental-zone incidents are deliberately refused, so
+// the screen defaults to — and highlights — the events that can be simulated.
+const WHATIF_ELIGIBLE = new Set([
+  'heavy_on_light_stacking',
+  'pallet_overhang',
+  'box_overhang',
+  'unsupported_bending_placement',
+  'wrong_product_orientation',
+  'image_space_support_hypothesis',
+])
+
+const isEligible = (ev) => !!ev && WHATIF_ELIGIBLE.has(ev.scenario)
+
+function pickDefaultEvent(events, preferVideoId = null) {
+  if (!events?.length) return null
+  const pool = preferVideoId ? events.filter((e) => e.video_id === preferVideoId) : events
+  const canonical = !preferVideoId && events.find((e) => e.event_id === CANONICAL_DEMO.eventId && isEligible(e))
+  return (
+    canonical ||
+    pool.find(isEligible) ||
+    events.find(isEligible) ||
+    pool[0] ||
+    events[0] ||
+    null
+  )
+}
+
+const DASH = '—'
+const pct = (v) => (typeof v === 'number' && Number.isFinite(v) ? `${v.toFixed(1)}%` : DASH)
+const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(d) : DASH)
+
+const BAND_TEXT = {
+  Low: 'text-ok',
+  Medium: 'text-signal',
+  High: 'text-danger',
+  Critical: 'text-danger',
+}
+
+function placementPoint(points) {
+  if (!points || !points.length) return null
+  return points.find((p) => p.is_placement_moment) || points[0]
+}
 
 export default function WhatIfReplay() {
   const { replayTarget, navigateTo } = useLiveViewContext()
 
   const [videos, setVideos] = useState([])
   const [recentEvents, setRecentEvents] = useState([])
-  const [selectedVideoId, setSelectedVideoId] = useState(replayTarget?.videoId || 'ac99ff34e1bd2c13')
-  const [selectedEventId, setSelectedEventId] = useState(replayTarget?.eventId || 73)
-  const [targetTimestamp, setTargetTimestamp] = useState(replayTarget?.timestamp ?? 36.67)
+  const [selectedVideoId, setSelectedVideoId] = useState(replayTarget?.videoId || '')
+  const [selectedEventId, setSelectedEventId] = useState(replayTarget?.eventId || null)
+  const [targetTimestamp, setTargetTimestamp] = useState(replayTarget?.timestamp ?? 0)
 
   const [simulation, setSimulation] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [selectedCandidateId, setSelectedCandidateId] = useState(null)
-  const [selectedOptionId, setSelectedOptionId] = useState('opt-a')
-  const [hoveredPointIndex, setHoveredPointIndex] = useState(null)
+  const [hoveredIdx, setHoveredIdx] = useState(null)
   const [showTechnical, setShowTechnical] = useState(false)
 
+  // 1. Initial load
   useEffect(() => {
     let active = true
-    Promise.all([listVideos(), listEvents({ limit: 300 })]).then(([vidList, evList]) => {
+    Promise.all([listVideos(), listEvents({ limit: 40 })]).then(([vidList, evList]) => {
       if (!active) return
       setVideos(vidList || [])
       setRecentEvents(evList || [])
-
-      if (replayTarget?.eventId) {
-        setSelectedEventId(replayTarget.eventId)
-        if (replayTarget.videoId) setSelectedVideoId(replayTarget.videoId)
-        if (replayTarget.timestamp !== undefined) setTargetTimestamp(replayTarget.timestamp)
-      } else if (!selectedEventId && evList?.length > 0) {
-        const demo = evList.find((e) => e.event_id === 73) || evList[0]
-        setSelectedEventId(demo.event_id)
-        setSelectedVideoId(demo.video_id)
-        setTargetTimestamp(demo.timestamp || 36.67)
+      if (replayTarget?.eventId) return
+      const def = pickDefaultEvent(evList)
+      if (def) {
+        setSelectedEventId(def.event_id)
+        setSelectedVideoId(def.video_id)
+        setTargetTimestamp(def.timestamp || 0)
       }
     })
     return () => {
@@ -59,294 +100,167 @@ export default function WhatIfReplay() {
     }
   }, [])
 
+  // Sync when navigated in from Incident Replay
   useEffect(() => {
-    if (replayTarget?.eventId) {
-      setSelectedEventId(replayTarget.eventId)
-      if (replayTarget.videoId) setSelectedVideoId(replayTarget.videoId)
-      if (replayTarget.timestamp !== undefined && replayTarget.timestamp !== null) {
-        setTargetTimestamp(replayTarget.timestamp)
-      }
-      setSelectedCandidateId(null)
-      setSelectedOptionId('opt-a')
-    }
+    if (!replayTarget?.eventId) return
+    setSelectedEventId(replayTarget.eventId)
+    if (replayTarget.videoId) setSelectedVideoId(replayTarget.videoId)
+    if (replayTarget.timestamp != null) setTargetTimestamp(replayTarget.timestamp)
+    setSelectedCandidateId(null)
   }, [replayTarget])
 
-  const fetchSimulation = useCallback(async (candidateId = null) => {
-    if (!selectedVideoId && !selectedEventId) return
-    setLoading(true)
-    setError(null)
-    try {
-      let res = null
-      if (selectedEventId) {
-        res = await getEventTrajectory(selectedEventId, candidateId, 'pilot')
-      } else {
-        res = await getTrajectoryWhatIf({
-          videoId: selectedVideoId,
-          timestamp: targetTimestamp,
-          alternativeCandidate: candidateId,
-          model: 'pilot',
-          windowBefore: 3.0,
-          windowAfter: 4.0,
-        })
+  // 2. Run the simulation
+  const fetchSimulation = useCallback(
+    async (candidateId = null) => {
+      if (!selectedEventId && !selectedVideoId) return
+      setLoading(true)
+      setError(null)
+      try {
+        const res = selectedEventId
+          ? await getEventTrajectory(selectedEventId, candidateId, 'pilot')
+          : await getTrajectoryWhatIf({
+              videoId: selectedVideoId,
+              timestamp: targetTimestamp,
+              alternativeCandidate: candidateId,
+              model: 'pilot',
+            })
+        setSimulation(res)
+        setSelectedCandidateId(res?.candidate_id && res.candidate_id !== 'none' ? res.candidate_id : null)
+      } catch (err) {
+        setError(err.message || 'Failed to compute trajectory simulation')
+        setSimulation(null)
+      } finally {
+        setLoading(false)
       }
-      setSimulation(res)
-      if (res?.candidate_id) {
-        setSelectedCandidateId(res.candidate_id)
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to compute trajectory simulation')
-      setSimulation(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedVideoId, selectedEventId, targetTimestamp])
+    },
+    [selectedVideoId, selectedEventId, targetTimestamp],
+  )
 
   useEffect(() => {
-    if (selectedVideoId || selectedEventId) {
-      fetchSimulation(null)
-    }
-  }, [selectedVideoId, selectedEventId, fetchSimulation])
+    if (selectedEventId || selectedVideoId) fetchSimulation(null)
+  }, [selectedEventId, selectedVideoId, fetchSimulation])
 
-  const activeEvent = useMemo(() => {
-    return recentEvents.find((e) => e.event_id === selectedEventId) || replayTarget?.event || null
-  }, [recentEvents, selectedEventId, replayTarget])
+  const activeEvent = useMemo(
+    () => recentEvents.find((e) => e.event_id === selectedEventId) || replayTarget?.event || null,
+    [recentEvents, selectedEventId, replayTarget],
+  )
+  const scenarioConfig = getScenarioConfig(activeEvent?.scenario || simulation?.candidate_label || '')
+  const videoInfo = getVideoScenarioInfo(selectedVideoId || activeEvent?.video_id || '')
+  const incidentTitle = activeEvent ? resolveIncidentTitle(activeEvent) : 'What-if trajectory simulation'
+  const demoAvailable = recentEvents.some((e) => e.event_id === CANONICAL_DEMO.eventId)
 
-  const activeScenarioConfig = getScenarioConfig(activeEvent?.scenario || 'box_overhang')
-  const activeVideoInfo = getVideoScenarioInfo(selectedVideoId || activeEvent?.video_id || 'ac99ff34e1bd2c13')
-  const incidentTitle = activeEvent ? resolveIncidentTitle(activeEvent) : 'Pallet edge overhang & structural instability'
-
+  const available = !!simulation?.simulation_available
   const origPoints = simulation?.original_trajectory || []
   const simPoints = simulation?.simulated_trajectory || []
+  const origK = placementPoint(origPoints)
+  const simK = placementPoint(simPoints)
 
-  const origPlacementPt = useMemo(() => {
-    if (!origPoints.length) return null
-    const moment = origPoints.find((p) => p.is_placement_moment)
-    if (moment) return moment
-    return origPoints.reduce((min, p) => (p.stability_score < (min ? min.stability_score : 101) ? p : min), origPoints[0])
-  }, [origPoints])
+  const candidates = simulation?.available_candidates || []
+  const activeCandidate =
+    candidates.find((c) => c.id === selectedCandidateId) || candidates[0] || null
+  const activeFeasible = !activeCandidate || (activeCandidate.feasibility && activeCandidate.hard_constraints_passed)
+  const gain = typeof simulation?.stability_gain_at_placement === 'number'
+    ? simulation.stability_gain_at_placement
+    : null
+  // "No measurable change" is an honest outcome, not a success — surfaced when
+  // the alternative barely moves the geometric score at the intervention frame.
+  const negligibleChange = available && gain != null && Math.abs(gain) < 1
 
-  const simPlacementPt = useMemo(() => {
-    if (!simPoints.length) return null
-    const moment = simPoints.find((p) => p.is_placement_moment)
-    if (moment) return moment
-    return simPoints.reduce((max, p) => (p.stability_score > (max ? max.stability_score : -1) ? p : max), simPoints[0])
-  }, [simPoints])
-
-  const origBreakdown = origPlacementPt?.breakdown || {}
-  const rawActualStability = origPlacementPt?.stability_score
-  const actualStability = rawActualStability !== undefined && rawActualStability < 95
-    ? Math.round(rawActualStability)
-    : 38
-
-  const actualSupportPct = origBreakdown.support_alignment !== undefined
-    ? `${origBreakdown.support_alignment.toFixed(1)}%`
-    : '40.4%'
-
-  const actualOverhangPct = origBreakdown.overhang_penalty !== undefined
-    ? `${origBreakdown.overhang_penalty.toFixed(1)}%`
-    : '46.2%'
-
-  const interventionOptions = useMemo(() => {
-    const candidates = simulation?.available_candidates || []
-    const candA = candidates[0]
-    const candB = candidates[1]
-    const candC = candidates[2]
-
-    return [
-      {
-        id: 'opt-a',
-        letter: 'A',
-        title: candA?.description || 'Shift carton 15cm inward to align with base',
-        badge: 'recommended',
-        badgeCls: 'bg-ok text-paper',
-        predictedStability: candA?.score ? Math.round(candA.score) : 92,
-        gain: candA?.score_delta ? Math.round(candA.score_delta) : (92 - actualStability),
-        effort: 'low (simple reposition)',
-        overhangOutcome: candA?.score_breakdown?.overhang_penalty !== undefined
-          ? `${candA.score_breakdown.overhang_penalty.toFixed(1)}%`
-          : '0.0% (eliminated)',
-        supportOutcome: candA?.score_breakdown?.support_alignment !== undefined
-          ? `${candA.score_breakdown.support_alignment.toFixed(1)}%`
-          : '95.0%',
-        candidateId: candA?.id || 'cand_center_support',
-        description: 'Centers carton footprint squarely onto the supporting foundation deck, removing cantilever tipping forces.',
-      },
-      {
-        id: 'opt-b',
-        letter: 'B',
-        title: candB?.description || 'Place carton on adjacent lower tier',
-        badge: 'alternative',
-        badgeCls: 'bg-steel text-paper',
-        predictedStability: candB?.score ? Math.round(candB.score) : 85,
-        gain: candB?.score_delta ? Math.round(candB.score_delta) : (85 - actualStability),
-        effort: 'medium (re-route placement)',
-        overhangOutcome: candB?.score_breakdown?.overhang_penalty !== undefined
-          ? `${candB.score_breakdown.overhang_penalty.toFixed(1)}%`
-          : '0.0% (eliminated)',
-        supportOutcome: candB?.score_breakdown?.support_alignment !== undefined
-          ? `${candB.score_breakdown.support_alignment.toFixed(1)}%`
-          : '100.0%',
-        candidateId: candB?.id || 'cand_base_tier',
-        description: 'Re-routes carton directly to ground or adjacent lower tier, completely isolating the stack from top-heavy load.',
-      },
-      {
-        id: 'opt-c',
-        letter: 'C',
-        title: candC?.description || 'Add secondary strapping before placing',
-        badge: 'not recommended',
-        badgeCls: 'bg-ink-faint text-paper',
-        predictedStability: candC?.score ? Math.round(candC.score) : 78,
-        gain: candC?.score_delta ? Math.round(candC.score_delta) : (78 - actualStability),
-        effort: 'high (requires additional material)',
-        overhangOutcome: candC?.score_breakdown?.overhang_penalty !== undefined
-          ? `${candC.score_breakdown.overhang_penalty.toFixed(1)}%`
-          : '12.0% (constrained)',
-        supportOutcome: candC?.score_breakdown?.support_alignment !== undefined
-          ? `${candC.score_breakdown.support_alignment.toFixed(1)}%`
-          : '82.0%',
-        candidateId: candC?.id || 'cand_strapping',
-        description: 'Leaves cantilever overhang partially uncorrected; relies on external strapping rather than stable physical support base.',
-      },
-    ]
-  }, [simulation, actualStability])
-
-  const activeOption = useMemo(() => {
-    return interventionOptions.find((o) => o.id === selectedOptionId) || interventionOptions[0]
-  }, [interventionOptions, selectedOptionId])
-
-  const handleSelectOption = (option) => {
-    setSelectedOptionId(option.id)
-    if (option.candidateId) {
-      setSelectedCandidateId(option.candidateId)
-      fetchSimulation(option.candidateId)
-    }
+  const loadCanonicalDemo = () => {
+    setSelectedEventId(CANONICAL_DEMO.eventId)
+    setSelectedCandidateId(null)
   }
 
-  const activeSimStability = activeOption.predictedStability
-  const activeStabilityGain = activeOption.gain
-  const activeSimOverhang = activeOption.overhangOutcome
-  const activeSimSupport = activeOption.supportOutcome
-
-  const chartData = useMemo(() => {
-    if (!origPoints.length) return null
-
-    const timestamps = origPoints.map((p) => p.timestamp)
-    const minT = Math.min(...timestamps)
-    const maxT = Math.max(...timestamps)
+  // --- Chart geometry: the two curves are the backend series, verbatim. ---
+  const chart = useMemo(() => {
+    if (!origPoints.length && !simPoints.length) return null
+    const all = [...origPoints, ...simPoints]
+    const ts = all.map((p) => p.timestamp)
+    const minT = Math.min(...ts)
+    const maxT = Math.max(...ts)
     const spanT = Math.max(0.1, maxT - minT)
 
-    const width = 800
-    const height = 220
-    const padX = 50
-    const padY = 24
-    const plotW = width - padX * 2
-    const plotH = height - padY * 2
+    const W = 800
+    const H = 220
+    const padX = 46
+    const padY = 22
+    const plotW = W - padX * 2
+    const plotH = H - padY * 2
+    const sx = (t) => padX + ((t - minT) / spanT) * plotW
+    const sy = (s) => H - padY - (Math.max(0, Math.min(100, s)) / 100) * plotH
 
-    const scaleX = (t) => padX + ((t - minT) / spanT) * plotW
-    const scaleY = (score) => height - padY - (Math.max(0, Math.min(100, score)) / 100.0) * plotH
-
-    const origCoords = origPoints.map((p, idx) => ({
-      x: scaleX(p.timestamp),
-      y: scaleY(p.stability_score),
-      t: p.timestamp,
-      score: p.stability_score,
-      isMoment: p.is_placement_moment,
-      idx,
-    }))
-
-    const simCoords = (simPoints.length ? simPoints : origPoints).map((p, idx) => {
-      const adjustedScore = p.is_placement_moment || p.timestamp >= (origPlacementPt?.timestamp ?? 0)
-        ? Math.max(activeSimStability - 5, Math.min(98, p.stability_score + (activeSimStability - 89)))
-        : p.stability_score
-
-      return {
-        x: scaleX(p.timestamp),
-        y: scaleY(adjustedScore),
+    const toCoords = (pts) =>
+      pts.map((p, idx) => ({
+        x: sx(p.timestamp),
+        y: sy(p.stability_score),
         t: p.timestamp,
-        score: adjustedScore,
+        score: p.stability_score,
+        band: p.band,
         isMoment: p.is_placement_moment,
         idx,
-      }
-    })
+      }))
+    const path = (coords) =>
+      coords.reduce((acc, c, i) => (i === 0 ? `M ${c.x},${c.y}` : `${acc} L ${c.x},${c.y}`), '')
 
-    const buildPath = (coords) => {
-      if (!coords.length) return ''
-      return coords.reduce((acc, pt, idx) => (idx === 0 ? `M ${pt.x},${pt.y}` : `${acc} L ${pt.x},${pt.y}`), '')
-    }
+    const o = toCoords(origPoints)
+    const s = toCoords(simPoints)
+    return { W, H, padX, padY, plotW, sy, minT, maxT, o, s, origPath: path(o), simPath: path(s) }
+  }, [origPoints, simPoints])
 
-    const buildArea = (coords) => {
-      if (!coords.length) return ''
-      const firstX = coords[0].x
-      const lastX = coords[coords.length - 1].x
-      const baseY = scaleY(0)
-      const line = coords.reduce((acc, pt, idx) => (idx === 0 ? `M ${pt.x},${pt.y}` : `${acc} L ${pt.x},${pt.y}`), '')
-      return `${line} L ${lastX},${baseY} L ${firstX},${baseY} Z`
-    }
-
-    return {
-      width,
-      height,
-      padX,
-      padY,
-      plotW,
-      plotH,
-      minT,
-      maxT,
-      scaleX,
-      scaleY,
-      origPoints: origCoords,
-      simPoints: simCoords,
-      origPath: buildPath(origCoords),
-      simPath: buildPath(simCoords),
-      origArea: buildArea(origCoords),
-      simArea: buildArea(simCoords),
-    }
-  }, [origPoints, simPoints, origPlacementPt, activeSimStability])
-
-  const hoveredOrig = hoveredPointIndex !== null && chartData?.origPoints?.[hoveredPointIndex]
-    ? chartData.origPoints[hoveredPointIndex]
-    : null
-
-  const hoveredSim = hoveredPointIndex !== null && chartData?.simPoints?.[hoveredPointIndex]
-    ? chartData.simPoints[hoveredPointIndex]
-    : null
+  const hoveredOrig = hoveredIdx != null ? chart?.o?.[hoveredIdx] : null
+  const hoveredSim = hoveredIdx != null ? chart?.s?.[hoveredIdx] : null
 
   return (
     <div className="flex flex-col gap-8 pb-12">
       {/* header */}
       <section className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => navigateTo('Incident Replay')}
-              className="inline-flex items-center gap-1 text-small font-medium text-ink-soft hover:text-ink"
-            >
-              <ArrowLeft size={14} />
-              return to incident replay
-            </button>
+          <button
+            type="button"
+            onClick={() => navigateTo('Incident Replay')}
+            className="inline-flex items-center gap-1 text-small font-medium text-ink-soft hover:text-ink"
+          >
+            <ArrowLeft size={14} />
+            return to incident replay
+          </button>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <h1 className="font-display text-display-lg font-semibold text-ink">
+              What-if trajectory simulation
+            </h1>
+            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-medium uppercase tracking-wider text-ok">
+              decision support
+            </span>
           </div>
-          <h1 className="mt-2 font-display text-display-lg font-semibold text-ink">
-            What-if trajectory simulation
-          </h1>
           <p className="mt-2 max-w-2xl text-body text-ink-soft">
-            TRACE evaluates safer alternative interventions across recorded video motion before
-            touching the physical cargo.
+            TRACE re-scores an alternative cargo placement across the recorded sequence. This is an
+            image-space geometric comparison, not a physical dynamics simulation.
           </p>
         </div>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => fetchSimulation(selectedCandidateId)}
-          className="inline-flex items-center gap-2 border border-ink bg-ink px-4 py-2 text-small font-semibold text-paper transition-colors hover:bg-ink-soft disabled:opacity-50"
-        >
-          {loading ? (
-            <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-paper border-t-transparent" />
-          ) : (
-            <RotateCcw size={15} />
+
+        <div className="flex items-center gap-2">
+          {demoAvailable && (
+            <button
+              type="button"
+              onClick={loadCanonicalDemo}
+              className="border border-signal/50 bg-signal/10 px-3.5 py-2 text-small font-semibold text-[#8a5f00] transition-colors hover:bg-signal/20"
+            >
+              load {CANONICAL_DEMO.label}
+            </button>
           )}
-          {loading ? 're-simulating…' : 're-run model'}
-        </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => fetchSimulation(selectedCandidateId)}
+            className="inline-flex items-center gap-2 border border-ink bg-ink px-4 py-2 text-small font-semibold text-paper transition-colors hover:bg-ink-soft disabled:opacity-50"
+          >
+            {loading ? (
+              <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-paper border-t-transparent" />
+            ) : (
+              <RotateCcw size={15} />
+            )}
+            {loading ? 're-simulating…' : 're-run model'}
+          </button>
+        </div>
       </section>
 
       {/* source bar */}
@@ -355,11 +269,21 @@ export default function WhatIfReplay() {
           <select
             value={selectedVideoId}
             onChange={(e) => {
-              setSelectedVideoId(e.target.value)
-              setSelectedEventId(null)
+              const vid = e.target.value
+              setSelectedVideoId(vid)
+              // Prefer a simulatable incident from the chosen source rather
+              // than dropping straight into manual-timestamp mode.
+              const ev = pickDefaultEvent(recentEvents, vid)
+              if (ev && ev.video_id === vid) {
+                setSelectedEventId(ev.event_id)
+                setTargetTimestamp(ev.timestamp || 0)
+              } else {
+                setSelectedEventId(null)
+              }
             }}
             className="border border-line bg-surface px-2.5 py-1.5 text-small text-ink focus:border-ink"
           >
+            <option value="">select a source…</option>
             {videos.map((v) => {
               const info = getVideoScenarioInfo(v.id || v.filename)
               return (
@@ -384,13 +308,18 @@ export default function WhatIfReplay() {
             }}
             className="border border-line bg-surface px-2.5 py-1.5 text-small text-ink focus:border-ink"
           >
-            <option value="">manual timestamp mode…</option>
+            <option value="">manual timestamp mode (needs a structural incident)…</option>
             {recentEvents.map((ev) => (
               <option key={ev.event_id} value={ev.event_id}>
-                event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {resolveIncidentTitle(ev)} [{getVideoScenarioInfo(ev.video_id).cameraName}]
+                {isEligible(ev) ? '' : '⚠ '}event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {resolveIncidentTitle(ev)}
+                {isEligible(ev) ? '' : ' [not simulatable]'}
               </option>
             ))}
           </select>
+          <span className="text-caption text-ink-faint">
+            ⚠ = worker-positioning / zone incident — what-if applies to cargo placement only.
+            Manual mode needs a recorded structural incident for context.
+          </span>
         </Field>
         <Field label="intervention moment">
           <div className="flex items-center gap-2">
@@ -399,10 +328,15 @@ export default function WhatIfReplay() {
               step="0.5"
               min="0"
               value={targetTimestamp}
+              disabled={!!selectedEventId}
               onChange={(e) => setTargetTimestamp(parseFloat(e.target.value) || 0)}
-              className="w-28 border border-line bg-surface px-2.5 py-1.5 font-mono text-small tabular-nums text-ink focus:border-ink"
+              className="w-28 border border-line bg-surface px-2.5 py-1.5 font-mono text-small tabular-nums text-ink focus:border-ink disabled:opacity-60"
             />
-            <span className="font-mono text-caption tabular-nums text-ink-faint">({formatTimestamp(targetTimestamp)})</span>
+            <span className="font-mono text-caption tabular-nums text-ink-faint">
+              {simulation?.intervention_timestamp != null
+                ? `used t = ${formatTimestamp(simulation.intervention_timestamp)}`
+                : `(${formatTimestamp(targetTimestamp)})`}
+            </span>
           </div>
         </Field>
       </section>
@@ -413,37 +347,53 @@ export default function WhatIfReplay() {
         </div>
       )}
 
-      {simulation && !simulation.simulation_available && (
+      {loading && !simulation && (
+        <div className="border border-line bg-surface p-6 text-small text-ink-soft">Running simulation…</div>
+      )}
+
+      {/* refusal notice */}
+      {simulation && !available && (
         <div className="border border-signal/40 bg-signal/5 p-5">
           <h2 className="font-mono text-title font-semibold text-[#8a5f00]">what-if not applicable</h2>
           <p className="mt-1 text-small text-ink-soft">
             {simulation.simulation_notice ||
-              'TRACE can evaluate counterfactual cargo placement when structural geometry is modeled. It does not physically simulate human movement from monocular video.'}
+              'This incident cannot be simulated as a cargo placement counterfactual.'}
           </p>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border border-line bg-surface p-3.5">
-            <p className="text-caption text-ink-soft">
-              Monocular perception does not support physical biomechanics simulation for worker or
-              environmental zone hazards.
+          {simulation.limitations?.length > 0 && (
+            <p className="mt-2 font-mono text-caption text-ink-faint">
+              {simulation.limitations.join(' · ')}
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedVideoId('ac99ff34e1bd2c13')
-                setSelectedEventId(73)
-                setTargetTimestamp(36.67)
-                setSelectedOptionId('opt-a')
-              }}
-              className="bg-ink px-3.5 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
-            >
-              view valid what-if (event #73)
-            </button>
-          </div>
+          )}
+          {demoAvailable && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border border-line bg-surface p-3.5">
+              <p className="text-caption text-ink-soft">
+                Monocular perception does not support physical biomechanics simulation for worker or
+                environmental zone hazards.
+              </p>
+              <button
+                type="button"
+                onClick={loadCanonicalDemo}
+                className="bg-ink px-3.5 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
+              >
+                view valid what-if ({CANONICAL_DEMO.label})
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {simulation && simulation.simulation_available && (
+      {/* active simulation */}
+      {simulation && available && (
         <div className="flex flex-col gap-8">
-          {/* step 1 */}
+          {simulation.confidence === 'low' && (
+            <div className="border border-signal/40 bg-signal/5 p-3 text-caption text-[#8a5f00]">
+              <span className="font-semibold">low confidence:</span> only {origPoints.length} usable
+              frame{origPoints.length === 1 ? '' : 's'} where the same cargo track is continuously
+              visible. Treat the curve shape as indicative only.
+            </div>
+          )}
+
+          {/* step 1 — observed state */}
           <section className="border border-danger/40 bg-surface">
             <div className="h-1 bg-danger" />
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
@@ -451,276 +401,274 @@ export default function WhatIfReplay() {
                 step 1 · the observed state
               </span>
               <div className="flex items-center gap-2 text-caption text-ink-soft">
-                <span>location: <span className="font-medium text-ink">{activeVideoInfo.cameraName}</span></span>
+                <span>location: <span className="font-medium text-ink">{videoInfo.cameraName}</span></span>
                 <span>·</span>
-                <span className="font-mono font-medium tabular-nums text-ink">t = {formatTimestamp(targetTimestamp)}</span>
+                <span className="font-mono font-medium tabular-nums text-ink">
+                  t = {formatTimestamp(simulation.intervention_timestamp)}
+                </span>
               </div>
             </div>
             <div className="p-5">
               <h2 className="font-display text-display-md font-semibold text-ink">{incidentTitle}</h2>
 
               <div className="mt-4 grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-3">
-                <div className="bg-paper p-3">
-                  <span className="text-label font-medium text-ink-faint">support coverage</span>
-                  <p className="mt-1 font-display text-display-md font-semibold tabular-nums text-danger">{actualSupportPct}</p>
-                  <p className="text-caption text-ink-faint">horizontal footprint overlap</p>
-                </div>
-                <div className="bg-paper p-3">
-                  <span className="text-label font-medium text-ink-faint">measured overhang</span>
-                  <p className="mt-1 font-display text-display-md font-semibold tabular-nums text-danger">{actualOverhangPct}</p>
-                  <p className="text-caption text-ink-faint">protrusion past foundation edge</p>
-                </div>
-                <div className="bg-paper p-3">
-                  <span className="text-label font-medium text-ink-faint">observed stability</span>
-                  <p className="mt-1 font-display text-display-md font-semibold tabular-nums text-danger">
-                    {actualStability} <span className="text-title text-ink-faint">/ 100</span>
-                  </p>
-                  <p className="text-caption text-ink-faint">physics risk threshold exceeded</p>
-                </div>
+                <Metric
+                  label="support coverage"
+                  value={pct(origK?.breakdown?.support_alignment)}
+                  hint="horizontal footprint overlap with deck"
+                />
+                <Metric
+                  label="overhang penalty"
+                  value={pct(origK?.breakdown?.overhang_penalty)}
+                  hint="protrusion past the support edge"
+                />
+                <Metric
+                  label="observed stability"
+                  value={origK ? `${num(origK.stability_score)} / 100` : DASH}
+                  hint={origK ? `band: ${origK.band}` : 'no detection at this frame'}
+                />
               </div>
 
-              <div className="mt-3 border-l-2 border-danger bg-danger/5 px-3 py-2 text-small text-ink">
-                <span className="font-medium">why it's dangerous:</span>{' '}
-                {humanizeExplanation(
-                  activeEvent?.explanation || activeScenarioConfig.whyItMatters,
-                  activeEvent?.scenario,
-                  activeEvent?.entity_id
-                )}
-              </div>
+              {(activeEvent?.explanation || scenarioConfig?.whyItMatters) && (
+                <div className="mt-3 border-l-2 border-danger bg-danger/5 px-3 py-2 text-small text-ink">
+                  <span className="font-medium">why it matters:</span>{' '}
+                  {humanizeExplanation(
+                    activeEvent?.explanation || scenarioConfig.whyItMatters || '',
+                    activeEvent?.scenario,
+                    activeEvent?.entity_id,
+                  )}
+                </div>
+              )}
             </div>
           </section>
 
-          {/* step 2 */}
+          {/* step 2 — alternatives */}
           <section className="border border-line bg-surface">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
               <span className="font-mono text-caption font-semibold text-ink">
-                step 2 · choose an intervention
+                step 2 · alternative placements ({candidates.length})
               </span>
-              <span className="text-caption text-ink-faint">click any option to simulate its outcome</span>
+              <span className="text-caption text-ink-faint">click one to re-score the trajectory</span>
             </div>
-            <div className="grid grid-cols-1 gap-px bg-line md:grid-cols-3">
-              {interventionOptions.map((opt) => {
-                const isSelected = selectedOptionId === opt.id
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => handleSelectOption(opt)}
-                    className={`flex flex-col justify-between gap-3 p-4 text-left transition-colors ${
-                      isSelected ? 'bg-ok/5' : 'bg-surface hover:bg-paper'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className={`px-2 py-0.5 text-label font-medium ${opt.badgeCls}`}>{opt.badge}</span>
-                        <span className="text-caption text-ink-faint">{opt.effort}</span>
-                      </div>
-                      <h3 className="mt-2 text-small font-semibold leading-snug text-ink">
-                        option {opt.letter}: "{opt.title}"
-                      </h3>
-                      <p className="mt-1 text-caption text-ink-soft">{opt.description}</p>
-                    </div>
 
-                    <div className="flex items-baseline justify-between border-t border-line pt-2">
-                      <span className="text-caption text-ink-soft">predicted stability</span>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="font-mono text-title font-semibold tabular-nums text-ok">
-                          {opt.predictedStability} / 100
-                        </span>
-                        <span className="border border-ok/40 bg-ok/10 px-1 py-0.5 font-mono text-label font-medium text-ok">
-                          +{opt.gain}
-                        </span>
+            {candidates.length === 0 ? (
+              <p className="p-5 text-small text-ink-soft">
+                No feasible alternative placement was generated for this frame.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-px bg-line md:grid-cols-3">
+                {candidates.map((c, i) => {
+                  const isSelected = activeCandidate?.id === c.id
+                  const feasible = c.feasibility && c.hard_constraints_passed
+                  const rank = candidates
+                    .filter((x) => x.feasibility && x.hard_constraints_passed)
+                    .indexOf(c)
+                  const badge = !feasible
+                    ? { text: 'not feasible', cls: 'bg-signal/15 text-[#8a5f00]' }
+                    : rank === 0
+                      ? { text: 'best geometric score', cls: 'bg-ok text-paper' }
+                      : { text: `alternative ${rank + 1}`, cls: 'bg-steel text-paper' }
+                  return (
+                    <button
+                      key={c.id || i}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCandidateId(c.id)
+                        fetchSimulation(c.id)
+                      }}
+                      className={`flex flex-col gap-2 p-4 text-left transition-colors ${
+                        isSelected ? 'bg-ok/5' : 'bg-surface hover:bg-paper'
+                      }`}
+                    >
+                      <span className={`self-start px-2 py-0.5 text-label font-medium ${badge.cls}`}>
+                        {badge.text}
+                      </span>
+                      <h3 className="text-small font-semibold leading-snug text-ink">
+                        {c.description || c.id}
+                      </h3>
+                      <div className="mt-auto flex items-baseline justify-between border-t border-line pt-2">
+                        <span className="text-caption text-ink-soft">candidate score</span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className={`font-mono text-title font-semibold tabular-nums ${BAND_TEXT[c.band] || 'text-ink'}`}>
+                            {num(c.score)} / 100
+                          </span>
+                          {typeof c.score_delta === 'number' && (
+                            <span className="border border-line bg-paper px-1 py-0.5 font-mono text-label font-medium text-ink-soft">
+                              {c.score_delta >= 0 ? '+' : ''}
+                              {num(c.score_delta, 1)}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
+                      {!feasible && c.limitations?.length > 0 && (
+                        <p className="text-caption leading-snug text-[#8a5f00]">
+                          {c.limitations.filter((l) => !l.startsWith('This score')).slice(0, 2).join(' ')}
+                        </p>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </section>
 
-          {/* step 3 */}
-          <section className="border border-ok/40 bg-surface">
-            <div className="h-1 bg-ok" />
+          {/* step 3 — predicted outcome for the selected candidate */}
+          <section className={`border bg-surface ${!activeFeasible ? 'border-signal/40' : negligibleChange ? 'border-line' : 'border-ok/40'}`}>
+            <div className={`h-1 ${!activeFeasible ? 'bg-signal' : negligibleChange ? 'bg-line-strong' : 'bg-ok'}`} />
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-              <span className="font-mono text-caption font-semibold text-ok">
-                step 3 · predicted outcome for option {activeOption.letter}
-              </span>
-              <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label text-ok">
-                safer state validated
+              <span className={`font-mono text-caption font-semibold ${!activeFeasible ? 'text-[#8a5f00]' : negligibleChange ? 'text-ink-soft' : 'text-ok'}`}>
+                step 3 · {!activeFeasible ? 'this alternative is not feasible' : negligibleChange ? 'no measurable stability change' : 'predicted outcome'} — {activeCandidate?.description || simulation.candidate_label}
               </span>
             </div>
             <div className="p-5">
+              {!activeFeasible && (
+                <div className="mb-4 border-l-2 border-signal bg-signal/5 px-3 py-2 text-small text-[#8a5f00]">
+                  <span className="font-medium">Not a recommendation.</span> This placement fails a
+                  physical / boundary constraint
+                  {activeCandidate?.limitations?.length
+                    ? `: ${activeCandidate.limitations.filter((l) => !l.startsWith('This score')).slice(0, 2).join(' ')}`
+                    : '.'}{' '}
+                  The scores below are shown for comparison only.
+                </div>
+              )}
+              {activeFeasible && negligibleChange && (
+                <div className="mb-4 border-l-2 border-line-strong bg-paper px-3 py-2 text-small text-ink-soft">
+                  This alternative does not measurably change the geometric stability score at the
+                  intervention frame ({gain >= 0 ? '+' : ''}{num(gain, 1)} pts). The recommended
+                  action still applies as a {activeEvent?.scenario === 'wrong_product_orientation' ? 'conformance' : 'placement'} correction.
+                </div>
+              )}
               <div className="grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-3">
-                <Delta title="stability" before={actualStability} after={`${activeSimStability} / 100`} gain={`+${activeStabilityGain}`} />
-                <Delta title="overhang" before={actualOverhangPct} after={activeSimOverhang} />
-                <Delta title="support foundation" before={actualSupportPct} after={activeSimSupport} />
+                <BeforeAfter label="stability" before={origK?.stability_score} after={simK?.stability_score} suffix=" / 100" />
+                <BeforeAfter label="overhang penalty" before={origK?.breakdown?.overhang_penalty} after={simK?.breakdown?.overhang_penalty} suffix="%" />
+                <BeforeAfter label="support coverage" before={origK?.breakdown?.support_alignment} after={simK?.breakdown?.support_alignment} suffix="%" />
               </div>
 
-              <div className="mt-4 border border-line bg-paper p-4">
-                <div className="flex items-center justify-between border-b border-line pb-2">
-                  <span className="text-small font-semibold text-ink">physical stacking geometry</span>
-                  <span className="font-mono text-caption text-ink-faint">static equilibrium evaluation</span>
-                </div>
-                <div className="mt-3 grid grid-cols-1 gap-px bg-line md:grid-cols-2">
-                  <div className="flex flex-col items-center gap-3 bg-surface p-4 text-center">
-                    <span className="self-start bg-danger px-2 py-0.5 text-label font-medium text-paper">
-                      actual observed stack
-                    </span>
-                    <div className="flex w-full max-w-xs flex-col items-center">
-                      <div className="flex w-48 translate-x-8 items-center justify-center border-2 border-danger bg-danger/10 py-2.5 text-caption font-medium text-danger">
-                        upper cargo carton
-                      </div>
-                      <div className="my-1 font-mono text-caption text-danger">▼ tipping load (CoM outside base)</div>
-                      <div className="flex w-48 items-center justify-center border-2 border-line bg-paper py-2 text-caption text-ink-soft">
-                        supporting pallet deck (80cm base)
-                      </div>
-                    </div>
-                    <p className="border border-danger/40 bg-surface p-2 text-left text-caption text-danger">
-                      upper carton protrudes {actualOverhangPct} past base support — center of gravity
-                      extends past edge, creating a tipping moment.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col items-center gap-3 bg-surface p-4 text-center">
-                    <span className="self-start bg-ok px-2 py-0.5 text-label font-medium text-paper">
-                      proposed safer intervention
-                    </span>
-                    <div className="flex w-full max-w-xs flex-col items-center">
-                      <div className="flex w-44 items-center justify-center border-2 border-ok bg-ok/10 py-2.5 text-caption font-medium text-ok">
-                        upper cargo carton (centered)
-                      </div>
-                      <div className="my-1 font-mono text-caption text-ok">▼ uniform normal distribution</div>
-                      <div className="flex w-48 items-center justify-center border-2 border-ok bg-ok/10 py-2 text-caption text-ok">
-                        supporting pallet deck (80cm base)
-                      </div>
-                    </div>
-                    <p className="border border-ok/40 bg-surface p-2 text-left text-caption text-ink">
-                      carton footprint centered squarely on base — overhang eliminated (
-                      {activeSimOverhang}), restoring {activeSimSupport} foundation support.
-                    </p>
-                  </div>
-                </div>
+              <div className="mt-4 text-small text-ink-soft">
+                <span className="font-mono">{simulation.risk_transition}</span>
+                {gain != null && (
+                  <span className={`ml-2 font-semibold ${activeFeasible && !negligibleChange ? 'text-ok' : 'text-ink-soft'}`}>
+                    ({gain >= 0 ? '+' : ''}
+                    {num(gain, 1)} pts at the intervention frame)
+                  </span>
+                )}
               </div>
 
-              {chartData && (
+              {/* chart — backend series, plotted verbatim */}
+              {chart && (
                 <div className="mt-4 border border-line bg-paper p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
                     <div>
                       <h3 className="text-small font-semibold text-ink">stability trajectory over time</h3>
                       <span className="font-mono text-caption tabular-nums text-ink-faint">
-                        [{chartData.minT.toFixed(1)}s – {chartData.maxT.toFixed(1)}s]
+                        [{chart.minT.toFixed(1)}s – {chart.maxT.toFixed(1)}s] · {origPoints.length} frame
+                        {origPoints.length === 1 ? '' : 's'}
                       </span>
                     </div>
                     <div className="flex items-center gap-4">
-                      <Legend color="bg-danger" label="actual" />
-                      <Legend color="bg-ok" label="simulated" />
+                      <Legend color="bg-danger" label="observed" />
+                      <Legend color="bg-ok" label="counterfactual" />
                     </div>
                   </div>
 
                   <div className="relative overflow-x-auto">
-                    <svg viewBox={`0 0 ${chartData.width} ${chartData.height}`} className="max-h-60 w-full select-none">
-                      <defs>
-                        <linearGradient id="origGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#B23A22" stopOpacity="0.18" />
-                          <stop offset="100%" stopColor="#B23A22" stopOpacity="0" />
-                        </linearGradient>
-                        <linearGradient id="simGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#3F6E4C" stopOpacity="0.22" />
-                          <stop offset="100%" stopColor="#3F6E4C" stopOpacity="0" />
-                        </linearGradient>
-                      </defs>
+                    <svg viewBox={`0 0 ${chart.W} ${chart.H}`} className="max-h-60 w-full select-none">
+                      <rect x={chart.padX} y={chart.sy(40)} width={chart.plotW} height={chart.sy(0) - chart.sy(40)} fill="#f3e0da" opacity="0.5" />
+                      <rect x={chart.padX} y={chart.sy(60)} width={chart.plotW} height={chart.sy(40) - chart.sy(60)} fill="#f2e6cc" opacity="0.4" />
+                      <rect x={chart.padX} y={chart.sy(100)} width={chart.plotW} height={chart.sy(60) - chart.sy(100)} fill="#dce7db" opacity="0.4" />
 
-                      <rect x={chartData.padX} y={chartData.scaleY(40)} width={chartData.plotW} height={chartData.scaleY(0) - chartData.scaleY(40)} fill="#f3e0da" opacity="0.5" />
-                      <rect x={chartData.padX} y={chartData.scaleY(60)} width={chartData.plotW} height={chartData.scaleY(40) - chartData.scaleY(60)} fill="#f2e6cc" opacity="0.4" />
-                      <rect x={chartData.padX} y={chartData.scaleY(100)} width={chartData.plotW} height={chartData.scaleY(60) - chartData.scaleY(100)} fill="#dce7db" opacity="0.4" />
+                      <path d={chart.origPath} fill="none" stroke="#B23A22" strokeWidth="2" strokeDasharray="4,2" />
+                      <path d={chart.simPath} fill="none" stroke="#3F6E4C" strokeWidth="2.5" />
 
-                      <path d={chartData.origArea} fill="url(#origGrad)" />
-                      <path d={chartData.simArea} fill="url(#simGrad)" />
-
-                      <path d={chartData.origPath} fill="none" stroke="#B23A22" strokeWidth="2" strokeDasharray="4,2" />
-                      <path d={chartData.simPath} fill="none" stroke="#3F6E4C" strokeWidth="2.5" />
-
-                      {chartData.origPoints.map((pt, idx) => (
+                      {chart.o.map((c, idx) => (
                         <circle
-                          key={`orig-${idx}`}
-                          cx={pt.x}
-                          cy={pt.y}
-                          r={hoveredPointIndex === idx ? 5 : 3.5}
+                          key={`o-${idx}`}
+                          cx={c.x}
+                          cy={c.y}
+                          r={hoveredIdx === idx ? 5 : 3.5}
                           fill="#B23A22"
                           stroke="#F6F2E9"
                           strokeWidth="1.5"
                           className="cursor-pointer"
-                          onMouseEnter={() => setHoveredPointIndex(idx)}
-                          onMouseLeave={() => setHoveredPointIndex(null)}
+                          onMouseEnter={() => setHoveredIdx(idx)}
+                          onMouseLeave={() => setHoveredIdx(null)}
                         />
                       ))}
-
-                      {chartData.simPoints.map((pt, idx) => (
+                      {chart.s.map((c, idx) => (
                         <circle
-                          key={`sim-${idx}`}
-                          cx={pt.x}
-                          cy={pt.y}
-                          r={hoveredPointIndex === idx ? 5 : 4}
+                          key={`s-${idx}`}
+                          cx={c.x}
+                          cy={c.y}
+                          r={hoveredIdx === idx ? 5 : 4}
                           fill="#3F6E4C"
                           stroke="#F6F2E9"
                           strokeWidth="1.5"
                           className="cursor-pointer"
-                          onMouseEnter={() => setHoveredPointIndex(idx)}
-                          onMouseLeave={() => setHoveredPointIndex(null)}
+                          onMouseEnter={() => setHoveredIdx(idx)}
+                          onMouseLeave={() => setHoveredIdx(null)}
                         />
                       ))}
                     </svg>
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border border-line bg-surface p-2.5">
-                    {hoveredOrig && hoveredSim ? (
-                      <div className="flex items-center gap-3 font-mono text-caption">
-                        <span className="font-medium text-ink">t = {formatTimestamp(hoveredOrig.t)}:</span>
-                        <span className="text-danger">actual: {hoveredOrig.score.toFixed(1)}</span>
-                        <span>→</span>
-                        <span className="font-medium text-ok">simulated: {hoveredSim.score.toFixed(1)}</span>
-                        <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 font-medium text-ok">
-                          +{(hoveredSim.score - hoveredOrig.score).toFixed(1)}
-                        </span>
+                    {hoveredOrig ? (
+                      <div className="flex flex-wrap items-center gap-3 font-mono text-caption tabular-nums">
+                        <span className="font-medium text-ink">t = {formatTimestamp(hoveredOrig.t)}</span>
+                        <span className="text-danger">observed: {num(hoveredOrig.score, 1)}</span>
+                        {hoveredSim && (
+                          <>
+                            <span>→</span>
+                            <span className="font-medium text-ok">counterfactual: {num(hoveredSim.score, 1)}</span>
+                            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 font-medium text-ok">
+                              Δ {hoveredSim.score - hoveredOrig.score >= 0 ? '+' : ''}
+                              {num(hoveredSim.score - hoveredOrig.score, 1)}
+                            </span>
+                          </>
+                        )}
                       </div>
                     ) : (
                       <span className="text-caption italic text-ink-faint">
-                        Hover over any point to inspect per-timestamp stability values.
+                        Hover a point to inspect per-frame stability.
                       </span>
                     )}
                   </div>
+
+                  {simulation.comparison_caveat && (
+                    <p className="mt-2 border-l-2 border-line-strong pl-2 text-caption leading-relaxed text-ink-faint">
+                      {simulation.comparison_caveat}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           </section>
 
-          {/* technical */}
+          {/* technical disclosure */}
           <section className="border border-line bg-surface">
             <button
               type="button"
-              onClick={() => setShowTechnical(!showTechnical)}
+              onClick={() => setShowTechnical((v) => !v)}
               className="flex w-full items-center justify-between px-4 py-3 text-small font-medium text-ink-soft hover:text-ink"
             >
-              <span>engineering formulas & physics limitations</span>
+              <span>model rationale &amp; limitations</span>
               <span className="font-mono text-caption">{showTechnical ? 'collapse' : 'expand'}</span>
             </button>
 
             {showTechnical && (
               <div className="flex flex-col gap-3 border-t border-line p-4">
-                <div className="border-l-2 border-ok bg-ok/5 p-3 text-small text-ink">
-                  <span className="font-medium">trajectory model rationale:</span>{' '}
-                  {simulation.explanation ||
-                    `Simulating alternative placement '${activeOption.title}' shifts package coordinates onto the base footprint deck, eliminating cantilever overhang and restoring static equilibrium across the temporal sequence.`}
-                </div>
-
-                <div className="border border-line bg-paper p-3">
-                  <span className="text-label font-medium text-ink-soft">responsible AI disclaimers</span>
-                  <ul className="mt-1.5 list-inside list-disc space-y-1 text-caption text-ink-soft">
-                    <li>Image-space support calculation evaluates 2D bounding footprint geometry; physical 3D contact friction and internal mass distribution are uncalibrated.</li>
-                    <li>Counterfactual trajectory simulates static persistence of the repositioned cargo across subsequent frames without human re-disturbance.</li>
-                    <li>What-if recommendations are operational decision support for warehouse supervisors, not automated actuator commands.</li>
+                {simulation.explanation && (
+                  <div className="border-l-2 border-ok bg-ok/5 p-3 text-small text-ink">
+                    {simulation.explanation}
+                  </div>
+                )}
+                {simulation.limitations?.length > 0 && (
+                  <ul className="list-inside list-disc space-y-1 border border-line bg-paper p-3 text-caption text-ink-soft">
+                    {simulation.limitations.map((l, i) => (
+                      <li key={i}>{l}</li>
+                    ))}
                   </ul>
-                </div>
+                )}
               </div>
             )}
           </section>
@@ -748,20 +696,40 @@ function Legend({ color, label }) {
   )
 }
 
-function Delta({ title, before, after, gain }) {
+function Metric({ label, value, hint }) {
+  return (
+    <div className="bg-paper p-3">
+      <span className="text-label font-medium text-ink-faint">{label}</span>
+      <p className="mt-1 font-display text-display-md font-semibold tabular-nums text-danger">{value}</p>
+      <p className="text-caption text-ink-faint">{hint}</p>
+    </div>
+  )
+}
+
+function BeforeAfter({ label, before, after, suffix = '' }) {
+  const b = typeof before === 'number' && Number.isFinite(before)
+  const a = typeof after === 'number' && Number.isFinite(after)
   return (
     <div className="flex flex-col gap-1 bg-paper p-3">
-      <span className="text-label font-medium text-ink-faint">{title}</span>
-      <div className="flex items-baseline gap-2">
-        <span className="font-mono text-title font-semibold tabular-nums text-danger line-through">{before}</span>
+      <span className="text-label font-medium text-ink-faint">{label}</span>
+      <div className="flex items-baseline gap-2 font-mono tabular-nums">
+        <span className="text-title font-semibold text-danger line-through">
+          {b ? before.toFixed(1) : DASH}
+          {b ? suffix : ''}
+        </span>
         <span className="text-caption text-ink-faint">→</span>
-        <span className="font-mono text-display-md font-semibold tabular-nums text-ok">{after}</span>
-        {gain && (
-          <span className="ml-auto border border-ok/40 bg-ok/10 px-1.5 py-0.5 font-mono text-label font-medium text-ok">
-            {gain}
-          </span>
-        )}
+        <span className="text-display-md font-semibold text-ok">
+          {a ? after.toFixed(1) : DASH}
+          {a ? suffix : ''}
+        </span>
       </div>
+      {b && a && (
+        <span className="text-caption font-medium text-ok">
+          {after - before >= 0 ? '+' : ''}
+          {(after - before).toFixed(1)}
+          {suffix} change
+        </span>
+      )}
     </div>
   )
 }

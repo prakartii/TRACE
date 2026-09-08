@@ -59,11 +59,28 @@ def simulate_trajectory_whatif(
         if not entity_id:
             entity_id = ev.entity_id
 
-    if not video_id:
-        raise HTTPException(status_code=422, detail="Either video_id or a valid event_id must be provided.")
-
-    if timestamp is None:
+    if req.event_id is None:
+        # Ad-hoc (no recorded event): both a video and an explicit timestamp are
+        # required. Previously a missing timestamp silently became 0.0 and
+        # simulated the first frame.
+        if not video_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Provide either a valid event_id, or both video_id and timestamp.",
+            )
+        if timestamp is None:
+            raise HTTPException(
+                status_code=422,
+                detail="timestamp is required when no event_id is given.",
+            )
+    elif timestamp is None:
         timestamp = 0.0
+
+    if not video_id:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Event #{req.event_id} has no linked video; provide video_id explicitly.",
+        )
 
     return run_what_if_trajectory(
         video_id=video_id,

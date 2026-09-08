@@ -29,6 +29,7 @@ from backend.contracts.models import (
     SceneGraphSnapshot,
 )
 from backend.main import app
+from backend.planner.stability import risk_band_from_stability
 from backend.planner.whatif import (
     evaluate_trajectory_point,
     run_what_if_trajectory,
@@ -105,8 +106,11 @@ def test_evaluate_trajectory_point_missing_entity_fallback():
     snap = SceneGraphSnapshot(timestamp=2.5, nodes=[], edges=[])
     pt = evaluate_trajectory_point(snap, "non_existent")
     assert pt.timestamp == 2.5
+    # Non-evidential baseline: the requested track was not in this frame.
     assert pt.stability_score == 50.0
-    assert pt.band == RiskBand.MEDIUM
+    assert pt.evidence == "target_absent"
+    # Band is derived from the single shared stability->band mapping.
+    assert pt.band == risk_band_from_stability(50.0)
 
 
 # ---------------------------------------------------------------------------
@@ -138,12 +142,15 @@ def test_whatif_trajectory_unknown_video():
     res = run_what_if_trajectory(
         video_id="unknown_video",
         timestamp=2.0,
+        scenario="box_overhang",  # eligible, so the video lookup is reached
+        entity_id="box_1",
         registry=FakeVideoRegistry(),
         pipelines={},
         world_model=wm,
     )
     assert res.simulation_available is False
     assert "Unknown video" in (res.simulation_notice or "")
+    assert "video_not_found" in res.limitations
 
 
 def test_whatif_trajectory_worker_entity_refusal():
@@ -203,9 +210,12 @@ def test_whatif_trajectory_full_sequence(monkeypatch):
     from backend.api import perception
 
     # Create mock perception frame results across time [1.0s, 2.0s, 3.0s, 4.0s, 5.0s]
+    # Fixtures are written in normalized [0, 1] coords; the world model consumes
+    # Entity.bbox in absolute pixels, so scale by the fake frame size.
+    _W, _H = FakeVideoMetadata.width, FakeVideoMetadata.height
     mock_frames = []
     for t in [1.0, 2.0, 3.0, 4.0, 5.0]:
-        # At t=3.0, box is placed with severe overhang
+        # At t=3.0, box is placed with severe overhang past the pallet's right edge
         box_x1 = 0.75 if t >= 3.0 else 0.4
         box_x2 = 0.98 if t >= 3.0 else 0.7
         mock_frames.append(
@@ -218,14 +228,14 @@ def test_whatif_trajectory_full_sequence(monkeypatch):
                         track_id="1", timestamp=t,
                         entity_class=EntityClass.BOX,
                         confidence=0.90,
-                        bbox=BoundingBox(x1=box_x1, y1=0.3, x2=box_x2, y2=0.6),
+                        bbox=BoundingBox(x1=box_x1 * _W, y1=0.3 * _H, x2=box_x2 * _W, y2=0.6 * _H),
                     ),
                     Entity(
                         id="pallet_1",
                         track_id="2", timestamp=t,
                         entity_class=EntityClass.PALLET,
                         confidence=0.95,
-                        bbox=BoundingBox(x1=0.2, y1=0.6, x2=0.8, y2=0.8),
+                        bbox=BoundingBox(x1=0.2 * _W, y1=0.6 * _H, x2=0.8 * _W, y2=0.8 * _H),
                     ),
                 ],
             )
@@ -383,6 +393,7 @@ def test_whatif_trajectory_candidate_switching(monkeypatch):
     """Tests that specifying different alternative candidates alters the simulation curve."""
     from backend.api import perception
 
+    _W, _H = FakeVideoMetadata.width, FakeVideoMetadata.height
     mock_frames = [
         PerceptionFrameResult(
             source_id="test_vid_01",
@@ -393,14 +404,14 @@ def test_whatif_trajectory_candidate_switching(monkeypatch):
                     track_id="1", timestamp=2.0,
                     entity_class=EntityClass.BOX,
                     confidence=0.90,
-                    bbox=BoundingBox(x1=0.75, y1=0.3, x2=0.98, y2=0.6),
+                    bbox=BoundingBox(x1=0.75 * _W, y1=0.3 * _H, x2=0.98 * _W, y2=0.6 * _H),
                 ),
                 Entity(
                     id="pallet_1",
                     track_id="2", timestamp=2.0,
                     entity_class=EntityClass.PALLET,
                     confidence=0.95,
-                    bbox=BoundingBox(x1=0.2, y1=0.6, x2=0.8, y2=0.8),
+                    bbox=BoundingBox(x1=0.2 * _W, y1=0.6 * _H, x2=0.8 * _W, y2=0.8 * _H),
                 ),
             ],
         )
