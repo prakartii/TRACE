@@ -96,10 +96,17 @@ def get_frame(
         try:
             image, region_count = pipeline.redact_frame_image(frame.image)
             redaction_state = "faces-blurred" if region_count else "no-faces-detected"
-        except (FileNotFoundError, ImportError, OSError) as exc:
-            # Perception unavailable (weights missing, or torch/ultralytics not
-            # installed) — fail closed on privacy: refuse to hand back an
-            # un-redacted frame rather than silently leaking one.
+        except Exception as exc:
+            # Fail closed on privacy: ANY redactor failure refuses the frame.
+            # This deliberately catches Exception rather than enumerating
+            # types. The tuple here was (FileNotFoundError, ImportError,
+            # OSError), which covers missing weights and an absent
+            # torch/ultralytics, but not what inference actually raises in
+            # practice — a torch RuntimeError, a cv2.error, a shape mismatch —
+            # so the common failures escaped as an opaque 500 with a stack
+            # trace instead of this privacy-specific 503. No frame was ever
+            # leaked either way, but the operator could not tell redaction was
+            # the reason.
             raise HTTPException(
                 status_code=503,
                 detail=(

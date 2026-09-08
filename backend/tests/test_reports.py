@@ -23,11 +23,13 @@ def db():
     init_db(conn)
     conn.executescript(
         r"""
-        INSERT INTO events (event_id, video_id, timestamp, event_type, lens, entity_id, score, band, confidence, status, scenario, factor_breakdown_json, review_status)
+        -- `reviewed` and `review_status` are written together by review_event(),
+        -- so the fixture sets them together too.
+        INSERT INTO events (event_id, video_id, timestamp, event_type, lens, entity_id, score, band, confidence, status, scenario, factor_breakdown_json, reviewed, review_status)
         VALUES
-          (1, 'bayA', 3.0, 'risk', 'structural', 'bayA:b', 45, 'High', 'High', 'supported', 'box_overhang', '{"explanation": "Carton\nover the deck edge."}', NULL),
-          (2, 'bayA', 5.0, 'risk', 'structural', 'bayA:b2', 50, 'High', 'Medium', 'supported', 'box_overhang', '{}', NULL),
-          (3, 'bayB', 8.0, 'behaviour', 'behaviour', 'bayB:w', 60, 'Medium', 'Medium', 'probable', 'dragging_precursor', '{}', 'false_positive');
+          (1, 'bayA', 3.0, 'risk', 'structural', 'bayA:b', 45, 'High', 'High', 'supported', 'box_overhang', '{"explanation": "Carton\nover the deck edge."}', 0, NULL),
+          (2, 'bayA', 5.0, 'risk', 'structural', 'bayA:b2', 50, 'High', 'Medium', 'supported', 'box_overhang', '{}', 0, NULL),
+          (3, 'bayB', 8.0, 'behaviour', 'behaviour', 'bayB:w', 60, 'Medium', 'Medium', 'probable', 'dragging_precursor', '{}', 1, 'false_positive');
 
         INSERT INTO outcome_measurements
           (outcome_id, event_id, video_id, initial_timestamp, classification,
@@ -154,3 +156,23 @@ def test_shift_summary_separates_backed_findings_from_logged_observations(client
     rows = list(csv.DictReader(io.StringIO(client.get("/api/reports/incidents.csv").text)))
     probe = next(r for r in rows if r["event_id"] == "9")
     assert probe["status"] == "unsupported"
+
+
+def test_incidents_csv_respects_the_review_state_filter(client):
+    """The Event Feed's review-state filter counts toward its "export CSV
+    (filtered)" label, but the export exposed no review parameter at all, so
+    the download silently contained every event while claiming to be filtered."""
+    r = client.get("/api/reports/incidents.csv", params={"review_status": "false_positive"})
+    rows = list(csv.DictReader(io.StringIO(r.text)))
+    assert [row["event_id"] for row in rows] == ["3"]
+
+    r2 = client.get("/api/reports/incidents.csv", params={"reviewed": "false"})
+    rows2 = list(csv.DictReader(io.StringIO(r2.text)))
+    assert {row["event_id"] for row in rows2} == {"1", "2"}
+
+    # combines with the other filters rather than replacing them
+    r3 = client.get(
+        "/api/reports/incidents.csv", params={"band": "High", "reviewed": "false"}
+    )
+    rows3 = list(csv.DictReader(io.StringIO(r3.text)))
+    assert {row["event_id"] for row in rows3} == {"1", "2"}

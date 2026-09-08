@@ -193,23 +193,27 @@ export default function EventFeed() {
     }
   }, [])
 
+  // One definition of "what is currently filtered", shared by the list query
+  // and the CSV export. They were built separately, and the export omitted the
+  // review-state filter entirely — so "export CSV (filtered)" downloaded every
+  // event while the screen showed a filtered subset.
+  const activeFilters = useMemo(() => {
+    const f = {}
+    if (filterLens) f.lens = filterLens
+    if (filterStatus) f.status = filterStatus
+    if (filterBand) f.band = filterBand
+    if (filterVideo) f.videoId = filterVideo
+    if (filterReviewState === 'unreviewed') f.reviewed = false
+    else if (filterReviewState === 'reviewed') f.reviewed = true
+    else if (filterReviewState) f.reviewStatus = filterReviewState
+    return f
+  }, [filterLens, filterStatus, filterBand, filterVideo, filterReviewState])
+
   const fetchEvents = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const filters = { limit, offset, order }
-      if (filterLens) filters.lens = filterLens
-      if (filterStatus) filters.status = filterStatus
-      if (filterBand) filters.band = filterBand
-      if (filterVideo) filters.videoId = filterVideo
-
-      if (filterReviewState === 'unreviewed') {
-        filters.reviewed = false
-      } else if (filterReviewState === 'reviewed') {
-        filters.reviewed = true
-      } else if (filterReviewState === 'confirmed_damage' || filterReviewState === 'false_positive' || filterReviewState === 'unresolved') {
-        filters.reviewStatus = filterReviewState
-      }
+      const filters = { limit, offset, order, ...activeFilters }
 
       const data = await listEvents(filters)
       setEvents(data)
@@ -228,7 +232,7 @@ export default function EventFeed() {
     } finally {
       setLoading(false)
     }
-  }, [filterLens, filterStatus, filterBand, filterVideo, filterReviewState, order, offset, selectedEventId])
+  }, [activeFilters, order, offset, selectedEventId])
 
   useEffect(() => {
     fetchEvents()
@@ -389,12 +393,7 @@ export default function EventFeed() {
           <span className="text-small font-semibold text-ink">filters</span>
           <div className="flex items-center gap-3">
             <a
-              href={incidentsCsvUrl({
-                lens: filterLens,
-                band: filterBand,
-                status: filterStatus,
-                videoId: filterVideo,
-              })}
+              href={incidentsCsvUrl(activeFilters)}
               className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink"
             >
               <Download size={13} />

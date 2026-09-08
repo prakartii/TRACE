@@ -9,6 +9,10 @@ export function incidentsCsvUrl(filters = {}) {
   if (filters.lens) p.set('lens', filters.lens)
   if (filters.band) p.set('band', filters.band)
   if (filters.status) p.set('status', filters.status)
+  // Mirrors the Event Feed's review-state filter so "export CSV (filtered)"
+  // downloads what the screen is actually showing.
+  if (filters.reviewed !== undefined) p.set('reviewed', String(filters.reviewed))
+  if (filters.reviewStatus) p.set('review_status', filters.reviewStatus)
   const q = p.toString()
   return `${base}/incidents.csv${q ? `?${q}` : ''}`
 }

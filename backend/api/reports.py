@@ -45,11 +45,17 @@ def incidents_csv(
     lens: str | None = Query(None),
     band: str | None = Query(None),
     status: str | None = Query(None),
+    # The Event Feed's review-state filter counts toward its "export CSV
+    # (filtered)" label, so the export has to honour it too — without these the
+    # download silently contained every event while claiming to be filtered.
+    reviewed: bool | None = Query(None),
+    review_status: str | None = Query(None),
     limit: int = Query(1000, ge=1, le=10000),
     db: sqlite3.Connection = Depends(get_db),
 ) -> Response:
     events = query_events(
-        db, video_id=video_id, lens=lens, band=band, status=status, limit=limit, order="asc"
+        db, video_id=video_id, lens=lens, band=band, status=status,
+        reviewed=reviewed, review_status=review_status, limit=limit, order="asc",
     )
     # event_id -> latest classification (rows ordered by outcome_id, last wins)
     outcomes = {

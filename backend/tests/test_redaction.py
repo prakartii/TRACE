@@ -158,7 +158,15 @@ def test_frame_endpoint_can_be_told_not_to_redact():
     assert r.headers.get("X-TRACE-Redaction") == "disabled"
 
 
-@pytest.mark.parametrize("exc", [FileNotFoundError("weights"), ImportError("no torch"), OSError("io")])
+@pytest.mark.parametrize("exc", [
+    FileNotFoundError("weights"), ImportError("no torch"), OSError("io"),
+    # What inference actually raises in practice. These used to escape the
+    # handler's exception tuple and surface as an opaque 500 — no frame was
+    # leaked, but the 503 that names redaction as the cause never fired.
+    RuntimeError("CUDA out of memory"),
+    ValueError("could not broadcast input array"),
+    AttributeError("'NoneType' object has no attribute 'shape'"),
+])
 def test_frame_endpoint_fails_closed_when_perception_unavailable(monkeypatch, exc):
     client, vid = _client_with_video()
     from backend.api import perception
