@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.behaviour import router as behaviour_router
+from backend.api.actions import router as actions_router
 from backend.api.events import router as events_router
 from backend.api.findings import router as findings_router
 from backend.api.perception import router as perception_router
@@ -62,6 +63,7 @@ app.include_router(perception_router)
 app.include_router(scene_router)
 app.include_router(findings_router)
 app.include_router(events_router)
+app.include_router(actions_router)
 app.include_router(simulation_router)
 app.include_router(planner_whatif_router)
 app.include_router(canonical_whatif_router)

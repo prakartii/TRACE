@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { ArrowLeft, ArrowRight, RotateCcw, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Play, RotateCcw, TriangleAlert } from 'lucide-react'
 import { listEvents, getEvent, submitReview } from '../api/events.js'
+import { getActionPlan } from '../api/actions.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle } from '../lib/scenarios.js'
 import {
   formatConfidence,
   formatEntityName,
+  formatScore,
   humanizeExplanation,
 } from '../lib/format.js'
 import TemporalRiskPanel from '../components/TemporalRiskPanel.jsx'
@@ -99,8 +101,10 @@ export default function EventFeed() {
   const [offset, setOffset] = useState(0)
   const limit = 25
 
+  // Selected event & Safe Action Plan
   const [selectedEventId, setSelectedEventId] = useState(null)
   const [selectedEvent, setSelectedEvent] = useState(null)
+  const [actionPlan, setActionPlan] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(null)
 
@@ -199,6 +203,7 @@ export default function EventFeed() {
         }
       } else {
         setSelectedEvent(null)
+        setActionPlan(null)
         setSelectedEventId(null)
       }
     } catch (err) {
@@ -212,9 +217,11 @@ export default function EventFeed() {
     fetchEvents()
   }, [fetchEvents])
 
+  // Load single event detail & Safe Action Plan when selectedEventId changes
   useEffect(() => {
     if (!selectedEventId) {
       setSelectedEvent(null)
+      setActionPlan(null)
       return
     }
     let active = true
@@ -222,14 +229,22 @@ export default function EventFeed() {
     setDetailError(null)
     setReviewMessage(null)
 
-    getEvent(selectedEventId)
-      .then((data) => {
+    // Parallel fetch: Event entity + Safe Action Plan
+    Promise.all([
+      getEvent(selectedEventId),
+      getActionPlan(selectedEventId).catch((err) => {
+        console.warn('Action plan API error, using event-derived plan:', err)
+        return null
+      }),
+    ])
+      .then(([evData, planData]) => {
         if (active) {
-          setSelectedEvent(data)
+          setSelectedEvent(evData)
+          setActionPlan(planData)
         }
       })
       .catch((err) => {
-        if (active) setDetailError(err.message || 'Failed to load event detail.')
+        if (active) setDetailError(err.message || 'Failed to load incident detail.')
       })
       .finally(() => {
         if (active) setDetailLoading(false)
@@ -309,6 +324,48 @@ export default function EventFeed() {
         </div>
       </section>
 
+      {/* recommended demos triage */}
+      <section className="border border-line bg-surface p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+        <span className="text-caption font-medium text-ink-soft">
+          recommended demos:
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEventId(73)
+              handleReplayIncident({ event_id: 73, video_id: 'ac99ff34e1bd2c13', timestamp: 36.67 })
+            }}
+            className="border border-signal/40 bg-signal/10 px-2.5 py-1 text-caption font-medium text-[#8a5f00] hover:bg-signal/20 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <span>event #73</span>
+            <span className="text-ink-faint">· box overhang &amp; action plan</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEventId(75)
+              handleReplayIncident({ event_id: 75, video_id: '93e4b1963c6fcd97', timestamp: 1.0 })
+            }}
+            className="border border-ok/40 bg-ok/10 px-2.5 py-1 text-caption font-medium text-ok hover:bg-ok/20 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <span>event #75</span>
+            <span className="text-ink-faint">· verified prevented</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEventId(105)
+              handleReplayIncident({ event_id: 105, video_id: '93e4b1963c6fcd97', timestamp: 0.0 })
+            }}
+            className="border border-danger/40 bg-danger/10 px-2.5 py-1 text-caption font-medium text-danger hover:bg-danger/20 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <span>event #105</span>
+            <span className="text-ink-faint">· dock edge hazard</span>
+          </button>
+        </div>
+      </section>
+
       {/* filters */}
       <section className="border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
@@ -317,7 +374,7 @@ export default function EventFeed() {
             <button
               type="button"
               onClick={handleResetFilters}
-              className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink"
+              className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink cursor-pointer"
             >
               <RotateCcw size={13} />
               reset filters ({activeFilterCount})
@@ -393,21 +450,24 @@ export default function EventFeed() {
               setOffset(0)
             }}
             options={[
-              ['', 'all reviews'],
-              ['unreviewed', 'unreviewed only'],
-              ['reviewed', 'reviewed only'],
+              ['', 'all states'],
+              ['unreviewed', 'unreviewed'],
+              ['reviewed', 'reviewed'],
               ['confirmed_damage', 'confirmed damage'],
               ['false_positive', 'false positive'],
-              ['unresolved', 'unresolved / pending'],
+              ['unresolved', 'unresolved'],
             ]}
           />
           <Filter
-            label="sort order"
+            label="time order"
             value={order}
-            onChange={setOrder}
+            onChange={(v) => {
+              setOrder(v)
+              setOffset(0)
+            }}
             options={[
-              ['desc', 'newest recorded'],
-              ['asc', 'chronological'],
+              ['desc', 'newest first'],
+              ['asc', 'oldest first'],
             ]}
           />
         </div>
@@ -425,7 +485,7 @@ export default function EventFeed() {
               <button
                 type="button"
                 onClick={() => setGroupSimilar(!groupSimilar)}
-                className={`border px-2.5 py-1 text-caption font-medium transition-colors ${
+                className={`border px-2.5 py-1 text-caption font-medium transition-colors cursor-pointer ${
                   groupSimilar
                     ? 'border-ink bg-ink text-paper'
                     : 'border-line bg-surface text-ink-soft hover:text-ink'
@@ -434,56 +494,26 @@ export default function EventFeed() {
               >
                 {groupSimilar ? 'grouped incidents' : 'raw detections'}
               </button>
-              <button
-                type="button"
-                disabled={offset === 0 || loading}
-                onClick={() => setOffset(Math.max(0, offset - limit))}
-                className="inline-flex items-center gap-1 border border-line bg-surface px-2 py-1 text-caption text-ink-soft disabled:opacity-40"
-              >
-                <ArrowLeft size={13} /> previous
-              </button>
-              <button
-                type="button"
-                disabled={events.length < limit || loading}
-                onClick={() => setOffset(offset + limit)}
-                className="inline-flex items-center gap-1 border border-line bg-surface px-2 py-1 text-caption text-ink-soft disabled:opacity-40"
-              >
-                next <ArrowRight size={13} />
-              </button>
             </div>
           </div>
 
           {loading && (
-            <div className="flex items-center gap-3 border border-line bg-surface p-6 text-small text-ink-soft">
+            <div className="flex items-center gap-2 border border-line bg-surface p-8 text-small text-ink-soft">
               <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
-              loading operational events from the store…
+              retrieving incidents from ledger…
             </div>
           )}
 
           {!loading && error && (
             <div className="border border-danger bg-danger/5 p-4 text-small text-danger">
-              <p className="font-semibold">failed to query events</p>
+              <p className="font-semibold">error querying incident ledger</p>
               <p className="mt-1 font-mono text-caption">{error}</p>
-              <button
-                type="button"
-                onClick={fetchEvents}
-                className="mt-2 border border-danger px-3 py-1 text-caption font-medium hover:bg-danger/10"
-              >
-                retry request
-              </button>
             </div>
           )}
 
-          {!loading && !error && events.length === 0 && (
-            <div className="border border-line bg-surface p-8 text-small text-ink-soft">
-              <p className="font-semibold text-ink">
-                {activeFilterCount > 0 ? 'no matching events' : 'no recorded events in the store'}
-              </p>
-              <p className="mt-1">
-                {activeFilterCount > 0
-                  ? 'No persisted events match the current filters.'
-                  : 'Events are persisted automatically when challenge videos are monitored in live view.'}
-              </p>
+          {!loading && !error && displayedEvents.length === 0 && (
+            <div className="border border-line bg-surface p-12 text-center text-small text-ink-soft">
+              no safety incidents match the active filters.
             </div>
           )}
 
@@ -493,7 +523,6 @@ export default function EventFeed() {
                 const isSelected = ev.event_id === selectedEventId
                 const config = getScenarioConfig(ev.scenario)
                 const title = resolveIncidentTitle(ev) || config.title || 'Observed condition'
-                const entityName = formatEntityName(ev.entity_id)
                 const explanationText = humanizeExplanation(
                   ev.explanation || ev.planner_recommendation?.rationale || config.whyItMatters,
                   ev.scenario,
@@ -501,14 +530,13 @@ export default function EventFeed() {
                 )
                 const statusCls = STATUS_STYLE[ev.status] || STATUS_STYLE.insufficient_evidence
                 const bandCls = ev.band ? BAND_STYLE[ev.band] || BAND_STYLE.Low : null
-                const reviewBadge = ev.reviewed && ev.review_status ? REVIEW_BADGES[ev.review_status] : null
                 const videoInfo = getVideoInfo(ev.video_id)
 
                 return (
                   <button
                     key={ev.event_id}
                     onClick={() => setSelectedEventId(ev.event_id)}
-                    className={`w-full border bg-surface p-4 text-left transition-colors ${
+                    className={`w-full border bg-surface p-4 text-left transition-colors cursor-pointer ${
                       isSelected ? 'border-ink' : 'border-line hover:border-line-strong'
                     }`}
                   >
@@ -556,39 +584,78 @@ export default function EventFeed() {
                       </div>
                     )}
 
-                    <div className="mt-3 flex items-center justify-between border-t border-line pt-2">
-                      <span className="text-caption text-ink-faint">{videoInfo.scenarioTitle}</span>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleReplayIncident(ev)
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
+                    <div className="mt-3 flex items-center justify-between border-t border-line pt-2 text-caption">
+                      <span className="text-ink-faint">{videoInfo.scenarioTitle}</span>
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`font-semibold transition-colors ${
+                            isSelected ? 'text-ink underline' : 'text-ink-soft hover:text-ink'
+                          }`}
+                        >
+                          safe action plan →
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
                             e.stopPropagation()
                             handleReplayIncident(ev)
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 border border-ink bg-ink px-3 py-1 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
-                      >
-                        view incident
-                        <ArrowRight size={13} />
-                      </span>
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.stopPropagation()
+                              handleReplayIncident(ev)
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 font-semibold text-ink transition-colors hover:text-ink-soft cursor-pointer"
+                        >
+                          <Play size={12} />
+                          replay
+                        </span>
+                      </div>
                     </div>
                   </button>
                 )
               })}
             </div>
           )}
+
+          {/* pagination */}
+          <div className="mt-2 flex items-center justify-between border border-line bg-surface px-4 py-2.5 text-small">
+            <span className="text-caption text-ink-faint">
+              showing {offset + 1}–{Math.min(offset + limit, offset + displayedEvents.length)}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - limit))}
+                className="inline-flex items-center gap-1 border border-line px-2.5 py-1 text-caption text-ink transition-colors hover:bg-paper disabled:opacity-30 cursor-pointer"
+              >
+                <ArrowLeft size={13} />
+                previous
+              </button>
+              <button
+                type="button"
+                disabled={events.length < limit}
+                onClick={() => setOffset(offset + limit)}
+                className="inline-flex items-center gap-1 border border-line px-2.5 py-1 text-caption text-ink transition-colors hover:bg-paper disabled:opacity-30 cursor-pointer"
+              >
+                next
+                <ArrowRight size={13} />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* detail */}
         <div className="lg:col-span-5 lg:sticky lg:top-6">
           <div className="border border-line bg-surface">
             <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-              <span className="text-small font-semibold text-ink">recorded event detail</span>
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-ok" />
+                <span className="text-small font-semibold text-ink">safe action plan</span>
+              </div>
               {selectedEvent && (
                 <span className="font-mono text-caption text-ink-faint">#{selectedEvent.event_id}</span>
               )}
@@ -597,7 +664,7 @@ export default function EventFeed() {
             {detailLoading && (
               <div className="flex items-center gap-2 p-6 text-small text-ink-soft">
                 <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
-                retrieving event #{selectedEventId}…
+                evaluating safe action plan for incident #{selectedEventId}…
               </div>
             )}
 
@@ -610,108 +677,161 @@ export default function EventFeed() {
 
             {!detailLoading && !detailError && !selectedEvent && (
               <p className="p-6 text-small text-ink-soft">
-                Select an event from the feed to inspect recorded evidence and the planner
-                recommendation.
+                Select an incident from the list to view its prioritized safe action plan and video evidence.
               </p>
             )}
 
+            {/* Selected Event: Grounded Safe Action Plan */}
             {!detailLoading && !detailError && selectedEvent && (
               <div className="flex flex-col gap-4 p-4">
-                <div className="border border-line bg-paper px-3 py-2 text-caption text-ink-soft">
-                  archived record — finding and recommendation preserved at{' '}
-                  <span className="font-mono">{formatTimestamp(selectedEvent.timestamp)}</span>.
-                </div>
-
-                <div className="flex items-center justify-between bg-ink p-3">
-                  <div>
-                    <span className="block text-label text-paper/60">investigate in video context</span>
+                {/* 1. Video Context Hero Bar */}
+                <div className="flex items-center justify-between bg-ink p-3 text-paper">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-label text-paper/60 uppercase">video evidence clip</span>
                     <span className="text-small font-medium text-paper">
-                      {selectedEvent.video_id ? getVideoName(selectedEvent.video_id) : 'source video'}{' '}
-                      @ <span className="font-mono">{formatTimestamp(selectedEvent.timestamp)}</span>
+                      {getVideoName(selectedEvent.video_id)} @ <span className="font-mono">{formatTimestamp(selectedEvent.timestamp)}</span>
+                    </span>
+                    <span className="text-caption text-paper/70 font-mono">
+                      t={typeof selectedEvent.timestamp === 'number' ? selectedEvent.timestamp.toFixed(1) : selectedEvent.timestamp}s
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleReplayIncident(selectedEvent)}
-                    className="inline-flex items-center gap-1.5 bg-paper px-3 py-1.5 text-caption font-semibold text-ink transition-colors hover:bg-line"
+                    className="inline-flex items-center gap-1.5 bg-paper px-3 py-1.5 text-caption font-semibold text-ink transition-colors hover:bg-line cursor-pointer"
+                    title="View video replay for this incident"
                   >
                     replay incident
                     <ArrowRight size={13} />
                   </button>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`border px-1.5 py-0.5 text-label font-medium ${
-                      STATUS_STYLE[selectedEvent.status] || STATUS_STYLE.insufficient_evidence
-                    }`}
-                  >
-                    {STATUS_LABEL[selectedEvent.status] || selectedEvent.status}
-                  </span>
-                  <span className="border border-line bg-paper px-1.5 py-0.5 text-label text-ink-soft">
-                    {selectedEvent.lens}
-                  </span>
-                  {selectedEvent.confidence && (
-                    <span className="text-caption text-ink-soft">
-                      conf: <span className="font-mono tabular-nums">{formatConfidence(selectedEvent.confidence)}</span>
+                {/* 2. Incident Title & Risk Band */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`border px-1.5 py-0.5 text-label font-medium ${
+                        STATUS_STYLE[selectedEvent.status] || STATUS_STYLE.insufficient_evidence
+                      }`}
+                    >
+                      {STATUS_LABEL[selectedEvent.status] || selectedEvent.status}
                     </span>
-                  )}
-                  {selectedEvent.band && (
-                    <span className={`border px-1.5 py-0.5 text-label font-medium ${BAND_STYLE[selectedEvent.band] || BAND_STYLE.Low}`}>
-                      {selectedEvent.band} risk
+                    <span className="border border-line bg-paper px-1.5 py-0.5 text-label text-ink-soft">
+                      {selectedEvent.lens}
                     </span>
-                  )}
-                  {selectedEvent.event_type === 'prevented' && (
-                    <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label text-ok">prevented</span>
-                  )}
-                  {selectedEvent.event_type === 'near_miss' && (
-                    <span className="border border-signal/40 bg-signal/10 px-1.5 py-0.5 text-label text-[#8a5f00]">near-miss</span>
-                  )}
+                    {selectedEvent.confidence && (
+                      <span className="text-caption text-ink-soft">
+                        conf: <span className="font-mono tabular-nums">{formatConfidence(selectedEvent.confidence)}</span>
+                      </span>
+                    )}
+                    {selectedEvent.band && (
+                      <span className={`border px-1.5 py-0.5 text-label font-medium ${BAND_STYLE[selectedEvent.band] || BAND_STYLE.Low}`}>
+                        {selectedEvent.band} risk
+                      </span>
+                    )}
+                    {selectedEvent.event_type === 'prevented' && (
+                      <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label text-ok">prevented</span>
+                    )}
+                    {selectedEvent.event_type === 'near_miss' && (
+                      <span className="border border-signal/40 bg-signal/10 px-1.5 py-0.5 text-label text-[#8a5f00]">near-miss</span>
+                    )}
+                  </div>
+                  <h2 className="text-title font-semibold leading-snug text-ink mt-1">
+                    {actionPlan?.title || resolveIncidentTitle(selectedEvent)}
+                  </h2>
+                  <div className="text-caption text-ink-soft">
+                    {getVideoName(selectedEvent.video_id)} · <span className="font-mono font-medium text-ink">{formatTimestamp(selectedEvent.timestamp)}</span> · entity: <span className="font-mono text-ink">{formatEntityName(selectedEvent.entity_id) || 'global scene'}</span>
+                  </div>
                 </div>
 
-                <h2 className="text-title font-semibold leading-snug text-ink">
-                  {resolveIncidentTitle(selectedEvent)}
-                </h2>
-
-                <div className="flex flex-col gap-1 border-t border-line pt-2 text-small text-ink-soft">
-                  <div>video: <span className="font-medium text-ink">{getVideoName(selectedEvent.video_id)}</span></div>
-                  <div>timestamp: <span className="font-mono text-ink">{formatTimestamp(selectedEvent.timestamp)}</span></div>
-                  <div>entities: <span className="font-medium text-ink">{formatEntityName(selectedEvent.entity_id) || 'global scene'}</span></div>
+                {/* 3. WHY THIS MATTERS */}
+                <div className="flex flex-col gap-1 border-t border-line pt-3">
+                  <span className="text-label font-medium text-ink-faint uppercase">why this matters</span>
+                  <p className="border border-line bg-paper p-2.5 text-small text-ink leading-relaxed">
+                    {actionPlan?.reason || selectedEvent.planner_recommendation?.rationale || selectedEvent.explanation || getScenarioConfig(selectedEvent.scenario).whyItMatters || 'Uncorrected handling hazards directly escalate risk to personnel safety and product integrity.'}
+                  </p>
                 </div>
 
-                {selectedEvent.explanation && (
-                  <div className="flex flex-col gap-1 border-t border-line pt-3">
-                    <span className="text-label font-medium text-ink-faint">1. what TRACE observed</span>
-                    <p className="border border-line bg-paper p-2.5 text-small text-ink">
-                      {humanizeExplanation(selectedEvent.explanation, selectedEvent.scenario, selectedEvent.entity_id)}
+                {/* 4. DO THIS NOW (Prioritized Action Guidance) */}
+                <div className="flex flex-col gap-1.5 border-t border-line pt-3">
+                  <span className="text-label font-medium text-ok uppercase tracking-wider flex items-center justify-between">
+                    <span>do this now</span>
+                    {selectedEvent.band === 'Critical' && (
+                      <span className="border border-danger/40 bg-danger/10 text-danger text-[9px] font-bold px-1.5 py-0.2 uppercase tracking-wide">
+                        immediate
+                      </span>
+                    )}
+                  </span>
+
+                  <div className="border border-ok/30 bg-ok/5 p-3 text-small text-ink flex flex-col gap-2">
+                    {actionPlan?.steps && actionPlan.steps.length > 1 ? (
+                      <ol className="flex flex-col gap-1.5 list-none p-0 m-0">
+                        {actionPlan.steps.map((step, idx) => (
+                          <li key={idx} className="flex items-start gap-2 leading-relaxed">
+                            <span className="w-4 h-4 rounded-full bg-ok text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                              {idx + 1}
+                            </span>
+                            <span className={idx === 0 ? "font-semibold text-ink" : "text-ink-soft"}>
+                              {step.replace(/^\d+\.\s*/, '')}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="font-semibold leading-relaxed">
+                        {actionPlan?.immediate_action || selectedEvent.planner_recommendation?.action || selectedEvent.recommended_action || getScenarioConfig(selectedEvent.scenario).recommendedAction}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 5. ✓ VERIFY */}
+                <div className="flex flex-col gap-1 border-t border-line pt-3">
+                  <span className="text-label font-medium text-ink-soft uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="text-ok font-bold">✓</span>
+                    <span>verify</span>
+                  </span>
+                  <div className="border border-line bg-paper p-2.5 text-small text-ink leading-relaxed">
+                    <p className="font-medium">
+                      {actionPlan?.verification || "Confirm the corrective action is completed before resuming work."}
                     </p>
                   </div>
-                )}
+                </div>
 
-                {selectedEvent.planner_recommendation ? (
-                  <div className="flex flex-col gap-1 border-t border-line pt-3">
-                    <span className="text-label font-medium text-ok">2. recommended safe action</span>
-                    <div className="border border-ok/40 bg-ok/5 p-2.5 text-small text-ink">
-                      <p className="font-medium">{selectedEvent.planner_recommendation.action}</p>
-                      {selectedEvent.planner_recommendation.rationale && (
-                        <p className="mt-1.5 border-t border-ok/20 pt-1.5 text-caption text-ink-soft">
-                          {selectedEvent.planner_recommendation.rationale}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : selectedEvent.recommended_action ? (
-                  <div className="flex flex-col gap-1 border-t border-line pt-3">
-                    <span className="text-label font-medium text-ink-faint">2. recommended precaution</span>
-                    <div className="border border-line bg-paper p-2.5 text-small text-ink">
-                      {selectedEvent.recommended_action}
-                    </div>
-                  </div>
-                ) : null}
+                {/* 6. Primary Action Buttons */}
+                <div className="border-t border-line pt-3 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleReplayIncident(selectedEvent)}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-ink px-4 py-2.5 text-small font-semibold text-paper transition-colors hover:bg-ink-soft cursor-pointer"
+                  >
+                    <span>view video evidence / replay incident</span>
+                    <Play size={13} />
+                  </button>
 
+                  {(actionPlan?.what_if_eligible || selectedEvent.planner_recommendation?.what_if_eligible) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigateTo('What-If Simulation', {
+                          eventId: selectedEvent.event_id,
+                          videoId: selectedEvent.video_id,
+                          timestamp: selectedEvent.timestamp,
+                          scenario: selectedEvent.scenario,
+                          entityId: selectedEvent.entity_id,
+                        })
+                      }}
+                      className="w-full inline-flex items-center justify-center gap-2 border border-ok/40 bg-ok/10 px-4 py-2 text-small font-semibold text-ok transition-colors hover:bg-ok/20 cursor-pointer"
+                    >
+                      <span>simulate alternative safe placement →</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* 7. Operator Review */}
                 <div className="flex flex-col gap-2 border border-line bg-paper p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-label font-medium text-ink-soft">3. operator review</span>
+                    <span className="text-label font-medium text-ink-soft">operator review</span>
                     {selectedEvent.reviewed && selectedEvent.review_status ? (
                       <span className={`border px-1.5 py-0.5 text-label ${REVIEW_BADGES[selectedEvent.review_status]?.style}`}>
                         {REVIEW_BADGES[selectedEvent.review_status]?.label}
@@ -750,7 +870,7 @@ export default function EventFeed() {
                       type="button"
                       disabled={reviewLoading}
                       onClick={() => handleReviewSubmit('confirmed_damage')}
-                      className="bg-surface px-2 py-1.5 text-caption font-medium text-danger transition-colors hover:bg-paper disabled:opacity-50"
+                      className="bg-surface px-2 py-1.5 text-caption font-medium text-danger transition-colors hover:bg-paper disabled:opacity-50 cursor-pointer"
                     >
                       confirmed damage
                     </button>
@@ -758,7 +878,7 @@ export default function EventFeed() {
                       type="button"
                       disabled={reviewLoading}
                       onClick={() => handleReviewSubmit('false_positive')}
-                      className="bg-surface px-2 py-1.5 text-caption font-medium text-steel transition-colors hover:bg-paper disabled:opacity-50"
+                      className="bg-surface px-2 py-1.5 text-caption font-medium text-steel transition-colors hover:bg-paper disabled:opacity-50 cursor-pointer"
                     >
                       false positive
                     </button>
@@ -766,24 +886,41 @@ export default function EventFeed() {
                       type="button"
                       disabled={reviewLoading}
                       onClick={() => handleReviewSubmit('unresolved')}
-                      className="bg-surface px-2 py-1.5 text-caption font-medium text-ink-soft transition-colors hover:bg-paper disabled:opacity-50"
+                      className="bg-surface px-2 py-1.5 text-caption font-medium text-ink-soft transition-colors hover:bg-paper disabled:opacity-50 cursor-pointer"
                     >
                       unresolved
                     </button>
                   </div>
                 </div>
 
+                {/* 8. Progressive Disclosure: Why This Action? / Technical Details */}
                 <div className="border-t border-line pt-2">
                   <button
                     type="button"
                     onClick={() => setShowTechnical(!showTechnical)}
-                    className="text-caption text-ink-soft underline-offset-2 hover:text-ink hover:underline"
+                    className="flex items-center justify-between w-full text-caption text-ink-soft underline-offset-2 hover:text-ink hover:underline cursor-pointer py-1"
                   >
-                    {showTechnical ? 'hide technical evidence' : 'view technical evidence & limitations'}
+                    <span>why this action? (technical evidence &amp; limitations)</span>
+                    <span className="font-mono text-caption">{showTechnical ? '▲' : '▾'}</span>
                   </button>
 
                   {showTechnical && (
                     <div className="mt-2 flex flex-col gap-2.5 border border-line bg-paper p-3 text-caption">
+                      <div className="grid grid-cols-2 gap-2 text-caption">
+                        <div><span className="text-ink-faint">Event ID:</span> <span className="font-mono font-semibold text-ink">#{selectedEvent.event_id}</span></div>
+                        <div><span className="text-ink-faint">Evidence Status:</span> <span className="font-semibold text-ink">{actionPlan?.evidence_status || STATUS_LABEL[selectedEvent.status] || selectedEvent.status}</span></div>
+                        <div><span className="text-ink-faint">Target Entity:</span> <span className="font-semibold text-ink">{formatEntityName(selectedEvent.entity_id) || 'Global scene'}</span></div>
+                        <div><span className="text-ink-faint">Confidence:</span> <span className="font-mono font-semibold text-ink">{formatConfidence(selectedEvent.confidence)}</span></div>
+                        <div><span className="text-ink-faint">Risk Score:</span> <span className="font-mono font-semibold text-ink">{formatScore(selectedEvent.risk_score)}</span></div>
+                        <div><span className="text-ink-faint">Internal Scenario:</span> <span className="font-mono text-ink-soft">{selectedEvent.scenario}</span></div>
+                      </div>
+
+                      {/* Rule Source */}
+                      <div className="text-caption text-ink-soft border-t border-line pt-1.5">
+                        <span className="text-ink-faint">Grounded Source:</span> <span className="font-medium text-ink">{actionPlan?.source || "TRACE Operational Safety Catalog (deterministic rule)"}</span>
+                      </div>
+
+                      {/* Video Evidence Measurements */}
                       {selectedEvent.evidence && Object.keys(selectedEvent.evidence).length > 0 && (
                         <div>
                           <span className="text-label font-medium text-ink-soft">sensor / geometric evidence</span>
@@ -803,7 +940,7 @@ export default function EventFeed() {
 
                       {selectedEvent.limitations && selectedEvent.limitations.length > 0 && (
                         <div>
-                          <span className="text-label font-medium text-ink-soft">known sensor & camera limitations</span>
+                          <span className="text-label font-medium text-ink-soft">known sensor &amp; camera limitations</span>
                           <ul className="mt-1 list-inside list-disc text-ink-soft">
                             {selectedEvent.limitations.map((lim, idx) => (
                               <li key={idx}>{lim.replace(/_/g, ' ')}</li>

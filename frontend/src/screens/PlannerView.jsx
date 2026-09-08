@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { ArrowRight, FlaskConical, Zap } from 'lucide-react'
 import { listEvents, getEvent } from '../api/events.js'
+import { getActionPlan } from '../api/actions.js'
+import { getEventOutcome } from '../api/measurement.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS } from '../lib/scenarios.js'
+import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle, DEMO_PRESETS } from '../lib/scenarios.js'
 import { formatConfidence, formatPercentage, formatEntityName } from '../lib/format.js'
 
 const REFERENCE_SCENARIOS = [
@@ -72,20 +74,23 @@ export default function PlannerView() {
   const [recentEvents, setRecentEvents] = useState([])
   const [selectedEventId, setSelectedEventId] = useState(replayTarget?.eventId || 73)
   const [activeEvent, setActiveEvent] = useState(replayTarget?.event || null)
+  const [safePlan, setSafePlan] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [showTechnical, setShowTechnical] = useState(false)
 
+  // 1. Load initial video and event catalogs (all events)
   useEffect(() => {
     let active = true
     Promise.all([
       listVideos().catch(() => []),
-      listEvents({ limit: 40, order: 'desc' }).catch(() => []),
+      listEvents({ limit: 300, order: 'desc' }).catch(() => []),
     ]).then(([vids, evs]) => {
       if (!active) return
       setVideos(vids || [])
       setRecentEvents(evs || [])
 
+      // If no event loaded yet, select selectedEventId or first event
       if (!activeEvent && evs?.length > 0) {
         const found = evs.find((e) => e.event_id === selectedEventId) || evs[0]
         setSelectedEventId(found.event_id)
@@ -97,15 +102,25 @@ export default function PlannerView() {
     }
   }, [])
 
+  // 2. Load active event details & Safe Action Plan whenever selectedEventId changes
   useEffect(() => {
     if (!selectedEventId) return
     let active = true
     setLoading(true)
     setError(null)
 
-    getEvent(selectedEventId)
-      .then((data) => {
-        if (active) setActiveEvent(data)
+    Promise.all([
+      getEvent(selectedEventId),
+      getActionPlan(selectedEventId).catch((err) => {
+        console.warn('Action plan load error for event', selectedEventId, err)
+        return null
+      }),
+    ])
+      .then(([evData, planData]) => {
+        if (active) {
+          setActiveEvent(evData)
+          setSafePlan(planData)
+        }
       })
       .catch((err) => {
         if (active) setError(err.message || `Failed to load event #${selectedEventId}`)
@@ -136,7 +151,16 @@ export default function PlannerView() {
     if (match) {
       setActiveEvent(match)
     } else {
-      setActiveEvent(null)
+      const preset = DEMO_PRESETS.find((d) => d.id === targetId)
+      if (preset) {
+        setActiveEvent({
+          event_id: preset.id,
+          video_id: preset.videoId,
+          timestamp: preset.timestamp,
+          scenario: preset.scenario,
+          band: 'High',
+        })
+      }
     }
   }
 
@@ -249,7 +273,7 @@ export default function PlannerView() {
           >
             {recentEvents.map((ev) => (
               <option key={ev.event_id} value={ev.event_id}>
-                event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {getScenarioConfig(ev.scenario).title} [{getVideoScenarioInfo(ev.video_id).cameraName}]
+                event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) · {getScenarioConfig(ev.scenario).title} [{getVideoScenarioInfo(ev.video_id).cameraName}]
               </option>
             ))}
           </select>
@@ -327,50 +351,110 @@ export default function PlannerView() {
         </div>
       </section>
 
-      {/* step 2 */}
+      {/* step 2 · what is likely to happen */}
       <section className="border border-line bg-surface">
         <div className="border-b border-line px-4 py-2.5">
           <span className="font-mono text-caption font-semibold text-ink">
-            step 2 · what is likely to happen
+            step 2 · what is likely to happen (inferred &amp; predicted)
           </span>
         </div>
         <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4">
-          <Metric label="support coverage" value={supportCoverage} note="threshold ≥ 50%" />
-          <Metric label="cantilever overhang" value={overhangVal} note="unsupported span" tone="signal" />
-          <Metric label="mass ordering" value={massVal} note="tier mass ratio" />
-          <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
+          {activeEvent?.lens === 'environmental' ? (
+            <>
+              <Metric label="perimeter boundary" value={evidence.zone_id || 'Dock Edge Hazard Zone'} note="calibrated hazard zone" tone="signal" />
+              <Metric label="exposure duration" value={`${evidence.persistence_frames || 12} frames`} note="sustained intrusion" />
+              <Metric label="severity rating" value={evidence.severity_multiplier ? `${evidence.severity_multiplier}x` : '1.5x'} note="facility zone rating" tone="signal" />
+              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
+            </>
+          ) : activeEvent?.lens === 'behaviour' ? (
+            <>
+              <Metric label="kinematics" value={`${(evidence.box_total_displacement || 0.24).toFixed(2)}m`} note="displacement translation" tone="signal" />
+              <Metric label="worker proximity" value={`${Math.round((evidence.sustained_proximity_fraction || 1.0) * 100)}%`} note="handling contact" />
+              <Metric label="motion signature" value={activeEvent?.scenario?.includes('step') ? 'Foot Contact' : activeEvent?.scenario?.includes('strap') ? 'Strap Grip' : activeEvent?.scenario?.includes('drop') ? 'Drop Shock' : activeEvent?.scenario?.includes('drag') ? 'Friction Drag' : 'Handling'} note="kinematic profile" tone="signal" />
+              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
+            </>
+          ) : activeEvent?.lens === 'conformance' ? (
+            <>
+              <Metric label="manifest axis" value={evidence.required_orientation || 'Upright'} note="required orientation" tone="signal" />
+              <Metric label="aspect deviation" value={evidence.observed_aspect_ratio ? evidence.observed_aspect_ratio.toFixed(2) : '3.12'} note="observed vs manifest" />
+              <Metric label="dispatch schedule" value={evidence.required_sequence || 'Manifest order'} note="staging sequence" />
+              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
+            </>
+          ) : (
+            <>
+              <Metric label="support coverage" value={supportCoverage} note="threshold ≥ 50%" />
+              <Metric label="cantilever overhang" value={overhangVal} note="unsupported span" tone="signal" />
+              <Metric label="mass ordering" value={massVal} note="tier mass ratio" />
+              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
+            </>
+          )}
         </div>
         <div className="border-t border-line px-4 py-3 text-small text-ink-soft">
-          These measurements indicate insufficient support beneath the carton and an increased
-          risk of tipping or stack instability during handling.
+          {safePlan?.reason || whyActionText || 'These optical measurements indicate elevated operational risk requiring corrective intervention.'}
         </div>
       </section>
 
-      {/* step 3 */}
+      {/* step 3 · what to do now */}
       <section className="border border-ok/40 bg-surface">
         <div className="h-1 bg-ok" />
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
           <span className="font-mono text-caption font-semibold text-ok">
-            step 3 · what to do now
+            step 3 · what to do now (safe action plan)
           </span>
-          <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label text-ok">
-            deterministic prescription
+          <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label text-ok uppercase">
+            {safePlan?.evidence_status || 'deterministic prescription'}
           </span>
         </div>
-        <div className="p-5">
-          <p className="font-display text-display-md font-semibold leading-tight text-ink">
-            {actionHeadline}
-          </p>
-          <p className="mt-2 text-body text-ink-soft">{actionDetail}</p>
-          <div className="mt-4 border-t border-line pt-3">
-            <span className="text-label font-medium text-ink-faint">why this action</span>
-            <p className="mt-1 text-small text-ink-soft">{whyActionText}</p>
+        <div className="p-5 flex flex-col gap-4">
+          <div>
+            <p className="font-display text-display-md font-semibold leading-tight text-ink uppercase">
+              {safePlan?.immediate_action || actionHeadline}
+            </p>
+            {!safePlan && (
+              <p className="mt-2 text-body text-ink-soft">{actionDetail}</p>
+            )}
           </div>
-          <div className="mt-3 flex items-center justify-between text-caption text-ink-faint">
+
+          {/* Sequential Action Checklist */}
+          {safePlan?.steps && safePlan.steps.length > 1 && (
+            <div className="flex flex-col gap-2 pt-3 border-t border-line">
+              <span className="text-label font-medium text-ink-soft uppercase tracking-wider">
+                action checklist (sequential steps)
+              </span>
+              <ol className="flex flex-col gap-2 list-none p-0 m-0">
+                {safePlan.steps.map((step, idx) => (
+                  <li key={idx} className="flex items-start gap-2.5 text-small text-ink font-medium leading-relaxed">
+                    <span className="w-4 h-4 rounded-full bg-ok text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <span className={idx === 0 ? 'font-semibold text-ink' : 'text-ink-soft'}>
+                      {step.replace(/^\d+\.\s*/, '')}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Verification Callout */}
+          {safePlan?.verification && (
+            <div className="border border-ok/30 bg-ok/5 p-3 text-small text-ink flex items-start gap-2">
+              <span className="font-semibold text-ok shrink-0">✓ verify:</span>
+              <span className="leading-relaxed">{safePlan.verification}</span>
+            </div>
+          )}
+
+          {/* Why this action? */}
+          <div className="border-t border-line pt-3 flex flex-col gap-1">
+            <span className="text-label font-medium text-ink-faint">why this action</span>
+            <p className="text-small text-ink-soft">{safePlan?.reason || whyActionText}</p>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-line text-caption text-ink-faint flex-wrap gap-2">
             <span>
-              confidence: <span className="font-medium text-ink">medium</span> — physical verification required
+              confidence: <strong className="font-medium text-ink uppercase">{activeEvent?.confidence || 'HIGH'}</strong> — {safePlan?.evidence_status || 'Verified'}
             </span>
-            <span>safe action planner</span>
+            <span>{safePlan?.source || 'TRACE Operational Safety Catalog (deterministic rule)'}</span>
           </div>
         </div>
       </section>

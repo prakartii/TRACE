@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { ArrowLeft, ArrowRight, FlaskConical, Play } from 'lucide-react'
 import { getEvent, listEvents, submitReview } from '../api/events.js'
 import { getEventOutcome, verifyEventOutcome } from '../api/measurement.js'
+import { getActionPlan } from '../api/actions.js'
 import { getEntities, getScene, getWhatIf, listVideos, streamUrl } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
@@ -118,6 +119,11 @@ export default function IncidentReplay() {
   const [reviewNotes, setReviewNotes] = useState('')
   const [reviewMessage, setReviewMessage] = useState(null)
 
+  // Safe Action Plan state (Feature 3)
+  const [safePlan, setSafePlan] = useState(null)
+  const [safePlanLoading, setSafePlanLoading] = useState(false)
+
+  // Progressive Disclosure Accordions State
   const [showHowTraceKnows, setShowHowTraceKnows] = useState(false)
   const [showSensorLimitations, setShowSensorLimitations] = useState(false)
   const [showOperatorReview, setShowOperatorReview] = useState(false)
@@ -139,9 +145,10 @@ export default function IncidentReplay() {
     }
   }, [])
 
+  // 2. Load recent events for quick switcher (all events)
   useEffect(() => {
     let active = true
-    listEvents({ limit: 40, order: 'desc' })
+    listEvents({ limit: 300, order: 'desc' })
       .then((data) => {
         if (!active) return
         setRecentEvents(data || [])
@@ -253,6 +260,18 @@ export default function IncidentReplay() {
       })
       .finally(() => {
         if (active) setOutcomeLoading(false)
+      })
+
+    setSafePlanLoading(true)
+    getActionPlan(selectedEventId)
+      .then((plan) => {
+        if (active) setSafePlan(plan)
+      })
+      .catch(() => {
+        if (active) setSafePlan(null)
+      })
+      .finally(() => {
+        if (active) setSafePlanLoading(false)
       })
 
     return () => {
@@ -419,7 +438,20 @@ export default function IncidentReplay() {
         setHasSeekedToInitial(false)
       }
     } else {
-      setIncidentEvent(null)
+      const preset = DEMO_PRESETS.find((d) => d.id === targetId)
+      if (preset) {
+        setTargetTimestamp(preset.timestamp)
+        setIncidentEvent({
+          event_id: preset.id,
+          video_id: preset.videoId,
+          timestamp: preset.timestamp,
+          scenario: preset.scenario,
+          band: 'High',
+        })
+        setHasSeekedToInitial(false)
+      } else {
+        setIncidentEvent(null)
+      }
     }
   }
 
@@ -630,12 +662,43 @@ export default function IncidentReplay() {
                 {humanizeExplanation(rationaleText, incidentEvent.scenario)}
               </p>
             </div>
-            <div className="bg-ok/5 p-3.5">
-              <span className="text-label font-medium text-ok">4. recommended action</span>
-              <p className="mt-1 text-small font-semibold leading-tight text-ink">
-                {actionText?.split('.')[0] || 'Reposition cargo safely'}
-              </p>
-              <p className="mt-1 text-caption text-ink-soft">{actionText}</p>
+            {/* 4. WHAT SHOULD BE DONE ABOUT IT (Safe Action Plan) */}
+            <div className="bg-ok/5 p-3.5 flex flex-col justify-between gap-2 border border-ok/30">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-label font-medium text-ok uppercase">
+                    4. safe action plan
+                  </span>
+                  {safePlan?.evidence_status && (
+                    <span className="text-caption font-mono uppercase px-1.5 py-0.5 border border-ok/40 bg-ok/10 text-ok">
+                      {safePlan.evidence_status}
+                    </span>
+                  )}
+                </div>
+                <strong className="text-small font-semibold text-ink leading-tight">
+                  {safePlan?.immediate_action || actionText?.split('.')[0] || 'Reposition cargo safely'}
+                </strong>
+                {safePlan?.steps && safePlan.steps.length > 1 ? (
+                  <div className="flex flex-col gap-1 pt-1 border-t border-line">
+                    <span className="text-label font-medium text-ink-soft uppercase tracking-wider">action steps:</span>
+                    <ol className="list-decimal list-inside space-y-0.5 text-caption text-ink font-medium">
+                      {safePlan.steps.map((step, idx) => (
+                        <li key={idx} className="leading-tight">{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : (
+                  <p className="text-caption text-ink-soft leading-relaxed mt-0.5">
+                    {safePlan?.immediate_action || actionText}
+                  </p>
+                )}
+                {safePlan?.verification && (
+                  <div className="mt-1 bg-surface border border-ok/40 p-2 text-caption text-ink flex items-start gap-1.5">
+                    <span className="font-semibold text-ok shrink-0">✓ verify:</span>
+                    <span className="leading-tight">{safePlan.verification}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
