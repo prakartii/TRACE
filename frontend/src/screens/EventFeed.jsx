@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { ArrowLeft, ArrowRight, Play, RotateCcw, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Download, Play, RotateCcw, TriangleAlert } from 'lucide-react'
 import { listEvents, getEvent, submitReview } from '../api/events.js'
+import { incidentsCsvUrl } from '../api/reports.js'
 import { getActionPlan } from '../api/actions.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
@@ -386,16 +387,30 @@ export default function EventFeed() {
       <section className="border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
           <span className="text-small font-semibold text-ink">filters</span>
-          {activeFilterCount > 0 && (
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink cursor-pointer"
+          <div className="flex items-center gap-3">
+            <a
+              href={incidentsCsvUrl({
+                lens: filterLens,
+                band: filterBand,
+                status: filterStatus,
+                videoId: filterVideo,
+              })}
+              className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink"
             >
-              <RotateCcw size={13} />
-              reset filters ({activeFilterCount})
-            </button>
-          )}
+              <Download size={13} />
+              export CSV{activeFilterCount > 0 ? ' (filtered)' : ''}
+            </a>
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink cursor-pointer"
+              >
+                <RotateCcw size={13} />
+                reset filters ({activeFilterCount})
+              </button>
+            )}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-px bg-line md:grid-cols-6">
           <Filter

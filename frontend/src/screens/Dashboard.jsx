@@ -3,6 +3,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Crosshair,
+  Download,
   FlaskConical,
   Layers,
   ShieldCheck,
@@ -13,6 +14,7 @@ import { listEvents } from '../api/events.js'
 import { getPreventionSummary } from '../api/measurement.js'
 import { listVideos } from '../api/videos.js'
 import LearningInsights from '../components/LearningInsights.jsx'
+import { incidentsCsvUrl, shiftSummaryMdUrl } from '../api/reports.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import {
   getScenarioConfig,
@@ -175,6 +177,20 @@ export default function Dashboard() {
               <FlaskConical size={15} />
               what-if simulator
             </button>
+            <a
+              href={incidentsCsvUrl()}
+              className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+            >
+              <Download size={15} />
+              incidents CSV
+            </a>
+            <a
+              href={shiftSummaryMdUrl()}
+              className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+            >
+              <Download size={15} />
+              shift summary
+            </a>
           </div>
         </div>
 
