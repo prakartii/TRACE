@@ -1,49 +1,51 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { ArrowLeft, ArrowRight, Play, RotateCcw, TriangleAlert } from 'lucide-react'
 import { listEvents, getEvent, submitReview } from '../api/events.js'
+import { getActionPlan } from '../api/actions.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle } from '../lib/scenarios.js'
 import {
   formatConfidence,
-  formatScore,
   formatEntityName,
+  formatScore,
   humanizeExplanation,
 } from '../lib/format.js'
 import TemporalRiskPanel from '../components/TemporalRiskPanel.jsx'
 
 const STATUS_STYLE = {
-  supported: 'border-emerald-300 bg-emerald-50 text-emerald-800',
-  probable: 'border-amber-300 bg-amber-50 text-amber-800',
-  insufficient_evidence: 'border-neutral-300 bg-neutral-100 text-neutral-600',
-  unsupported: 'border-neutral-300 bg-neutral-100 text-neutral-500',
+  supported: 'border-ok/40 bg-ok/10 text-ok',
+  probable: 'border-signal/40 bg-signal/10 text-[#8a5f00]',
+  insufficient_evidence: 'border-line bg-paper text-ink-soft',
+  unsupported: 'border-line bg-paper text-ink-faint',
 }
 
 const STATUS_LABEL = {
-  supported: 'Seen in video',
-  probable: 'Probable',
-  insufficient_evidence: 'Insufficient Evidence',
-  unsupported: 'Unsupported',
+  supported: 'supported finding',
+  probable: 'probable finding',
+  insufficient_evidence: 'insufficient evidence',
+  unsupported: 'unsupported scenario',
 }
 
 const BAND_STYLE = {
-  Critical: 'border-red-400 bg-red-50 text-red-800',
-  High: 'border-orange-300 bg-orange-50 text-orange-800',
-  Medium: 'border-amber-300 bg-amber-50 text-amber-800',
-  Low: 'border-neutral-300 bg-neutral-100 text-neutral-700',
+  Critical: 'border-danger/40 bg-danger/10 text-danger',
+  High: 'border-signal/40 bg-signal/10 text-[#8a5f00]',
+  Medium: 'border-steel/40 bg-steel/10 text-steel',
+  Low: 'border-line-strong bg-paper text-ink-soft',
 }
 
 const REVIEW_BADGES = {
   confirmed_damage: {
-    label: 'DAMAGE CONFIRMED',
-    style: 'border-red-300 bg-red-50 text-red-800',
+    label: 'confirmed damage',
+    style: 'border-danger/40 bg-danger/10 text-danger font-medium',
   },
   false_positive: {
-    label: 'FALSE ALARM',
-    style: 'border-sky-300 bg-sky-50 text-sky-800',
+    label: 'false positive',
+    style: 'border-steel/40 bg-steel/10 text-steel font-medium',
   },
   unresolved: {
-    label: 'PENDING',
-    style: 'border-amber-300 bg-amber-50 text-amber-800',
+    label: 'unresolved / pending',
+    style: 'border-signal/40 bg-signal/10 text-[#8a5f00] font-medium',
   },
 }
 
@@ -63,7 +65,7 @@ function formatEvidenceItem(key, value) {
     return { label: cleanKey, text: Number.isInteger(value) ? `${value}` : `${value.toFixed(2)}` }
   }
   if (typeof value === 'boolean') {
-    return { label: cleanKey, text: value ? 'Yes' : 'No' }
+    return { label: cleanKey, text: value ? 'yes' : 'no' }
   }
   if (typeof value === 'object' && value !== null) {
     return { label: cleanKey, text: JSON.stringify(value) }
@@ -88,10 +90,8 @@ export default function EventFeed() {
     })
   }
 
-  // Incident deduplication / clustering
   const [groupSimilar, setGroupSimilar] = useState(true)
 
-  // Filters
   const [filterLens, setFilterLens] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterBand, setFilterBand] = useState('')
@@ -101,19 +101,18 @@ export default function EventFeed() {
   const [offset, setOffset] = useState(0)
   const limit = 25
 
-  // Selected event & detail
+  // Selected event & Safe Action Plan
   const [selectedEventId, setSelectedEventId] = useState(null)
   const [selectedEvent, setSelectedEvent] = useState(null)
+  const [actionPlan, setActionPlan] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(null)
 
-  // Review submission state
   const [reviewLoading, setReviewLoading] = useState(false)
   const [reviewNotes, setReviewNotes] = useState('')
   const [reviewMessage, setReviewMessage] = useState(null)
   const [showTechnical, setShowTechnical] = useState(false)
 
-  // Group consecutive detections within 2 seconds of each other into distinct operational incidents
   const displayedEvents = useMemo(() => {
     if (!events?.length) return []
     if (!groupSimilar) return events
@@ -163,7 +162,6 @@ export default function EventFeed() {
     return results
   }, [events, groupSimilar, order])
 
-  // Load video list for filter dropdown
   useEffect(() => {
     let active = true
     listVideos()
@@ -178,16 +176,11 @@ export default function EventFeed() {
     }
   }, [])
 
-  // Fetch events list based on active filters
   const fetchEvents = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const filters = {
-        limit,
-        offset,
-        order,
-      }
+      const filters = { limit, offset, order }
       if (filterLens) filters.lens = filterLens
       if (filterStatus) filters.status = filterStatus
       if (filterBand) filters.band = filterBand
@@ -204,13 +197,13 @@ export default function EventFeed() {
       const data = await listEvents(filters)
       setEvents(data)
 
-      // Auto-select first event if none selected, or if current selectedEvent is not in the filtered list
       if (data.length > 0) {
         if (!selectedEventId || !data.some((ev) => ev.event_id === selectedEventId)) {
           setSelectedEventId(data[0].event_id)
         }
       } else {
         setSelectedEvent(null)
+        setActionPlan(null)
         setSelectedEventId(null)
       }
     } catch (err) {
@@ -224,10 +217,11 @@ export default function EventFeed() {
     fetchEvents()
   }, [fetchEvents])
 
-  // Load single event detail when selectedEventId changes
+  // Load single event detail & Safe Action Plan when selectedEventId changes
   useEffect(() => {
     if (!selectedEventId) {
       setSelectedEvent(null)
+      setActionPlan(null)
       return
     }
     let active = true
@@ -235,14 +229,22 @@ export default function EventFeed() {
     setDetailError(null)
     setReviewMessage(null)
 
-    getEvent(selectedEventId)
-      .then((data) => {
+    // Parallel fetch: Event entity + Safe Action Plan
+    Promise.all([
+      getEvent(selectedEventId),
+      getActionPlan(selectedEventId).catch((err) => {
+        console.warn('Action plan API error, using event-derived plan:', err)
+        return null
+      }),
+    ])
+      .then(([evData, planData]) => {
         if (active) {
-          setSelectedEvent(data)
+          setSelectedEvent(evData)
+          setActionPlan(planData)
         }
       })
       .catch((err) => {
-        if (active) setDetailError(err.message || 'Failed to load event detail.')
+        if (active) setDetailError(err.message || 'Failed to load incident detail.')
       })
       .finally(() => {
         if (active) setDetailLoading(false)
@@ -253,7 +255,6 @@ export default function EventFeed() {
     }
   }, [selectedEventId])
 
-  // Handle Responsible AI Review submission
   const handleReviewSubmit = async (statusValue) => {
     if (!selectedEventId) return
     setReviewLoading(true)
@@ -263,11 +264,10 @@ export default function EventFeed() {
       setSelectedEvent(updated)
       setReviewMessage({
         type: 'success',
-        text: `Review recorded: ${statusValue === 'confirmed_damage' ? 'Confirmed Damage' : statusValue === 'false_positive' ? 'False Alarm' : 'Pending'}`,
+        text: `review recorded as: ${statusValue.replace(/_/g, ' ')}`,
       })
       setReviewNotes('')
 
-      // Update event in list locally so user immediately sees badge change
       setEvents((prev) =>
         prev.map((ev) => (ev.event_id === updated.event_id ? updated : ev))
       )
@@ -299,604 +299,558 @@ export default function EventFeed() {
     filterReviewState,
   ].filter(Boolean).length
 
-  // Helper to get clean video scenario info
-  const getVideoInfo = (videoId) => {
-    return getVideoScenarioInfo(videoId)
-  }
-
-  const getVideoName = (videoId) => {
-    return getVideoScenarioInfo(videoId).cameraName
-  }
+  const getVideoInfo = (videoId) => getVideoScenarioInfo(videoId)
+  const getVideoName = (videoId) => getVideoScenarioInfo(videoId).cameraName
 
   return (
-    <div className="flex flex-col gap-6 text-ink max-w-7xl mx-auto w-full">
-      {/* 1. Header: Primary Focus & Operational Subtitle */}
-      <div className="border border-line bg-white p-5 shadow-xs flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="flex flex-col gap-8">
+      {/* header */}
+      <section>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-neutral-950">
-              Safety Incidents
-            </h1>
-            <p className="text-xs text-neutral-600 mt-1">
-              TRACE detects and explains safety risks from warehouse video.
+            <p className="mb-1 flex items-center gap-2 text-label font-medium text-ink-soft">
+              <TriangleAlert size={13} />
+              safety incident inbox
+            </p>
+            <h1 className="font-display text-display-lg font-semibold text-ink">Incidents</h1>
+            <p className="mt-2 max-w-2xl text-body text-ink-soft">
+              Detected safety events from monitored warehouse video, preserved as an auditable
+              ledger with evidence, explanation, and a recommended action.
             </p>
           </div>
-
-          <div className="flex items-center gap-2 text-xs">
-            <span className="border border-line bg-paper px-2.5 py-1 text-neutral-700">
-              Recorded: <strong className="font-bold font-mono tabular-nums text-neutral-950">{events.length}</strong>
-            </span>
+          <div className="border border-line bg-surface px-3 py-1.5 font-mono text-caption text-ink-soft">
+            {events.length} loaded
           </div>
         </div>
+      </section>
 
-        {/* Recommended Demo Scenarios (One-Click Triage) */}
-        <div className="border-t border-line pt-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-          <span className="text-xs font-semibold text-neutral-700">
-            ⭐ Recommended Demos:
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedEventId(73)
-                handleReplayIncident({ event_id: 73, video_id: 'ac99ff34e1bd2c13', timestamp: 36.67 })
-              }}
-              className="px-2.5 py-1 text-xs font-semibold bg-white border border-amber-300 text-amber-900 hover:bg-amber-50 shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <span>📦 Event #73</span>
-              <span className="text-[11px] text-amber-700 font-normal">· Overhang &amp; What-If</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedEventId(75)
-                handleReplayIncident({ event_id: 75, video_id: '93e4b1963c6fcd97', timestamp: 1.0 })
-              }}
-              className="px-2.5 py-1 text-xs font-semibold bg-white border border-emerald-300 text-emerald-900 hover:bg-emerald-50 shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <span>🛡️ Event #75</span>
-              <span className="text-[11px] text-emerald-700 font-normal">· Verified Prevented</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedEventId(105)
-                handleReplayIncident({ event_id: 105, video_id: '93e4b1963c6fcd97', timestamp: 0.0 })
-              }}
-              className="px-2.5 py-1 text-xs font-semibold bg-white border border-red-300 text-red-900 hover:bg-red-50 shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <span>⚠️ Event #105</span>
-              <span className="text-[11px] text-red-700 font-normal">· Dock Edge Hazard</span>
-            </button>
-          </div>
+      {/* recommended demos triage */}
+      <section className="border border-line bg-surface p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+        <span className="text-caption font-medium text-ink-soft">
+          recommended demos:
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEventId(73)
+              handleReplayIncident({ event_id: 73, video_id: 'ac99ff34e1bd2c13', timestamp: 36.67 })
+            }}
+            className="border border-signal/40 bg-signal/10 px-2.5 py-1 text-caption font-medium text-[#8a5f00] hover:bg-signal/20 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <span>event #73</span>
+            <span className="text-ink-faint">· box overhang &amp; action plan</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEventId(75)
+              handleReplayIncident({ event_id: 75, video_id: '93e4b1963c6fcd97', timestamp: 1.0 })
+            }}
+            className="border border-ok/40 bg-ok/10 px-2.5 py-1 text-caption font-medium text-ok hover:bg-ok/20 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <span>event #75</span>
+            <span className="text-ink-faint">· verified prevented</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEventId(105)
+              handleReplayIncident({ event_id: 105, video_id: '93e4b1963c6fcd97', timestamp: 0.0 })
+            }}
+            className="border border-danger/40 bg-danger/10 px-2.5 py-1 text-caption font-medium text-danger hover:bg-danger/20 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <span>event #105</span>
+            <span className="text-ink-faint">· dock edge hazard</span>
+          </button>
         </div>
-      </div>
+      </section>
 
-      {/* 2. Simplified Filters Toolbar */}
-      <div className="border border-line bg-white p-3.5 shadow-xs flex flex-col gap-2.5">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <span className="text-xs font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
-            <span>Filters</span>
-            {activeFilterCount > 0 && (
-              <span className="bg-neutral-900 text-white text-[10px] font-mono tabular-nums px-1.5 py-0.2">
-                {activeFilterCount}
-              </span>
-            )}
-          </span>
+      {/* filters */}
+      <section className="border border-line bg-surface">
+        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+          <span className="text-small font-semibold text-ink">filters</span>
           {activeFilterCount > 0 && (
             <button
               type="button"
               onClick={handleResetFilters}
-              className="text-xs text-neutral-600 hover:text-neutral-900 underline font-medium cursor-pointer"
+              className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink cursor-pointer"
             >
-              Reset Filters
+              <RotateCcw size={13} />
+              reset filters ({activeFilterCount})
             </button>
           )}
         </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
-          {/* Risk Lens */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase text-neutral-500">Risk Lens</label>
-            <select
-              value={filterLens}
-              onChange={(e) => {
-                setFilterLens(e.target.value)
-                setOffset(0)
-              }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
-            >
-              <option value="">All Lenses</option>
-              <option value="structural">Structural</option>
-              <option value="behaviour">Behaviour</option>
-              <option value="conformance">Conformance</option>
-              <option value="environmental">Environmental</option>
-            </select>
-          </div>
-
-          {/* Evidence Status (formerly Epistemic Status) */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase text-neutral-500">Evidence Status</label>
-            <select
-              value={filterStatus}
-              onChange={(e) => {
-                setFilterStatus(e.target.value)
-                setOffset(0)
-              }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
-            >
-              <option value="">All Statuses</option>
-              <option value="supported">Seen in video</option>
-              <option value="probable">Probable</option>
-              <option value="insufficient_evidence">Insufficient Evidence</option>
-              <option value="unsupported">Unsupported</option>
-            </select>
-          </div>
-
-          {/* Risk Level */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase text-neutral-500">Risk Level</label>
-            <select
-              value={filterBand}
-              onChange={(e) => {
-                setFilterBand(e.target.value)
-                setOffset(0)
-              }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
-            >
-              <option value="">All Levels</option>
-              <option value="Critical">Critical</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-          </div>
-
-          {/* Camera / Zone */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase text-neutral-500">Camera / Zone</label>
-            <select
-              value={filterVideo}
-              onChange={(e) => {
-                setFilterVideo(e.target.value)
-                setOffset(0)
-              }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500 truncate"
-            >
-              <option value="">All Cameras</option>
-              {videos.map((v) => {
+        <div className="grid grid-cols-2 gap-px bg-line md:grid-cols-6">
+          <Filter
+            label="risk lens"
+            value={filterLens}
+            onChange={(v) => {
+              setFilterLens(v)
+              setOffset(0)
+            }}
+            options={[
+              ['', 'all lenses'],
+              ['structural', 'structural'],
+              ['behaviour', 'behaviour'],
+              ['conformance', 'conformance'],
+              ['environmental', 'environmental'],
+            ]}
+          />
+          <Filter
+            label="epistemic status"
+            value={filterStatus}
+            onChange={(v) => {
+              setFilterStatus(v)
+              setOffset(0)
+            }}
+            options={[
+              ['', 'all statuses'],
+              ['supported', 'supported'],
+              ['probable', 'probable'],
+              ['insufficient_evidence', 'insufficient evidence'],
+              ['unsupported', 'unsupported'],
+            ]}
+          />
+          <Filter
+            label="risk band"
+            value={filterBand}
+            onChange={(v) => {
+              setFilterBand(v)
+              setOffset(0)
+            }}
+            options={[
+              ['', 'all bands'],
+              ['Critical', 'critical'],
+              ['High', 'high'],
+              ['Medium', 'medium'],
+              ['Low', 'low'],
+            ]}
+          />
+          <Filter
+            label="camera / zone"
+            value={filterVideo}
+            onChange={(v) => {
+              setFilterVideo(v)
+              setOffset(0)
+            }}
+            options={[
+              ['', 'all camera zones'],
+              ...videos.map((v) => {
                 const info = getVideoScenarioInfo(v.id || v.filename)
-                return (
-                  <option key={v.id} value={v.id}>
-                    {info.cameraName} ({info.scenarioTitle})
-                  </option>
-                )
-              })}
-            </select>
-          </div>
-
-          {/* Review State */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase text-neutral-500">Review State</label>
-            <select
-              value={filterReviewState}
-              onChange={(e) => {
-                setFilterReviewState(e.target.value)
-                setOffset(0)
-              }}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
-            >
-              <option value="">All Reviews</option>
-              <option value="unreviewed">Unreviewed Only</option>
-              <option value="reviewed">Reviewed Only</option>
-              <option value="confirmed_damage">Confirmed Damage</option>
-              <option value="false_positive">False Alarm</option>
-              <option value="unresolved">Pending</option>
-            </select>
-          </div>
-
-          {/* Sort Order */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase text-neutral-500">Sort Order</label>
-            <select
-              value={order}
-              onChange={(e) => setOrder(e.target.value)}
-              className="border border-line bg-paper px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500"
-            >
-              <option value="desc">Newest Recorded</option>
-              <option value="asc">Chronological</option>
-            </select>
-          </div>
+                return [v.id, `${info.scenarioTitle} — ${info.cameraName}`]
+              }),
+            ]}
+          />
+          <Filter
+            label="review state"
+            value={filterReviewState}
+            onChange={(v) => {
+              setFilterReviewState(v)
+              setOffset(0)
+            }}
+            options={[
+              ['', 'all states'],
+              ['unreviewed', 'unreviewed'],
+              ['reviewed', 'reviewed'],
+              ['confirmed_damage', 'confirmed damage'],
+              ['false_positive', 'false positive'],
+              ['unresolved', 'unresolved'],
+            ]}
+          />
+          <Filter
+            label="time order"
+            value={order}
+            onChange={(v) => {
+              setOrder(v)
+              setOffset(0)
+            }}
+            options={[
+              ['desc', 'newest first'],
+              ['asc', 'oldest first'],
+            ]}
+          />
         </div>
-      </div>
+      </section>
 
-      {/* 3. Main Workspace: Primary Recorded Incident List & Incident Evidence Drawer */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Recorded Incidents (Primary Focus, 7 cols) */}
-        <div className="lg:col-span-7 flex flex-col gap-3">
-          <div className="flex items-center justify-between border-b border-line pb-2">
+      {/* workspace */}
+      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
+        {/* feed */}
+        <div className="flex flex-col gap-3 lg:col-span-7">
+          <div className="flex items-center justify-between">
+            <span className="text-small font-semibold text-ink">
+              recorded incident list ({displayedEvents.length})
+            </span>
             <div className="flex items-center gap-2">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                Recorded Incidents ({displayedEvents.length})
-              </h2>
               <button
                 type="button"
                 onClick={() => setGroupSimilar(!groupSimilar)}
-                className={`text-[10px] font-semibold px-2 py-0.5 border cursor-pointer transition-colors ${
+                className={`border px-2.5 py-1 text-caption font-medium transition-colors cursor-pointer ${
                   groupSimilar
-                    ? 'border-neutral-900 bg-neutral-900 text-white'
-                    : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100'
+                    ? 'border-ink bg-ink text-paper'
+                    : 'border-line bg-surface text-ink-soft hover:text-ink'
                 }`}
                 title="Group repeated frame detections within 2 seconds into distinct incidents"
               >
-                {groupSimilar ? 'Grouped Incidents' : 'All Detections'}
-              </button>
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              <button
-                type="button"
-                disabled={offset === 0 || loading}
-                onClick={() => setOffset(Math.max(0, offset - limit))}
-                className="border border-line bg-white px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium cursor-pointer"
-              >
-                Previous
-              </button>
-              <span className="text-[11px] text-neutral-500 font-mono tabular-nums">
-                {offset}–{offset + events.length}
-              </span>
-              <button
-                type="button"
-                disabled={events.length < limit || loading}
-                onClick={() => setOffset(offset + limit)}
-                className="border border-line bg-white px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium cursor-pointer"
-              >
-                Next
+                {groupSimilar ? 'grouped incidents' : 'raw detections'}
               </button>
             </div>
           </div>
 
-          {/* Loading State */}
           {loading && (
-            <div className="border border-line bg-white p-8 text-center flex flex-col items-center gap-2">
-              <div className="w-5 h-5 border-2 border-neutral-900 border-t-transparent animate-spin" />
-              <span className="text-xs text-neutral-600">
-                Loading incidents from database...
-              </span>
+            <div className="flex items-center gap-2 border border-line bg-surface p-8 text-small text-ink-soft">
+              <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
+              retrieving incidents from ledger…
             </div>
           )}
 
-          {/* Error State */}
           {!loading && error && (
-            <div className="border border-red-300 bg-red-50 p-4 text-xs text-red-800 flex flex-col gap-2">
-              <div className="font-bold flex items-center gap-1.5">
-                <span>Failed to load incidents</span>
-              </div>
-              <p className="font-mono text-[11px]">{error}</p>
-              <button
-                type="button"
-                onClick={fetchEvents}
-                className="self-start border border-red-400 bg-white px-3 py-1 text-xs font-semibold hover:bg-red-100 cursor-pointer"
-              >
-                Retry Request
-              </button>
+            <div className="border border-danger bg-danger/5 p-4 text-small text-danger">
+              <p className="font-semibold">error querying incident ledger</p>
+              <p className="mt-1 font-mono text-caption">{error}</p>
             </div>
           )}
 
-          {/* Empty Results State */}
-          {!loading && !error && events.length === 0 && (
-            <div className="border border-line bg-white p-8 text-center flex flex-col items-center gap-3">
-              <span className="text-sm font-bold text-neutral-800">
-                {activeFilterCount > 0 ? 'No Matching Incidents Found' : 'No Recorded Incidents in Database'}
-              </span>
-              <p className="text-xs text-neutral-600 max-w-md leading-relaxed">
-                {activeFilterCount > 0
-                  ? 'No recorded events match the selected filters. Try clearing or adjusting filters.'
-                  : 'Incidents are automatically detected and saved when warehouse video streams are monitored.'}
-              </p>
-              {activeFilterCount > 0 && (
-                <button
-                  type="button"
-                  onClick={handleResetFilters}
-                  className="border border-neutral-800 bg-neutral-900 text-white px-3 py-1 text-xs font-semibold hover:bg-neutral-800 cursor-pointer"
-                >
-                  Clear Filters
-                </button>
-              )}
+          {!loading && !error && displayedEvents.length === 0 && (
+            <div className="border border-line bg-surface p-12 text-center text-small text-ink-soft">
+              no safety incidents match the active filters.
             </div>
           )}
 
-          {/* Scannable Incident Cards */}
           {!loading && !error && displayedEvents.length > 0 && (
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2">
               {displayedEvents.map((ev) => {
                 const isSelected = ev.event_id === selectedEventId
                 const config = getScenarioConfig(ev.scenario)
-                const title = resolveIncidentTitle(ev) || config.title || 'Recorded Safety Hazard'
+                const title = resolveIncidentTitle(ev) || config.title || 'Observed condition'
                 const explanationText = humanizeExplanation(
-                  ev.explanation || ev.planner_recommendation?.rationale || config.whyItMatters || 'Uncorrected handling hazards directly escalate risk to personnel safety and product integrity.',
+                  ev.explanation || ev.planner_recommendation?.rationale || config.whyItMatters,
                   ev.scenario,
                   ev.entity_id
                 )
-                const action = ev.planner_recommendation?.action || ev.recommended_action || config.recommendedAction
-                const bandCls = ev.band ? (BAND_STYLE[ev.band] || BAND_STYLE.Low) : null
-                const reviewBadge = ev.reviewed && ev.review_status ? REVIEW_BADGES[ev.review_status] : null
+                const statusCls = STATUS_STYLE[ev.status] || STATUS_STYLE.insufficient_evidence
+                const bandCls = ev.band ? BAND_STYLE[ev.band] || BAND_STYLE.Low : null
                 const videoInfo = getVideoInfo(ev.video_id)
 
                 return (
-                  <div
+                  <button
                     key={ev.event_id}
                     onClick={() => setSelectedEventId(ev.event_id)}
-                    className={`border bg-white p-4 transition-all flex flex-col gap-2.5 cursor-pointer text-left ${
-                      isSelected
-                        ? 'border-neutral-900 ring-1 ring-neutral-900 bg-neutral-50/70 shadow-xs'
-                        : 'border-line hover:border-neutral-400'
+                    className={`w-full border bg-surface p-4 text-left transition-colors cursor-pointer ${
+                      isSelected ? 'border-ink' : 'border-line hover:border-line-strong'
                     }`}
                   >
-                    {/* 1. Header: [CRITICAL] Title */}
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${bandCls || 'border-neutral-300 bg-neutral-100 text-neutral-700'}`}>
-                          {ev.band ? ev.band.toUpperCase() : 'INCIDENT'}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {bandCls && (
+                          <span className={`border px-2 py-0.5 text-label font-medium ${bandCls}`}>
+                            {ev.band} risk
+                          </span>
+                        )}
+                        <span className="text-caption text-ink-soft">{videoInfo.cameraName}</span>
+                        <span className="font-mono text-caption font-semibold tabular-nums text-ink">
+                          {formatTimestamp(ev.timestamp)}
                         </span>
-                        <h3 className="text-sm font-bold text-neutral-950">
-                          {title}
-                        </h3>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs">
-                        {ev.event_type === 'prevented' && (
-                          <span className="border border-emerald-500 bg-emerald-50 text-emerald-800 px-1.5 py-0.2 text-[9px] uppercase font-bold">
-                            PREVENTED
-                          </span>
-                        )}
-                        {ev.event_type === 'near_miss' && (
-                          <span className="border border-amber-500 bg-amber-50 text-amber-800 px-1.5 py-0.2 text-[9px] uppercase font-bold">
-                            NEAR-MISS
-                          </span>
-                        )}
-                        {reviewBadge && (
-                          <span className={`border px-1.5 py-0.2 text-[9px] font-bold ${reviewBadge.style}`}>
-                            {reviewBadge.label}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 2. Location · Timestamp */}
-                    <div className="flex items-center gap-1.5 text-xs text-neutral-500 font-medium">
-                      <span>{videoInfo.cameraName}</span>
-                      <span>·</span>
-                      <span className="font-mono tabular-nums font-bold text-neutral-800">{formatTimestamp(ev.timestamp)}</span>
-                      {ev._clusterCount > 1 && (
-                        <>
-                          <span>·</span>
-                          <span className="text-[11px] text-neutral-500 font-mono">
+                        {ev._clusterCount > 1 && (
+                          <span className="border border-steel/40 bg-steel/10 px-1.5 py-0.5 text-label text-steel">
                             {ev._clusterCount} detections
                           </span>
-                        </>
-                      )}
-                    </div>
-
-                    {/* 3. WHY IT MATTERS */}
-                    <div className="text-xs text-neutral-700 leading-relaxed">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-0.5">
-                        WHY IT MATTERS:
-                      </span>
-                      <p>{explanationText}</p>
-                    </div>
-
-                    {/* 4. ACTION */}
-                    {action && (
-                      <div className="text-xs text-emerald-950 bg-emerald-50/60 border border-emerald-200/80 p-2.5 leading-relaxed">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block mb-0.5">
-                          ACTION:
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`border px-1.5 py-0.5 text-label ${statusCls}`}>
+                          {STATUS_LABEL[ev.status] || ev.status}
                         </span>
-                        <p className="font-semibold">{action}</p>
+                        {ev.event_type === 'prevented' && (
+                          <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label text-ok">prevented</span>
+                        )}
+                        {ev.event_type === 'near_miss' && (
+                          <span className="border border-signal/40 bg-signal/10 px-1.5 py-0.5 text-label text-[#8a5f00]">near-miss</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <h3 className="text-title font-semibold leading-tight text-ink">{title}</h3>
+                      <p className="mt-1 text-small text-ink-soft">
+                        <span className="font-medium text-ink">why it matters:</span> {explanationText}
+                      </p>
+                    </div>
+
+                    {(ev.planner_recommendation?.action || ev.recommended_action || config.recommendedAction) && (
+                      <div className="mt-3 border-l-2 border-ok bg-ok/5 px-3 py-2 text-small text-ink">
+                        <span className="block text-label font-medium text-ok">recommended action</span>
+                        {ev.planner_recommendation?.action || ev.recommended_action || config.recommendedAction}
                       </div>
                     )}
 
-                    {/* 5. Bottom row: View evidence & Replay */}
-                    <div className="flex items-center justify-between border-t border-line/60 pt-2 mt-0.5 text-xs">
-                      <span className="text-[11px] text-neutral-500">
-                        {videoInfo.scenarioTitle}
-                      </span>
-                      <div className="flex items-center gap-2">
+                    <div className="mt-3 flex items-center justify-between border-t border-line pt-2 text-caption">
+                      <span className="text-ink-faint">{videoInfo.scenarioTitle}</span>
+                      <div className="flex items-center gap-3">
                         <span
-                          className={`text-xs font-semibold flex items-center gap-1 transition-colors ${
-                            isSelected
-                              ? 'text-neutral-950 font-bold underline'
-                              : 'text-neutral-600 hover:text-neutral-950'
+                          className={`font-semibold transition-colors ${
+                            isSelected ? 'text-ink underline' : 'text-ink-soft hover:text-ink'
                           }`}
                         >
-                          <span>View evidence</span>
-                          <span>→</span>
+                          safe action plan →
                         </span>
-                        <button
-                          type="button"
+                        <span
+                          role="button"
+                          tabIndex={0}
                           onClick={(e) => {
                             e.stopPropagation()
                             handleReplayIncident(ev)
                           }}
-                          className="border border-neutral-900 bg-neutral-900 text-white hover:bg-neutral-800 px-2.5 py-1 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                          title="Replay incident footage"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.stopPropagation()
+                              handleReplayIncident(ev)
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 font-semibold text-ink transition-colors hover:text-ink-soft cursor-pointer"
                         >
-                          <span>Replay</span>
-                          <span className="text-[10px]">▶</span>
-                        </button>
+                          <Play size={12} />
+                          replay
+                        </span>
                       </div>
                     </div>
-                  </div>
+                  </button>
                 )
               })}
             </div>
           )}
+
+          {/* pagination */}
+          <div className="mt-2 flex items-center justify-between border border-line bg-surface px-4 py-2.5 text-small">
+            <span className="text-caption text-ink-faint">
+              showing {offset + 1}–{Math.min(offset + limit, offset + displayedEvents.length)}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - limit))}
+                className="inline-flex items-center gap-1 border border-line px-2.5 py-1 text-caption text-ink transition-colors hover:bg-paper disabled:opacity-30 cursor-pointer"
+              >
+                <ArrowLeft size={13} />
+                previous
+              </button>
+              <button
+                type="button"
+                disabled={events.length < limit}
+                onClick={() => setOffset(offset + limit)}
+                className="inline-flex items-center gap-1 border border-line px-2.5 py-1 text-caption text-ink transition-colors hover:bg-paper disabled:opacity-30 cursor-pointer"
+              >
+                next
+                <ArrowRight size={13} />
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Right Column: Incident Evidence (Investigation Drawer, 5 cols) */}
-        <div className="lg:col-span-5 sticky top-6">
-          <div className="border border-line bg-white shadow-xs flex flex-col">
-            <div className="border-b border-line p-3.5 bg-neutral-50 flex items-center justify-between">
+        {/* detail */}
+        <div className="lg:col-span-5 lg:sticky lg:top-6">
+          <div className="border border-line bg-surface">
+            <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                  Incident Evidence
-                </span>
+                <span className="h-2 w-2 rounded-full bg-ok" />
+                <span className="text-small font-semibold text-ink">safe action plan</span>
               </div>
               {selectedEvent && (
-                <span className="font-mono text-[11px] text-neutral-500">
-                  #{selectedEvent.event_id}
-                </span>
+                <span className="font-mono text-caption text-ink-faint">#{selectedEvent.event_id}</span>
               )}
             </div>
 
-            {/* Detail Loading State */}
             {detailLoading && (
-              <div className="p-8 text-center flex flex-col items-center gap-2">
-                <div className="w-4 h-4 border-2 border-neutral-900 border-t-transparent animate-spin" />
-                <span className="text-xs text-neutral-600">
-                  Loading incident #{selectedEventId}...
-                </span>
+              <div className="flex items-center gap-2 p-6 text-small text-ink-soft">
+                <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
+                evaluating safe action plan for incident #{selectedEventId}…
               </div>
             )}
 
-            {/* Detail Error State */}
             {!detailLoading && detailError && (
-              <div className="p-4 text-xs text-red-800 bg-red-50 border-b border-red-200 flex flex-col gap-2">
-                <span className="font-bold">Failed to load incident details</span>
-                <p className="font-mono text-[11px]">{detailError}</p>
+              <div className="border-b border-danger p-4 text-small text-danger">
+                <p className="font-semibold">failed to load event details</p>
+                <p className="mt-1 font-mono text-caption">{detailError}</p>
               </div>
             )}
 
-            {/* No Event Selected State */}
             {!detailLoading && !detailError && !selectedEvent && (
-              <div className="p-8 text-center text-xs text-neutral-500 flex flex-col items-center gap-2">
-                <span>Select an incident from the list to inspect video evidence and action guidance.</span>
-              </div>
+              <p className="p-6 text-small text-ink-soft">
+                Select an incident from the list to view its prioritized safe action plan and video evidence.
+              </p>
             )}
 
-            {/* Selected Event Details: Clean Investigation Drawer */}
+            {/* Selected Event: Grounded Safe Action Plan */}
             {!detailLoading && !detailError && selectedEvent && (
-              <div className="p-4 flex flex-col gap-4 text-xs">
-                {/* 1. Video / Replay Context Hero */}
-                <div className="bg-neutral-900 text-white p-3.5 border border-neutral-800 flex items-center justify-between gap-3 shadow-2xs">
+              <div className="flex flex-col gap-4 p-4">
+                {/* 1. Video Context Hero Bar */}
+                <div className="flex items-center justify-between bg-ink p-3 text-paper">
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                      Video Evidence Clip
+                    <span className="text-label text-paper/60 uppercase">video evidence clip</span>
+                    <span className="text-small font-medium text-paper">
+                      {getVideoName(selectedEvent.video_id)} @ <span className="font-mono">{formatTimestamp(selectedEvent.timestamp)}</span>
                     </span>
-                    <span className="text-xs font-bold text-white">
-                      {getVideoName(selectedEvent.video_id)}
-                    </span>
-                    <span className="text-[11px] text-neutral-300 font-mono">
-                      Timestamp: <strong className="text-white">{formatTimestamp(selectedEvent.timestamp)}</strong> ({typeof selectedEvent.timestamp === 'number' ? selectedEvent.timestamp.toFixed(1) : selectedEvent.timestamp}s)
+                    <span className="text-caption text-paper/70 font-mono">
+                      t={typeof selectedEvent.timestamp === 'number' ? selectedEvent.timestamp.toFixed(1) : selectedEvent.timestamp}s
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleReplayIncident(selectedEvent)}
-                    className="bg-white text-neutral-950 hover:bg-neutral-100 font-bold px-3 py-1.5 text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer shrink-0"
+                    className="inline-flex items-center gap-1.5 bg-paper px-3 py-1.5 text-caption font-semibold text-ink transition-colors hover:bg-line cursor-pointer"
+                    title="View video replay for this incident"
                   >
-                    <span>Replay</span>
-                    <span className="text-[10px]">▶</span>
+                    replay incident
+                    <ArrowRight size={13} />
                   </button>
                 </div>
 
-                {/* 2. Incident Heading & Location */}
-                <div className="flex flex-col gap-1 pb-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${BAND_STYLE[selectedEvent.band] || BAND_STYLE.Low}`}>
-                      {selectedEvent.band ? `${selectedEvent.band.toUpperCase()} RISK` : 'INCIDENT'}
+                {/* 2. Incident Title & Risk Band */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`border px-1.5 py-0.5 text-label font-medium ${
+                        STATUS_STYLE[selectedEvent.status] || STATUS_STYLE.insufficient_evidence
+                      }`}
+                    >
+                      {STATUS_LABEL[selectedEvent.status] || selectedEvent.status}
                     </span>
-                    <span className="border border-line bg-neutral-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-neutral-700">
+                    <span className="border border-line bg-paper px-1.5 py-0.5 text-label text-ink-soft">
                       {selectedEvent.lens}
                     </span>
-                    {selectedEvent.event_type === 'prevented' && (
-                      <span className="border border-emerald-500 bg-emerald-50 text-emerald-800 px-1.5 py-0.5 text-[10px] font-bold uppercase">
-                        PREVENTED
+                    {selectedEvent.confidence && (
+                      <span className="text-caption text-ink-soft">
+                        conf: <span className="font-mono tabular-nums">{formatConfidence(selectedEvent.confidence)}</span>
                       </span>
+                    )}
+                    {selectedEvent.band && (
+                      <span className={`border px-1.5 py-0.5 text-label font-medium ${BAND_STYLE[selectedEvent.band] || BAND_STYLE.Low}`}>
+                        {selectedEvent.band} risk
+                      </span>
+                    )}
+                    {selectedEvent.event_type === 'prevented' && (
+                      <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label text-ok">prevented</span>
                     )}
                     {selectedEvent.event_type === 'near_miss' && (
-                      <span className="border border-amber-500 bg-amber-50 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold uppercase">
-                        NEAR-MISS
-                      </span>
+                      <span className="border border-signal/40 bg-signal/10 px-1.5 py-0.5 text-label text-[#8a5f00]">near-miss</span>
                     )}
                   </div>
-                  <h2 className="text-base font-bold text-neutral-950 leading-snug mt-1">
-                    {resolveIncidentTitle(selectedEvent)}
+                  <h2 className="text-title font-semibold leading-snug text-ink mt-1">
+                    {actionPlan?.title || resolveIncidentTitle(selectedEvent)}
                   </h2>
-                  <div className="text-xs text-neutral-500 font-medium">
-                    {getVideoName(selectedEvent.video_id)} · <span className="font-mono font-bold text-neutral-700">{formatTimestamp(selectedEvent.timestamp)}</span>
+                  <div className="text-caption text-ink-soft">
+                    {getVideoName(selectedEvent.video_id)} · <span className="font-mono font-medium text-ink">{formatTimestamp(selectedEvent.timestamp)}</span> · entity: <span className="font-mono text-ink">{formatEntityName(selectedEvent.entity_id) || 'global scene'}</span>
                   </div>
                 </div>
 
-                {/* 3. WHAT WAS DETECTED */}
+                {/* 3. WHY THIS MATTERS */}
                 <div className="flex flex-col gap-1 border-t border-line pt-3">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                    WHAT WAS DETECTED
-                  </span>
-                  <p className="text-xs text-neutral-800 leading-relaxed font-sans bg-neutral-50 p-2.5 border border-line">
-                    {humanizeExplanation(selectedEvent.explanation, selectedEvent.scenario, selectedEvent.entity_id)}
+                  <span className="text-label font-medium text-ink-faint uppercase">why this matters</span>
+                  <p className="border border-line bg-paper p-2.5 text-small text-ink leading-relaxed">
+                    {actionPlan?.reason || selectedEvent.planner_recommendation?.rationale || selectedEvent.explanation || getScenarioConfig(selectedEvent.scenario).whyItMatters || 'Uncorrected handling hazards directly escalate risk to personnel safety and product integrity.'}
                   </p>
                 </div>
 
-                {/* 4. WHY IT MATTERS */}
-                <div className="flex flex-col gap-1 border-t border-line pt-3">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
-                    WHY IT MATTERS
-                  </span>
-                  <p className="text-xs text-neutral-800 leading-relaxed font-sans bg-amber-50/40 p-2.5 border border-amber-200/60">
-                    {selectedEvent.planner_recommendation?.rationale || getScenarioConfig(selectedEvent.scenario).whyItMatters || 'Uncorrected handling hazards directly escalate risk to personnel safety and product integrity.'}
-                  </p>
-                </div>
-
-                {/* 5. RECOMMENDED ACTION */}
-                <div className="flex flex-col gap-1 border-t border-line pt-3">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 flex items-center justify-between">
-                    <span>RECOMMENDED ACTION</span>
-                    {selectedEvent.planner_recommendation?.what_if_eligible && (
-                      <span className="border border-emerald-300 bg-emerald-50 text-emerald-800 text-[9px] px-1.5 py-0.2 font-semibold">
-                        WHAT-IF TESTABLE
+                {/* 4. DO THIS NOW (Prioritized Action Guidance) */}
+                <div className="flex flex-col gap-1.5 border-t border-line pt-3">
+                  <span className="text-label font-medium text-ok uppercase tracking-wider flex items-center justify-between">
+                    <span>do this now</span>
+                    {selectedEvent.band === 'Critical' && (
+                      <span className="border border-danger/40 bg-danger/10 text-danger text-[9px] font-bold px-1.5 py-0.2 uppercase tracking-wide">
+                        immediate
                       </span>
                     )}
                   </span>
-                  <div className="border border-emerald-300 bg-emerald-50/70 p-3 text-xs text-emerald-950 flex flex-col gap-1.5">
-                    <span className="font-bold leading-relaxed">
-                      {selectedEvent.planner_recommendation?.action || selectedEvent.recommended_action || getScenarioConfig(selectedEvent.scenario).recommendedAction}
-                    </span>
+
+                  <div className="border border-ok/30 bg-ok/5 p-3 text-small text-ink flex flex-col gap-2">
+                    {actionPlan?.steps && actionPlan.steps.length > 1 ? (
+                      <ol className="flex flex-col gap-1.5 list-none p-0 m-0">
+                        {actionPlan.steps.map((step, idx) => (
+                          <li key={idx} className="flex items-start gap-2 leading-relaxed">
+                            <span className="w-4 h-4 rounded-full bg-ok text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                              {idx + 1}
+                            </span>
+                            <span className={idx === 0 ? "font-semibold text-ink" : "text-ink-soft"}>
+                              {step.replace(/^\d+\.\s*/, '')}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="font-semibold leading-relaxed">
+                        {actionPlan?.immediate_action || selectedEvent.planner_recommendation?.action || selectedEvent.recommended_action || getScenarioConfig(selectedEvent.scenario).recommendedAction}
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                {/* 6. Primary Replay Action Button */}
-                <div className="border-t border-line pt-3">
+                {/* 5. ✓ VERIFY */}
+                <div className="flex flex-col gap-1 border-t border-line pt-3">
+                  <span className="text-label font-medium text-ink-soft uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="text-ok font-bold">✓</span>
+                    <span>verify</span>
+                  </span>
+                  <div className="border border-line bg-paper p-2.5 text-small text-ink leading-relaxed">
+                    <p className="font-medium">
+                      {actionPlan?.verification || "Confirm the corrective action is completed before resuming work."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 6. Primary Action Buttons */}
+                <div className="border-t border-line pt-3 flex flex-col gap-2">
                   <button
                     type="button"
                     onClick={() => handleReplayIncident(selectedEvent)}
-                    className="w-full border border-neutral-900 bg-neutral-900 hover:bg-neutral-800 text-white font-bold py-2.5 px-3 text-xs flex items-center justify-center gap-2 shadow-2xs transition-colors cursor-pointer"
+                    className="w-full inline-flex items-center justify-center gap-2 bg-ink px-4 py-2.5 text-small font-semibold text-paper transition-colors hover:bg-ink-soft cursor-pointer"
                   >
-                    <span>Replay Incident Footage</span>
-                    <span className="text-xs">▶</span>
+                    <span>view video evidence / replay incident</span>
+                    <Play size={13} />
                   </button>
+
+                  {(actionPlan?.what_if_eligible || selectedEvent.planner_recommendation?.what_if_eligible) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigateTo('What-If Simulation', {
+                          eventId: selectedEvent.event_id,
+                          videoId: selectedEvent.video_id,
+                          timestamp: selectedEvent.timestamp,
+                          scenario: selectedEvent.scenario,
+                          entityId: selectedEvent.entity_id,
+                        })
+                      }}
+                      className="w-full inline-flex items-center justify-center gap-2 border border-ok/40 bg-ok/10 px-4 py-2 text-small font-semibold text-ok transition-colors hover:bg-ok/20 cursor-pointer"
+                    >
+                      <span>simulate alternative safe placement →</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* 7. Operator Review */}
-                <div className="border-t border-line pt-3 flex flex-col gap-2">
+                <div className="flex flex-col gap-2 border border-line bg-paper p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                      Operator Review
-                    </span>
+                    <span className="text-label font-medium text-ink-soft">operator review</span>
                     {selectedEvent.reviewed && selectedEvent.review_status ? (
-                      <span className={`border px-1.5 py-0.2 text-[9px] font-bold ${REVIEW_BADGES[selectedEvent.review_status]?.style}`}>
+                      <span className={`border px-1.5 py-0.5 text-label ${REVIEW_BADGES[selectedEvent.review_status]?.style}`}>
                         {REVIEW_BADGES[selectedEvent.review_status]?.label}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-neutral-400">Unreviewed</span>
+                      <span className="text-caption text-ink-faint">unreviewed</span>
                     )}
                   </div>
+                  <p className="text-caption text-ink-soft">
+                    Operator feedback feeds continuous learning. Flagging a false positive is
+                    logged to layer 9 memory.
+                  </p>
 
                   {reviewMessage && (
                     <div
-                      className={`p-2 text-xs border ${
+                      className={`border p-2 text-caption ${
                         reviewMessage.type === 'success'
-                          ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                          : 'border-red-300 bg-red-50 text-red-800'
+                          ? 'border-ok/40 bg-ok/10 text-ok'
+                          : 'border-danger bg-danger/5 text-danger'
                       }`}
                     >
                       {reviewMessage.text}
@@ -905,75 +859,78 @@ export default function EventFeed() {
 
                   <input
                     type="text"
-                    placeholder="Review note (optional)..."
+                    placeholder="Optional supervisor review note…"
                     value={reviewNotes}
                     onChange={(e) => setReviewNotes(e.target.value)}
-                    className="border border-line bg-white px-2 py-1 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-neutral-500 w-full"
+                    className="border border-line bg-surface px-2 py-1.5 text-small text-ink placeholder:text-ink-faint focus:border-ink"
                   />
 
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-3 gap-px bg-line">
                     <button
                       type="button"
                       disabled={reviewLoading}
                       onClick={() => handleReviewSubmit('confirmed_damage')}
-                      className="border border-red-300 bg-white hover:bg-red-50 text-red-800 py-1 text-[10px] font-bold uppercase disabled:opacity-50 cursor-pointer"
+                      className="bg-surface px-2 py-1.5 text-caption font-medium text-danger transition-colors hover:bg-paper disabled:opacity-50 cursor-pointer"
                     >
-                      Damage
+                      confirmed damage
                     </button>
                     <button
                       type="button"
                       disabled={reviewLoading}
                       onClick={() => handleReviewSubmit('false_positive')}
-                      className="border border-sky-300 bg-white hover:bg-sky-50 text-sky-800 py-1 text-[10px] font-bold uppercase disabled:opacity-50 cursor-pointer"
+                      className="bg-surface px-2 py-1.5 text-caption font-medium text-steel transition-colors hover:bg-paper disabled:opacity-50 cursor-pointer"
                     >
-                      False Alarm
+                      false positive
                     </button>
                     <button
                       type="button"
                       disabled={reviewLoading}
                       onClick={() => handleReviewSubmit('unresolved')}
-                      className="border border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-700 py-1 text-[10px] font-bold uppercase disabled:opacity-50 cursor-pointer"
+                      className="bg-surface px-2 py-1.5 text-caption font-medium text-ink-soft transition-colors hover:bg-paper disabled:opacity-50 cursor-pointer"
                     >
-                      Pending
+                      unresolved
                     </button>
                   </div>
                 </div>
 
-                {/* 8. Collapsible Technical Details */}
+                {/* 8. Progressive Disclosure: Why This Action? / Technical Details */}
                 <div className="border-t border-line pt-2">
                   <button
                     type="button"
                     onClick={() => setShowTechnical(!showTechnical)}
-                    className="text-[11px] text-neutral-600 hover:text-neutral-900 font-medium flex items-center justify-between w-full py-1 cursor-pointer"
+                    className="flex items-center justify-between w-full text-caption text-ink-soft underline-offset-2 hover:text-ink hover:underline cursor-pointer py-1"
                   >
-                    <span>Technical details</span>
-                    <span className="font-mono text-[10px]">{showTechnical ? '▲' : '▾'}</span>
+                    <span>why this action? (technical evidence &amp; limitations)</span>
+                    <span className="font-mono text-caption">{showTechnical ? '▲' : '▾'}</span>
                   </button>
 
                   {showTechnical && (
-                    <div className="mt-2 flex flex-col gap-2.5 bg-neutral-50 p-3 border border-line text-[11px]">
-                      <div className="grid grid-cols-2 gap-2 text-[10px]">
-                        <div><span className="text-neutral-500">Event ID:</span> <span className="font-mono font-bold text-neutral-800">#{selectedEvent.event_id}</span></div>
-                        <div><span className="text-neutral-500">Evidence Status:</span> <span className="font-bold text-neutral-800">{STATUS_LABEL[selectedEvent.status] || selectedEvent.status}</span></div>
-                        <div><span className="text-neutral-500">Entity:</span> <span className="font-bold text-neutral-800">{formatEntityName(selectedEvent.entity_id) || 'Global scene'}</span></div>
-                        <div><span className="text-neutral-500">Confidence:</span> <span className="font-mono font-bold text-neutral-800">{formatConfidence(selectedEvent.confidence)}</span></div>
-                        <div><span className="text-neutral-500">Risk Score:</span> <span className="font-mono font-bold text-neutral-800">{formatScore(selectedEvent.risk_score)}</span></div>
-                        <div><span className="text-neutral-500">Internal Scenario:</span> <span className="font-mono text-neutral-700">{selectedEvent.scenario}</span></div>
+                    <div className="mt-2 flex flex-col gap-2.5 border border-line bg-paper p-3 text-caption">
+                      <div className="grid grid-cols-2 gap-2 text-caption">
+                        <div><span className="text-ink-faint">Event ID:</span> <span className="font-mono font-semibold text-ink">#{selectedEvent.event_id}</span></div>
+                        <div><span className="text-ink-faint">Evidence Status:</span> <span className="font-semibold text-ink">{actionPlan?.evidence_status || STATUS_LABEL[selectedEvent.status] || selectedEvent.status}</span></div>
+                        <div><span className="text-ink-faint">Target Entity:</span> <span className="font-semibold text-ink">{formatEntityName(selectedEvent.entity_id) || 'Global scene'}</span></div>
+                        <div><span className="text-ink-faint">Confidence:</span> <span className="font-mono font-semibold text-ink">{formatConfidence(selectedEvent.confidence)}</span></div>
+                        <div><span className="text-ink-faint">Risk Score:</span> <span className="font-mono font-semibold text-ink">{formatScore(selectedEvent.risk_score)}</span></div>
+                        <div><span className="text-ink-faint">Internal Scenario:</span> <span className="font-mono text-ink-soft">{selectedEvent.scenario}</span></div>
+                      </div>
+
+                      {/* Rule Source */}
+                      <div className="text-caption text-ink-soft border-t border-line pt-1.5">
+                        <span className="text-ink-faint">Grounded Source:</span> <span className="font-medium text-ink">{actionPlan?.source || "TRACE Operational Safety Catalog (deterministic rule)"}</span>
                       </div>
 
                       {/* Video Evidence Measurements */}
                       {selectedEvent.evidence && Object.keys(selectedEvent.evidence).length > 0 && (
-                        <div className="flex flex-col gap-1 border-t border-line/60 pt-2">
-                          <span className="font-bold text-neutral-600 uppercase text-[9px]">
-                            Video Evidence Measurements
-                          </span>
-                          <div className="flex flex-col gap-1 font-mono text-[10px] bg-white p-2 border border-line">
+                        <div>
+                          <span className="text-label font-medium text-ink-soft">sensor / geometric evidence</span>
+                          <div className="mt-1.5 divide-y divide-line border border-line bg-surface">
                             {Object.entries(selectedEvent.evidence).map(([k, v]) => {
                               const item = formatEvidenceItem(k, v)
                               return (
-                                <div key={k} className="flex items-baseline justify-between gap-2 border-b border-line/40 pb-0.5 last:border-b-0">
-                                  <span className="text-neutral-500 capitalize font-sans">{item.label}:</span>
-                                  <span className="text-neutral-900 font-semibold">{item.text}</span>
+                                <div key={k} className="flex items-baseline justify-between gap-2 px-2.5 py-1 font-mono text-caption">
+                                  <span className="text-ink-soft">{item.label}:</span>
+                                  <span className="font-medium text-ink">{item.text}</span>
                                 </div>
                               )
                             })}
@@ -981,13 +938,10 @@ export default function EventFeed() {
                         </div>
                       )}
 
-                      {/* Sensor & Camera Limitations */}
                       {selectedEvent.limitations && selectedEvent.limitations.length > 0 && (
-                        <div className="flex flex-col gap-1 border-t border-line/60 pt-2">
-                          <span className="font-bold text-neutral-600 uppercase text-[9px]">
-                            Sensor Limitations
-                          </span>
-                          <ul className="list-disc list-inside text-neutral-600 text-[10px]">
+                        <div>
+                          <span className="text-label font-medium text-ink-soft">known sensor &amp; camera limitations</span>
+                          <ul className="mt-1 list-inside list-disc text-ink-soft">
                             {selectedEvent.limitations.map((lim, idx) => (
                               <li key={idx}>{lim.replace(/_/g, ' ')}</li>
                             ))}
@@ -995,8 +949,9 @@ export default function EventFeed() {
                         </div>
                       )}
 
-                      <div className="text-[9px] font-mono text-neutral-400 border-t border-line/60 pt-1">
-                        Clip: {selectedEvent.clip_path || 'Standard challenge stream'}
+                      <div className="border-t border-line pt-1.5 font-mono text-caption text-ink-faint">
+                        <span>event hash: #{selectedEvent.event_id}</span>
+                        <span className="block">clip: {selectedEvent.clip_path || 'direct video stream'}</span>
                       </div>
                     </div>
                   )}
@@ -1007,7 +962,6 @@ export default function EventFeed() {
         </div>
       </div>
 
-      {/* 4. Tertiary Layer: Temporal Reasoning & Predictive Risk Engine (Below Incidents) */}
       <TemporalRiskPanel
         videoId={filterVideo || null}
         lens={filterLens || null}
@@ -1017,5 +971,24 @@ export default function EventFeed() {
         }}
       />
     </div>
+  )
+}
+
+function Filter({ label, value, onChange, options }) {
+  return (
+    <label className="flex flex-col gap-1 bg-surface p-3">
+      <span className="text-label font-medium text-ink-faint">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="border border-line bg-paper px-2 py-1.5 text-small text-ink focus:border-ink"
+      >
+        {options.map(([val, text]) => (
+          <option key={val} value={val}>
+            {text}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }

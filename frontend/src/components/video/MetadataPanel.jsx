@@ -2,8 +2,8 @@ import { formatBytes, formatDuration } from '../../lib/format.js'
 
 function Row({ label, value }) {
   return (
-    <div className="flex items-center justify-between border-b border-line py-1.5 text-xs last:border-b-0">
-      <span className="text-neutral-500">{label}</span>
+    <div className="flex items-center justify-between border-b border-line py-1.5 text-small last:border-b-0">
+      <span className="text-ink-soft">{label}</span>
       <span className="font-medium text-ink">{value}</span>
     </div>
   )
@@ -16,67 +16,59 @@ function audioLabel(hasAudio) {
 
 export default function MetadataPanel({ video, samplingPolicy }) {
   if (!video) {
-    return <p className="text-sm text-neutral-500">Select a video to see its metadata.</p>
+    return <p className="text-small text-ink-soft">Select a video to see its metadata.</p>
   }
 
   const { metadata } = video
 
   return (
     <div>
-      <h2 className="mb-2 truncate text-sm font-medium text-ink" title={video.filename}>
+      <h2 className="mb-2 truncate text-title font-medium text-ink" title={video.filename}>
         {video.filename}
       </h2>
       <div>
-        <Row label="Duration" value={formatDuration(metadata.duration)} />
-        <Row label="Resolution" value={`${metadata.width} × ${metadata.height}`} />
-        <Row label="Source frame rate" value={`${metadata.fps.toFixed(1)} fps`} />
+        <Row label="duration" value={formatDuration(metadata.duration)} />
+        <Row label="resolution" value={`${metadata.width} × ${metadata.height}`} />
+        <Row label="source frame rate" value={`${metadata.fps.toFixed(1)} fps`} />
         {samplingPolicy && (
           <Row
-            label="Adaptive analysis rate"
+            label="adaptive analysis rate"
             value={
               <span className="flex items-center gap-1.5">
-                <span className="font-mono font-semibold">{samplingPolicy.analysis_fps} fps</span>
-                <span
-                  className={`px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-wider rounded uppercase ${
-                    samplingPolicy.sampling_mode === 'motion_dense'
-                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                      : 'bg-neutral-100 text-neutral-700 border border-line'
-                  }`}
-                >
-                  {samplingPolicy.sampling_mode === 'motion_dense' ? 'MOTION-DENSE' : 'NORMAL'}
+                <span className="font-mono">{samplingPolicy.analysis_fps} fps</span>
+                <span className="border border-line bg-paper px-1.5 py-0.5 font-mono text-label text-ink-soft">
+                  {samplingPolicy.sampling_mode === 'motion_dense' ? 'motion-dense' : 'normal'}
                 </span>
               </span>
             }
           />
         )}
-        <Row label="Frame count" value={metadata.frame_count ?? 'unknown'} />
-        <Row label="Codec" value={metadata.codec ?? 'unknown'} />
-        <Row label="Audio track" value={audioLabel(metadata.has_audio)} />
-        <Row label="File size" value={formatBytes(video.file_size)} />
-        <Row label="Source ID" value={video.id} />
+        <Row label="frame count" value={metadata.frame_count ?? 'unknown'} />
+        <Row label="codec" value={metadata.codec ?? 'unknown'} />
+        <Row label="audio track" value={audioLabel(metadata.has_audio)} />
+        <Row label="file size" value={formatBytes(video.file_size)} />
+        <Row label="source id" value={<span className="font-mono text-caption">{video.id}</span>} />
       </div>
 
       {samplingPolicy?.rationale && (
-        <div className="mt-3 border border-neutral-200 bg-neutral-50 p-2.5 text-xs">
-          <div className="font-semibold text-neutral-800 mb-0.5">
-            Adaptive Temporal Policy
-          </div>
-          <div className="text-neutral-600 leading-relaxed text-[11px]">
+        <div className="mt-3 border border-line bg-paper p-2.5">
+          <div className="text-caption font-medium text-ink">adaptive temporal policy</div>
+          <div className="mt-0.5 text-caption leading-relaxed text-ink-soft">
             {samplingPolicy.rationale}
           </div>
         </div>
       )}
 
       {video.duplicate_of && (
-        <p className="mt-3 border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-700">
+        <p className="mt-3 border border-signal/40 bg-signal/10 px-2 py-1.5 text-small text-[#8a5f00]">
           Byte-identical duplicate of another source video (id {video.duplicate_of}).
         </p>
       )}
 
-      <p className="mt-3 text-xs leading-relaxed text-neutral-500">
-        Perception pipeline evaluates frames at the adaptive analysis rate. Use the
-        Pilot Model toggle to detect boxes and pallets alongside persons, enabling
-        multi-object spatial graph evaluation and counter-proposal generation.
+      <p className="mt-3 text-small leading-relaxed text-ink-soft">
+        Perception evaluates frames at the adaptive analysis rate. Use the pilot model toggle to
+        detect boxes and pallets alongside persons, enabling the spatial graph and
+        counter-proposal generation.
       </p>
     </div>
   )

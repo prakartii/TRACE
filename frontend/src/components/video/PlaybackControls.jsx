@@ -38,7 +38,7 @@ export default function PlaybackControls({
         type="button"
         onClick={onTogglePlay}
         aria-label={playing ? 'Pause' : 'Play'}
-        className="flex h-7 w-7 shrink-0 items-center justify-center border border-line bg-white text-ink hover:bg-neutral-50"
+        className="flex h-7 w-7 shrink-0 items-center justify-center border border-line bg-surface text-ink hover:bg-paper"
       >
         {playing ? <PauseIcon /> : <PlayIcon />}
       </button>
@@ -56,7 +56,7 @@ export default function PlaybackControls({
         <div className="absolute inset-y-0 left-0 bg-ink" style={{ width: `${ratio * 100}%` }} />
       </div>
 
-      <span className="w-24 shrink-0 text-right text-xs tabular-nums text-neutral-500">
+      <span className="w-24 shrink-0 text-right font-mono text-caption tabular-nums text-ink-soft">
         {formatDuration(currentTime)} / {formatDuration(duration)}
       </span>
     </div>

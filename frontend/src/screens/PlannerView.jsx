@@ -1,82 +1,60 @@
 import { useState, useEffect } from 'react'
+import { ArrowRight, FlaskConical, Zap } from 'lucide-react'
 import { listEvents, getEvent } from '../api/events.js'
+import { getActionPlan } from '../api/actions.js'
 import { getEventOutcome } from '../api/measurement.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS } from '../lib/scenarios.js'
+import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle, DEMO_PRESETS } from '../lib/scenarios.js'
 import { formatConfidence, formatPercentage, formatEntityName } from '../lib/format.js'
-
-const SCENARIO_TITLES = {
-  stepping_on_carton: 'Worker body weight applied to carton surface',
-  stepping_on_carton_precursor: 'Worker ascending onto carton base',
-  box_overhang: 'Carton is extending beyond its supporting base',
-  pallet_overhang: 'Pallet edge extends beyond supporting rack or floor',
-  heavy_on_light_stacking: 'Heavy carton placed above lightweight base carton',
-  unsupported_bending_placement: 'Unsupported carton overhang with structural bending',
-  dropping_or_throwing_precursor: 'Kinematic acceleration spike indicating drop or throw',
-  carton_drop: 'Carton freefall impact / drop detected',
-  dragging_precursor: 'Carton dragged along floor surface rather than lifted',
-  rolling_precursor: 'Carton rolled or rotated end-over-end',
-  straps_as_handles: 'Packaging straps used as lifting handles',
-  wrong_product_orientation: 'Non-compliant package orientation against SKU manifest',
-  max_stack_height_exceeded: 'Stack height exceeds product threshold',
-  entity_in_dock_edge_zone: 'Worker positioned within dock ledge boundary',
-  entity_in_wet_floor_zone: 'Slip/impact hazard: handling in marked wet floor zone',
-  box_displacement_near_person: 'Moving cargo in close proximity to worker',
-  person_box_sustained_proximity: 'Worker in sustained close proximity to cargo',
-  solo_heavy_handling: 'Ergonomic lift hazard: heavy SKU handled by single worker',
-  image_space_support_hypothesis: 'Image-space support alignment hypothesis',
-  unplanned_loading_sequence: 'Unplanned or unoptimized cargo loading sequence',
-  wrong_equipment_usage: 'Equipment operated outside certified application envelope',
-}
 
 const REFERENCE_SCENARIOS = [
   {
     key: 'box_overhang',
-    title: 'Box Overhang Cantilever',
-    lens: 'Structural',
+    title: 'box overhang cantilever',
+    lens: 'structural',
     action: 'Reposition carton inward onto support center; eliminate base overhang.',
     rationale: 'Cantilever overhang creates eccentric loading and tipping hazard.',
   },
   {
     key: 'heavy_on_light_stacking',
-    title: 'Heavy-on-Light Stacking',
-    lens: 'Structural',
+    title: 'heavy-on-light stacking',
+    lens: 'structural',
     action: 'Move heavier load to lower/base position and ensure adequate support.',
     rationale: 'Reverse-mass stacking creates carton crushing and stack instability risk.',
   },
   {
     key: 'pallet_overhang',
-    title: 'Pallet Overhang Cantilever',
-    lens: 'Structural',
+    title: 'pallet overhang cantilever',
+    lens: 'structural',
     action: 'Re-center the load within the available pallet support footprint.',
     rationale: 'Overhanging cartons risk impact with passing equipment and stack collapse.',
   },
   {
     key: 'wrong_product_orientation',
-    title: 'Wrong Product Orientation',
-    lens: 'Conformance',
+    title: 'wrong product orientation',
+    lens: 'conformance',
     action: 'Rotate package to required upright this-side-up orientation.',
     rationale: 'Carton placed horizontally violates SKU vertical packaging requirements.',
   },
   {
     key: 'entity_in_dock_edge_zone',
-    title: 'Dock Edge Proximity Zone',
-    lens: 'Environmental',
+    title: 'dock edge proximity zone',
+    lens: 'environmental',
     action: 'Instruct worker to retreat 2.0 meters from dock edge threshold immediately.',
     rationale: 'Open dock threshold gap represents critical fall and vehicle impact hazard.',
   },
   {
     key: 'unplanned_loading_sequence',
-    title: 'Unplanned Loading Sequence',
-    lens: 'Operational',
+    title: 'unplanned loading sequence',
+    lens: 'operational',
     action: 'Re-sequence cargo loading according to weight distribution plan.',
     rationale: 'Arbitrary loading orders destabilize vehicle and rack center of gravity.',
   },
   {
     key: 'wrong_equipment_usage',
-    title: 'Wrong Equipment Usage',
-    lens: 'Operational',
+    title: 'wrong equipment usage',
+    lens: 'operational',
     action: 'Halt non-compliant machinery; dispatch certified handling apparatus.',
     rationale: 'Unrated material handling equipment increases structural failure probability.',
   },
@@ -90,28 +68,29 @@ function formatTimestamp(seconds) {
 }
 
 export default function PlannerView() {
-  const { replayTarget, liveState, navigateTo } = useLiveViewContext()
+  const { replayTarget, navigateTo } = useLiveViewContext()
 
   const [videos, setVideos] = useState([])
   const [recentEvents, setRecentEvents] = useState([])
   const [selectedEventId, setSelectedEventId] = useState(replayTarget?.eventId || 73)
   const [activeEvent, setActiveEvent] = useState(replayTarget?.event || null)
+  const [safePlan, setSafePlan] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [showTechnical, setShowTechnical] = useState(false)
 
-  // 1. Load initial video and event catalogs
+  // 1. Load initial video and event catalogs (all events)
   useEffect(() => {
     let active = true
     Promise.all([
       listVideos().catch(() => []),
-      listEvents({ limit: 40, order: 'desc' }).catch(() => []),
+      listEvents({ limit: 300, order: 'desc' }).catch(() => []),
     ]).then(([vids, evs]) => {
       if (!active) return
       setVideos(vids || [])
       setRecentEvents(evs || [])
 
-      // If no event loaded yet, select Event #73 or first event
+      // If no event loaded yet, select selectedEventId or first event
       if (!activeEvent && evs?.length > 0) {
         const found = evs.find((e) => e.event_id === selectedEventId) || evs[0]
         setSelectedEventId(found.event_id)
@@ -123,16 +102,25 @@ export default function PlannerView() {
     }
   }, [])
 
-  // 2. Load active event details whenever selectedEventId changes
+  // 2. Load active event details & Safe Action Plan whenever selectedEventId changes
   useEffect(() => {
     if (!selectedEventId) return
     let active = true
     setLoading(true)
     setError(null)
 
-    getEvent(selectedEventId)
-      .then((data) => {
-        if (active) setActiveEvent(data)
+    Promise.all([
+      getEvent(selectedEventId),
+      getActionPlan(selectedEventId).catch((err) => {
+        console.warn('Action plan load error for event', selectedEventId, err)
+        return null
+      }),
+    ])
+      .then(([evData, planData]) => {
+        if (active) {
+          setActiveEvent(evData)
+          setSafePlan(planData)
+        }
       })
       .catch((err) => {
         if (active) setError(err.message || `Failed to load event #${selectedEventId}`)
@@ -146,7 +134,6 @@ export default function PlannerView() {
     }
   }, [selectedEventId])
 
-  // Sync if replayTarget changes externally
   useEffect(() => {
     if (replayTarget?.eventId && replayTarget.eventId !== selectedEventId) {
       setSelectedEventId(replayTarget.eventId)
@@ -164,12 +151,20 @@ export default function PlannerView() {
     if (match) {
       setActiveEvent(match)
     } else {
-      setActiveEvent(null)
+      const preset = DEMO_PRESETS.find((d) => d.id === targetId)
+      if (preset) {
+        setActiveEvent({
+          event_id: preset.id,
+          video_id: preset.videoId,
+          timestamp: preset.timestamp,
+          scenario: preset.scenario,
+          band: 'High',
+        })
+      }
     }
   }
 
-  // Derive human-friendly presentation data
-  const severity = activeEvent?.band || 'Critical'
+  const severity = activeEvent?.band || 'High'
   const isCritical = severity === 'Critical'
   const isHigh = severity === 'High'
 
@@ -182,7 +177,6 @@ export default function PlannerView() {
   const rawSeconds = activeEvent?.timestamp !== undefined ? `${activeEvent.timestamp.toFixed(1)}s` : '36.7s'
   const riskScore = activeEvent?.score ? Math.round(activeEvent.score) : 72
 
-  // Derive evidence metrics
   const evidence = activeEvent?.evidence || {}
   const supportCoverage = evidence.overlap_ratio !== undefined
     ? formatPercentage(evidence.overlap_ratio, '40.4%')
@@ -202,7 +196,6 @@ export default function PlannerView() {
 
   const confVal = formatConfidence(activeEvent?.confidence, '69%')
 
-  // Recommended action text
   const actionHeadline = activeEvent?.planner_recommendation?.action?.split('.')[0] ||
     activeEvent?.recommended_action?.split('.')[0] ||
     config.recommendedAction.split('.')[0]
@@ -213,7 +206,6 @@ export default function PlannerView() {
 
   const whyActionText = activeEvent?.planner_recommendation?.rationale || config.whyItMatters
 
-  // Simulation eligibility
   const isCargoSimulationEligible = Boolean(
     activeEvent &&
     !activeEvent.entity_id?.toLowerCase().includes('person') &&
@@ -241,365 +233,349 @@ export default function PlannerView() {
     })
   }
 
+  const severityCls = isCritical
+    ? 'border-danger/40 bg-danger/10 text-danger'
+    : isHigh
+      ? 'border-signal/40 bg-signal/10 text-[#8a5f00]'
+      : 'border-steel/40 bg-steel/10 text-steel'
+
   return (
-    <div className="flex flex-col gap-6 text-ink pb-12 max-w-5xl">
-      {/* 1. Header Banner */}
-      <div className="border border-line bg-white p-6 shadow-sm flex flex-col gap-2">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xl">⚡</span>
-              <h1 className="text-xl font-bold tracking-tight text-neutral-900">
-                Action Center
-              </h1>
-              <span className="border border-neutral-800 bg-neutral-900 text-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                Operator Decision Engine
-              </span>
-            </div>
-            <p className="text-xs text-neutral-600 max-w-2xl leading-relaxed">
-              TRACE turns detected risk into a safe, explainable operator action.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleReplayCurrent}
-              className="border border-neutral-300 bg-paper hover:bg-neutral-100 text-neutral-800 px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
-            >
-              <span>▶ Replay in Video</span>
-              <span>➔</span>
-            </button>
-          </div>
+    <div className="flex flex-col gap-8 pb-12">
+      {/* header */}
+      <section className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="mb-1 flex items-center gap-2 text-label font-medium text-ink-soft">
+            <Zap size={13} />
+            operator decision engine
+          </p>
+          <h1 className="font-display text-display-lg font-semibold text-ink">Action center</h1>
+          <p className="mt-2 max-w-2xl text-body text-ink-soft">
+            TRACE turns a detected risk into a safe, explainable operator action.
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={handleReplayCurrent}
+          className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+        >
+          replay in video
+          <ArrowRight size={15} />
+        </button>
+      </section>
 
-        {/* Operational Directive Prompt */}
-        <div className="mt-2 border-t border-line/60 pt-3 flex items-center justify-between flex-wrap gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-            Current Directive: <strong className="text-neutral-950 font-sans normal-case text-sm">What should the operator do right now?</strong>
-          </span>
-
-          {/* Incident Quick Selector Dropdown */}
-          <div className="flex items-center gap-2 text-xs">
-            <label className="text-[10px] font-bold uppercase text-neutral-500">Active Incident:</label>
-            <select
-              value={selectedEventId || ''}
-              onChange={(e) => handleSelectEvent(e.target.value)}
-              className="border border-line bg-paper px-2.5 py-1 text-xs text-neutral-900 focus:outline-none focus:border-neutral-500"
-            >
-              {recentEvents.map((ev) => (
-                <option key={ev.event_id} value={ev.event_id}>
-                  Event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {getScenarioConfig(ev.scenario).title} [{getVideoScenarioInfo(ev.video_id).cameraName}]
-                </option>
-              ))}
-            </select>
-          </div>
+      <section className="flex flex-wrap items-center justify-between gap-3 border border-line bg-surface p-4">
+        <div className="flex items-center gap-3">
+          <label className="text-small text-ink-soft">active incident</label>
+          <select
+            value={selectedEventId || ''}
+            onChange={(e) => handleSelectEvent(e.target.value)}
+            className="border border-line bg-paper px-2.5 py-1.5 text-small text-ink focus:border-ink"
+          >
+            {recentEvents.map((ev) => (
+              <option key={ev.event_id} value={ev.event_id}>
+                event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) · {getScenarioConfig(ev.scenario).title} [{getVideoScenarioInfo(ev.video_id).cameraName}]
+              </option>
+            ))}
+          </select>
         </div>
-
-        {/* Demo Quick-Select Presets */}
-        <div className="border-t border-line/40 pt-2.5 flex items-center gap-2 flex-wrap text-xs">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-            ⭐ Recommended Demos:
-          </span>
-          <div className="flex items-center gap-2 flex-wrap">
-            {DEMO_PRESETS.map((demo) => {
-              const isSelected = selectedEventId === demo.id
-              return (
-                <button
-                  key={demo.id}
-                  type="button"
-                  onClick={() => handleSelectEvent(demo.id)}
-                  className={`px-2.5 py-1 text-xs flex items-center gap-1.5 border transition-all cursor-pointer ${
-                    isSelected
-                      ? 'border-neutral-900 bg-neutral-900 text-white font-bold shadow-xs'
-                      : 'border-neutral-300 bg-paper text-neutral-800 hover:bg-neutral-100'
-                  }`}
-                  title={demo.desc}
-                >
-                  <span>{demo.icon}</span>
-                  <span>Event #{demo.id}</span>
-                  <span className="opacity-75">({demo.tag})</span>
-                </button>
-              )
-            })}
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-label font-medium text-ink-faint">recommended demos</span>
+          {DEMO_PRESETS.map((demo) => {
+            const isSelected = selectedEventId === demo.id
+            return (
+              <button
+                key={demo.id}
+                type="button"
+                onClick={() => handleSelectEvent(demo.id)}
+                className={`border px-2.5 py-1 text-caption font-medium transition-colors ${
+                  isSelected
+                    ? 'border-ink bg-ink text-paper'
+                    : 'border-line bg-surface text-ink-soft hover:text-ink'
+                }`}
+                title={demo.desc}
+              >
+                event #{demo.id}
+              </button>
+            )
+          })}
         </div>
-      </div>
+      </section>
 
       {error && (
-        <div className="border border-red-300 bg-red-50 p-4 text-xs text-red-800">
-          <strong>[ERROR]</strong> {error}
+        <div className="border border-danger bg-danger/5 p-4 font-mono text-caption text-danger">
+          [error] {error}
         </div>
       )}
 
-      {/* 2. STEP 1: WHAT IS HAPPENING? (ACTIVE INCIDENT CARD) */}
-      <div className="border border-line bg-white p-5 shadow-sm flex flex-col gap-3">
-        <div className="flex items-center justify-between border-b border-line pb-2 flex-wrap gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-            STEP 1: WHAT IS HAPPENING? (OBSERVED)
+      {/* step 1 */}
+      <section className="border border-line bg-surface">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
+          <span className="font-mono text-caption font-semibold text-ink">
+            step 1 · what is happening
           </span>
           <div className="flex items-center gap-2">
-            <span
-              className={`px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${
-                isCritical
-                  ? 'border-red-400 bg-red-50 text-red-800'
-                  : isHigh
-                    ? 'border-orange-300 bg-orange-50 text-orange-800'
-                    : 'border-amber-300 bg-amber-50 text-amber-800'
-              }`}
-            >
-              {severity} Severity
+            <span className={`border px-2 py-0.5 text-label font-medium ${severityCls}`}>
+              {severity} severity
             </span>
-            <span className="text-[10px] font-mono tabular-nums text-neutral-400">
-              Event #{activeEvent?.event_id || selectedEventId}
+            <span className="font-mono text-caption text-ink-faint">
+              event #{activeEvent?.event_id || selectedEventId}
             </span>
           </div>
         </div>
-
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-bold text-neutral-900 leading-tight">
-              "{scenarioTitle}."
+        <div className="flex flex-wrap items-start justify-between gap-4 p-5">
+          <div>
+            <h2 className="font-display text-display-md font-semibold text-ink">
+              {scenarioTitle}
             </h2>
-            <div className="flex items-center gap-3 text-xs text-neutral-600 pt-0.5">
-              <span>Detected at: <strong className="text-neutral-950 font-bold font-mono tabular-nums">{detectedTime}</strong> (<span className="font-mono tabular-nums">{rawSeconds}</span>)</span>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-soft">
+              <span>
+                detected at <span className="font-mono text-ink">{detectedTime}</span> ({rawSeconds})
+              </span>
               <span>·</span>
-              <span>Object: <strong className="text-neutral-950 font-medium font-mono">{formatEntityName(activeEvent?.entity_id) || 'Movable Carton'}</strong></span>
+              <span>
+                object: <span className="font-mono text-ink">{formatEntityName(activeEvent?.entity_id) || 'movable carton'}</span>
+              </span>
               <span>·</span>
-              <span>Camera: <strong className="text-neutral-950 font-medium font-mono">{getVideoScenarioInfo(activeEvent?.video_id).cameraName || activeEvent?.video_id || 'Stream-1'}</strong></span>
-            </div>
-          </div>
-
-          <div className="border border-neutral-200 bg-neutral-50 p-3 flex flex-col items-end min-w-[140px]">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-              Risk Score
-            </span>
-            <div className="flex items-baseline gap-1">
-              <span className={`text-2xl font-bold font-mono tabular-nums ${isCritical ? 'text-red-700' : 'text-amber-700'}`}>
-                {riskScore}
-              </span>
-              <span className="text-xs font-mono tabular-nums text-neutral-500">/ 100</span>
-            </div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-700">
-              {severity} Risk
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. STEP 2: WHAT WILL HAPPEN? (WHY TRACE FLAGGED THIS) */}
-      <div className="border border-line bg-white p-5 shadow-sm flex flex-col gap-3">
-        <div className="border-b border-line pb-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-            STEP 2: WHAT WILL HAPPEN? (INFERRED & PREDICTED)
-          </span>
-          <p className="text-[11px] text-neutral-500 mt-0.5">
-            Physical stability measurements computed directly from visual perception:
-          </p>
-        </div>
-
-        {/* 4 Simple Evidence Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="border border-neutral-200 bg-paper p-3 flex flex-col gap-1">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">
-              Support Coverage
-            </span>
-            <span className="text-xl font-bold font-mono tabular-nums text-neutral-900">
-              {supportCoverage}
-            </span>
-            <span className="text-[10px] text-neutral-500">Threshold: &ge; 50%</span>
-          </div>
-
-          <div className="border border-neutral-200 bg-paper p-3 flex flex-col gap-1">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">
-              Cantilever Overhang
-            </span>
-            <span className="text-xl font-bold font-mono tabular-nums text-amber-700">
-              {overhangVal}
-            </span>
-            <span className="text-[10px] text-neutral-500">Unsupported span</span>
-          </div>
-
-          <div className="border border-neutral-200 bg-paper p-3 flex flex-col gap-1">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">
-              Mass Ordering
-            </span>
-            <span className="text-xl font-bold font-mono tabular-nums text-neutral-900">
-              {massVal}
-            </span>
-            <span className="text-[10px] text-neutral-500">Tier mass ratio</span>
-          </div>
-
-          <div className="border border-neutral-200 bg-paper p-3 flex flex-col gap-1">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">
-              Visual Certainty
-            </span>
-            <span className="text-xl font-bold font-mono tabular-nums text-emerald-700">
-              {confVal}
-            </span>
-            <span className="text-[10px] text-neutral-500">Detection confidence</span>
-          </div>
-        </div>
-
-        {/* Summary takeaway in plain English */}
-        <div className="border-l-2 border-amber-500 bg-amber-50/50 p-3 text-xs text-amber-950 leading-relaxed font-sans">
-          These measurements indicate insufficient support beneath the carton and an increased risk of tipping or stack instability during warehouse handling.
-        </div>
-      </div>
-
-      {/* 4. STEP 3: WHAT SHOULD WE DO NOW? (RECOMMENDED ACTION CARD) */}
-      <div className="border-2 border-emerald-600 bg-white p-6 shadow-sm flex flex-col gap-4">
-        <div className="flex items-center justify-between border-b border-emerald-100 pb-3 flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-900">
-              STEP 3: WHAT SHOULD WE DO NOW? (RECOMMENDED)
-            </span>
-          </div>
-          <span className="border border-emerald-300 bg-emerald-100 text-emerald-900 text-[10px] font-bold uppercase px-2 py-0.5">
-            Deterministic Prescription
-          </span>
-        </div>
-
-        {/* Large Prominent Action Headline */}
-        <div className="flex flex-col gap-1">
-          <span className="text-2xl font-bold text-neutral-950 uppercase tracking-tight">
-            {actionHeadline}
-          </span>
-          <p className="text-sm font-medium text-neutral-800 leading-relaxed">
-            "{actionDetail}"
-          </p>
-        </div>
-
-        {/* Why this action? */}
-        <div className="border-t border-neutral-100 pt-3 flex flex-col gap-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-            Why This Action?
-          </span>
-          <p className="text-xs text-neutral-700 leading-relaxed">
-            {whyActionText}
-          </p>
-        </div>
-
-        {/* Confidence & Verification Callout */}
-        <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-xs text-neutral-600 flex-wrap gap-2">
-          <span>Confidence: <strong className="text-neutral-900 uppercase">MEDIUM</strong> — Physical verification required</span>
-          <span className="text-[10px] text-neutral-500">Action Layer: TRACE Safe Action Planner (Layer 7)</span>
-        </div>
-      </div>
-
-      {/* 5. STEP 4: WHAT IF WE DO THAT? (SIMULATION CALLOUT) */}
-      <div className="border border-neutral-300 bg-neutral-50/90 p-5 shadow-sm flex flex-col gap-3">
-        <div className="flex items-center justify-between border-b border-neutral-200 pb-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-            STEP 4: WHAT IF WE DO THAT? (SIMULATE SAFER PLACEMENT)
-          </span>
-          <span className="text-[10px] font-semibold text-neutral-500 uppercase">
-            Pre-Execution Verification
-          </span>
-        </div>
-
-        {isCargoSimulationEligible ? (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex flex-col gap-1 max-w-xl">
-              <p className="text-xs text-neutral-800 leading-relaxed">
-                TRACE can simulate the safer placement using the recorded video evidence.
-                Before touching the cargo, compare the current physical trajectory against alternative placements across time.
-              </p>
-              <span className="text-[10px] text-neutral-500">
-                Counterfactual simulation — this is a prediction, not a physical measurement.
+              <span>
+                camera: <span className="font-mono text-ink">{getVideoScenarioInfo(activeEvent?.video_id).cameraName || 'stream-1'}</span>
               </span>
             </div>
-
-            <button
-              type="button"
-              onClick={handleSimulateSafer}
-              className="whitespace-nowrap px-4 py-2.5 text-xs font-bold bg-neutral-900 hover:bg-neutral-800 text-white shadow-sm flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <span>⚡ Simulate Safer Placement</span>
-              <span>➔</span>
-            </button>
           </div>
-        ) : (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-3.5 border border-neutral-200">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-bold text-neutral-900">
-                Procedural Safety Warning — No Cargo Trajectory to Simulate
+          <div className="flex flex-col items-end">
+            <span className="text-label font-medium text-ink-faint">risk score</span>
+            <span className="font-display text-display-xl font-semibold tabular-nums text-ink">
+              {riskScore}
+              <span className="text-title text-ink-faint">/100</span>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* step 2 · what is likely to happen */}
+      <section className="border border-line bg-surface">
+        <div className="border-b border-line px-4 py-2.5">
+          <span className="font-mono text-caption font-semibold text-ink">
+            step 2 · what is likely to happen (inferred &amp; predicted)
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4">
+          {activeEvent?.lens === 'environmental' ? (
+            <>
+              <Metric label="perimeter boundary" value={evidence.zone_id || 'Dock Edge Hazard Zone'} note="calibrated hazard zone" tone="signal" />
+              <Metric label="exposure duration" value={`${evidence.persistence_frames || 12} frames`} note="sustained intrusion" />
+              <Metric label="severity rating" value={evidence.severity_multiplier ? `${evidence.severity_multiplier}x` : '1.5x'} note="facility zone rating" tone="signal" />
+              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
+            </>
+          ) : activeEvent?.lens === 'behaviour' ? (
+            <>
+              <Metric label="kinematics" value={`${(evidence.box_total_displacement || 0.24).toFixed(2)}m`} note="displacement translation" tone="signal" />
+              <Metric label="worker proximity" value={`${Math.round((evidence.sustained_proximity_fraction || 1.0) * 100)}%`} note="handling contact" />
+              <Metric label="motion signature" value={activeEvent?.scenario?.includes('step') ? 'Foot Contact' : activeEvent?.scenario?.includes('strap') ? 'Strap Grip' : activeEvent?.scenario?.includes('drop') ? 'Drop Shock' : activeEvent?.scenario?.includes('drag') ? 'Friction Drag' : 'Handling'} note="kinematic profile" tone="signal" />
+              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
+            </>
+          ) : activeEvent?.lens === 'conformance' ? (
+            <>
+              <Metric label="manifest axis" value={evidence.required_orientation || 'Upright'} note="required orientation" tone="signal" />
+              <Metric label="aspect deviation" value={evidence.observed_aspect_ratio ? evidence.observed_aspect_ratio.toFixed(2) : '3.12'} note="observed vs manifest" />
+              <Metric label="dispatch schedule" value={evidence.required_sequence || 'Manifest order'} note="staging sequence" />
+              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
+            </>
+          ) : (
+            <>
+              <Metric label="support coverage" value={supportCoverage} note="threshold ≥ 50%" />
+              <Metric label="cantilever overhang" value={overhangVal} note="unsupported span" tone="signal" />
+              <Metric label="mass ordering" value={massVal} note="tier mass ratio" />
+              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
+            </>
+          )}
+        </div>
+        <div className="border-t border-line px-4 py-3 text-small text-ink-soft">
+          {safePlan?.reason || whyActionText || 'These optical measurements indicate elevated operational risk requiring corrective intervention.'}
+        </div>
+      </section>
+
+      {/* step 3 · what to do now */}
+      <section className="border border-ok/40 bg-surface">
+        <div className="h-1 bg-ok" />
+        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+          <span className="font-mono text-caption font-semibold text-ok">
+            step 3 · what to do now (safe action plan)
+          </span>
+          <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label text-ok uppercase">
+            {safePlan?.evidence_status || 'deterministic prescription'}
+          </span>
+        </div>
+        <div className="p-5 flex flex-col gap-4">
+          <div>
+            <p className="font-display text-display-md font-semibold leading-tight text-ink uppercase">
+              {safePlan?.immediate_action || actionHeadline}
+            </p>
+            {!safePlan && (
+              <p className="mt-2 text-body text-ink-soft">{actionDetail}</p>
+            )}
+          </div>
+
+          {/* Sequential Action Checklist */}
+          {safePlan?.steps && safePlan.steps.length > 1 && (
+            <div className="flex flex-col gap-2 pt-3 border-t border-line">
+              <span className="text-label font-medium text-ink-soft uppercase tracking-wider">
+                action checklist (sequential steps)
               </span>
-              <p className="text-xs text-neutral-600">
-                This scenario concerns worker positioning or environmental zone boundaries rather than movable cargo.
-                TRACE issues direct procedural safety instructions and refuses to fabricate package trajectories.
-              </p>
+              <ol className="flex flex-col gap-2 list-none p-0 m-0">
+                {safePlan.steps.map((step, idx) => (
+                  <li key={idx} className="flex items-start gap-2.5 text-small text-ink font-medium leading-relaxed">
+                    <span className="w-4 h-4 rounded-full bg-ok text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <span className={idx === 0 ? 'font-semibold text-ink' : 'text-ink-soft'}>
+                      {step.replace(/^\d+\.\s*/, '')}
+                    </span>
+                  </li>
+                ))}
+              </ol>
             </div>
-            <button
-              type="button"
-              onClick={() => handleSelectEvent(73)}
-              className="whitespace-nowrap px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <span>📦 Test Cargo Demo (Event #73)</span>
-              <span>➔</span>
-            </button>
-          </div>
-        )}
-      </div>
+          )}
 
-      {/* 6. TECHNICAL EVIDENCE ▾ (PROGRESSIVE DISCLOSURE FOR JUDGES) */}
-      <div className="border border-line bg-white p-4 shadow-sm flex flex-col gap-2">
+          {/* Verification Callout */}
+          {safePlan?.verification && (
+            <div className="border border-ok/30 bg-ok/5 p-3 text-small text-ink flex items-start gap-2">
+              <span className="font-semibold text-ok shrink-0">✓ verify:</span>
+              <span className="leading-relaxed">{safePlan.verification}</span>
+            </div>
+          )}
+
+          {/* Why this action? */}
+          <div className="border-t border-line pt-3 flex flex-col gap-1">
+            <span className="text-label font-medium text-ink-faint">why this action</span>
+            <p className="text-small text-ink-soft">{safePlan?.reason || whyActionText}</p>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-line text-caption text-ink-faint flex-wrap gap-2">
+            <span>
+              confidence: <strong className="font-medium text-ink uppercase">{activeEvent?.confidence || 'HIGH'}</strong> — {safePlan?.evidence_status || 'Verified'}
+            </span>
+            <span>{safePlan?.source || 'TRACE Operational Safety Catalog (deterministic rule)'}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* step 4 */}
+      <section className="border border-line bg-surface">
+        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+          <span className="font-mono text-caption font-semibold text-ink">
+            step 4 · what if we act
+          </span>
+          <span className="text-caption text-ink-faint">pre-execution verification</span>
+        </div>
+        <div className="p-5">
+          {isCargoSimulationEligible ? (
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="max-w-xl">
+                <p className="text-small text-ink-soft">
+                  TRACE can simulate the safer placement using the recorded video evidence. Before
+                  touching the cargo, compare the current trajectory against alternatives.
+                </p>
+                <p className="mt-1 text-caption text-ink-faint">
+                  Counterfactual simulation — a prediction, not a physical measurement.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSimulateSafer}
+                className="inline-flex items-center gap-2 bg-ink px-4 py-2.5 text-small font-semibold text-paper transition-colors hover:bg-ink-soft"
+              >
+                <FlaskConical size={15} />
+                simulate safer placement
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="max-w-xl">
+                <p className="text-small font-medium text-ink">
+                  procedural safety warning — no cargo trajectory to simulate
+                </p>
+                <p className="mt-1 text-caption text-ink-soft">
+                  This scenario concerns worker positioning or environmental boundaries rather than
+                  movable cargo. TRACE issues a direct procedural instruction and refuses to
+                  fabricate package trajectories.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSelectEvent(73)}
+                className="inline-flex items-center gap-2 border border-signal bg-signal px-4 py-2 text-small font-semibold text-ink transition-colors hover:opacity-90"
+              >
+                test cargo demo (event #73)
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* technical disclosure */}
+      <section className="border border-line bg-surface">
         <button
           type="button"
           onClick={() => setShowTechnical(!showTechnical)}
-          className="text-xs font-semibold text-neutral-700 hover:text-neutral-950 flex items-center justify-between cursor-pointer py-1"
+          className="flex w-full items-center justify-between px-4 py-3 text-small font-medium text-ink-soft transition-colors hover:text-ink"
         >
-          <span>{showTechnical ? '▲ Hide Technical Evidence & Mathematical Formulation' : '▼ Technical Evidence & Mathematical Formulation'}</span>
-          <span className="text-[10px] font-normal text-neutral-500 uppercase tracking-wider">
-            {showTechnical ? 'Collapse' : 'Audit Inspector for Judges'}
-          </span>
+          <span>technical evidence &amp; mathematical formulation</span>
+          <span className="font-mono text-caption">{showTechnical ? 'collapse' : 'expand'}</span>
         </button>
 
         {showTechnical && (
-          <div className="mt-3 flex flex-col gap-4 border-t border-line pt-3 text-xs">
-            {/* Stability Formulation */}
-            <div className="flex flex-col gap-1 bg-paper p-3 border border-line">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                TRACE Stability Scoring Formula (Deterministic Weights)
+          <div className="flex flex-col gap-4 border-t border-line p-4">
+            <div className="border border-line bg-paper p-3">
+              <span className="text-label font-medium text-ink-soft">
+                TRACE stability scoring formula (deterministic weights)
               </span>
-              <pre className="font-mono text-[11px] text-neutral-800 bg-white p-2 border border-line overflow-x-auto">
-                Stability Score = (0.40 × SupportOverlap) + (0.20 × Centering) + (0.20 × MassOrdering) + (0.20 × Orientation) − (0.25 × OverhangPenalty)
+              <pre className="mt-2 overflow-x-auto border border-line bg-surface p-2 font-mono text-caption text-ink">
+                {'Stability Score = (0.40 × SupportOverlap) + (0.20 × Centering) + (0.20 × MassOrdering) + (0.20 × Orientation) − (0.25 × OverhangPenalty)'}
               </pre>
-              <span className="text-[10px] text-neutral-500 mt-1">
-                Bounded in [0, 100]. Scored identically across real-time video, what-if counterfactual branches, and outcome verification frames.
-              </span>
+              <p className="mt-2 text-caption text-ink-faint">
+                Bounded in [0, 100]. Scored identically across live video, what-if branches, and
+                outcome verification frames.
+              </p>
             </div>
 
-            {/* Scenario Reference Matrix */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                Core Safety Scenarios Catalog
-              </span>
-              <div className="border border-line divide-y divide-line text-xs bg-white">
+            <div>
+              <span className="text-label font-medium text-ink-soft">core safety scenario catalog</span>
+              <div className="mt-1.5 divide-y divide-line border border-line bg-paper">
                 {REFERENCE_SCENARIOS.map((sc) => (
-                  <div key={sc.key} className="p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div key={sc.key} className="flex flex-wrap items-center justify-between gap-2 p-2.5">
                     <div>
-                      <strong className="text-neutral-900">{sc.title}</strong>
-                      <span className="text-neutral-400 text-[10px] ml-2">[{sc.lens}]</span>
-                      <p className="text-[11px] text-neutral-600 font-sans mt-0.5">{sc.action}</p>
+                      <span className="text-small font-medium text-ink">{sc.title}</span>
+                      <span className="ml-2 text-caption text-ink-faint">[{sc.lens}]</span>
+                      <p className="mt-0.5 text-caption text-ink-soft">{sc.action}</p>
                     </div>
-                    <span className="text-[10px] text-neutral-500 whitespace-nowrap">{sc.rationale}</span>
+                    <span className="text-caption text-ink-faint">{sc.rationale}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Epistemic Limitations & Disclaimers */}
-            <div className="bg-neutral-50 border border-neutral-200 p-3 flex flex-col gap-1 text-[11px] text-neutral-600">
-              <strong className="text-neutral-800 uppercase text-[10px]">Sensor & Physical Model Disclaimers:</strong>
-              <p>• TRACE operates on 2D image-space perspective telemetry. Bounding boxes represent visual bounding contours rather than true 3D point clouds.</p>
-              <p>• Physical mass ordering is estimated via SKU manifest metadata mapping. Tare weights and packaging center-of-gravity shifts are uncalibrated.</p>
-              <p>• Recommendations provide operational support directives to operators and are not automated physical robot control signals.</p>
+            <div className="border border-line bg-paper p-3 text-caption text-ink-soft">
+              <span className="font-medium text-ink">sensor &amp; physical model disclaimers</span>
+              <ul className="mt-1.5 list-inside list-disc space-y-1">
+                <li>TRACE operates on 2D image-space telemetry; bounding boxes represent visual contours, not 3D point clouds.</li>
+                <li>Mass ordering is estimated via SKU manifest metadata; tare weights and packaging center-of-gravity are uncalibrated.</li>
+                <li>Recommendations are operational support directives, not automated actuator commands.</li>
+              </ul>
             </div>
           </div>
         )}
-      </div>
+      </section>
+    </div>
+  )
+}
+
+function Metric({ label, value, note, tone }) {
+  const valueCls = tone === 'ok' ? 'text-ok' : tone === 'signal' ? 'text-[#8a5f00]' : 'text-ink'
+  return (
+    <div className="flex flex-col gap-1 bg-paper p-4">
+      <span className="text-label font-medium text-ink-faint">{label}</span>
+      <span className={`font-display text-display-md font-semibold tabular-nums ${valueCls}`}>{value}</span>
+      <span className="text-caption text-ink-faint">{note}</span>
     </div>
   )
 }

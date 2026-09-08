@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { X } from 'lucide-react'
 import {
   getScenarioConfig,
   getPhysicalStackComparison,
@@ -6,40 +7,38 @@ import {
 } from '../../lib/scenarios.js'
 
 const CLASSIFICATION_LABELS = {
-  high_geometric_support: 'HIGH GEOMETRIC SUPPORT',
-  moderate_geometric_support: 'MODERATE GEOMETRIC SUPPORT',
-  weak_geometric_support: 'WEAK GEOMETRIC SUPPORT',
-  poor_geometric_support: 'POOR GEOMETRIC SUPPORT',
+  high_geometric_support: 'high geometric support',
+  moderate_geometric_support: 'moderate geometric support',
+  weak_geometric_support: 'weak geometric support',
+  poor_geometric_support: 'poor geometric support',
 }
 
 const CLASSIFICATION_STYLES = {
-  high_geometric_support: 'text-emerald-800 bg-emerald-50 border-emerald-300',
-  moderate_geometric_support: 'text-blue-800 bg-blue-50 border-blue-300',
-  weak_geometric_support: 'text-amber-800 bg-amber-50 border-amber-300',
-  poor_geometric_support: 'text-red-800 bg-red-50 border-red-300',
+  high_geometric_support: 'text-ok bg-ok/10 border-ok/40',
+  moderate_geometric_support: 'text-steel bg-steel/10 border-steel/40',
+  weak_geometric_support: 'text-[#8a5f00] bg-signal/10 border-signal/40',
+  poor_geometric_support: 'text-danger bg-danger/10 border-danger/40',
 }
 
 function BreakdownBar({ label, value, max = 100, isPenalty = false }) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100))
   const color = isPenalty
     ? value > 30
-      ? 'bg-red-500'
-      : 'bg-neutral-300'
+      ? 'bg-danger'
+      : 'bg-line'
     : value >= 75
-      ? 'bg-emerald-600'
+      ? 'bg-ok'
       : value >= 50
-        ? 'bg-amber-500'
-        : 'bg-red-500'
+        ? 'bg-signal'
+        : 'bg-danger'
 
   return (
-    <div className="flex flex-col gap-0.5 text-[11px]">
-      <div className="flex justify-between text-neutral-600">
+    <div className="flex flex-col gap-0.5 text-caption">
+      <div className="flex justify-between text-ink-soft">
         <span>{label}</span>
-        <span className="font-mono font-medium">
-          {isPenalty ? `-${value.toFixed(0)}%` : `${value.toFixed(0)}%`}
-        </span>
+        <span className="font-mono">{isPenalty ? `-${value.toFixed(0)}%` : `${value.toFixed(0)}%`}</span>
       </div>
-      <div className="h-1.5 w-full bg-neutral-100 overflow-hidden border border-neutral-200">
+      <div className="h-1.5 w-full overflow-hidden border border-line bg-paper">
         <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -58,11 +57,11 @@ export default function WhatIfPanel({
 
   if (loading) {
     return (
-      <div className="border border-line bg-white p-5 text-xs text-neutral-500 shadow-sm flex items-center gap-3">
-        <span className="w-4 h-4 border-2 border-neutral-800 border-t-transparent animate-spin" />
+      <div className="flex items-center gap-3 border border-line bg-surface p-5">
+        <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
         <div>
-          <p className="font-bold text-neutral-900">Running What-If Simulation Engine…</p>
-          <p className="text-neutral-500 text-[11px]">Testing safer placement alternatives against physical scene geometry.</p>
+          <p className="text-small font-medium text-ink">running what-if simulation engine…</p>
+          <p className="text-caption text-ink-soft">testing safer placements against scene geometry.</p>
         </div>
       </div>
     )
@@ -70,15 +69,12 @@ export default function WhatIfPanel({
 
   if (error) {
     return (
-      <div className="border border-red-300 bg-red-50 p-4 text-xs text-red-800 shadow-sm">
-        <p className="font-bold">Simulation Error</p>
+      <div className="border border-danger bg-danger/5 p-4 text-small text-danger">
+        <p className="font-medium">simulation error</p>
         <p className="mt-1">{error}</p>
         {onClose && (
-          <button
-            onClick={onClose}
-            className="mt-2 text-[11px] underline text-red-700 hover:text-red-900 cursor-pointer"
-          >
-            Close
+          <button onClick={onClose} className="mt-2 text-caption underline hover:text-ink">
+            close
           </button>
         )}
       </div>
@@ -91,21 +87,19 @@ export default function WhatIfPanel({
 
   if (!simulation.simulation_available) {
     return (
-      <div className="border border-line bg-neutral-50 p-4 text-xs shadow-sm">
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-bold text-neutral-800 uppercase tracking-wide text-[11px]">
-            What-If Placement Simulation Unavailable
-          </span>
+      <div className="border border-line bg-surface p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-small font-medium text-ink">what-if simulation unavailable</span>
           {onClose && (
-            <button onClick={onClose} className="text-neutral-400 hover:text-ink text-sm font-bold cursor-pointer">
-              ✕
+            <button onClick={onClose} className="text-ink-faint hover:text-ink">
+              <X size={15} />
             </button>
           )}
         </div>
-        <p className="text-neutral-700 leading-relaxed">{simulation.simulation_notice}</p>
+        <p className="text-small text-ink-soft">{simulation.simulation_notice}</p>
         {simulation.limitations?.length > 0 && (
-          <p className="mt-2 text-[11px] text-neutral-500">
-            <strong>Operational Basis:</strong> {simulation.limitations.join('; ')}
+          <p className="mt-2 text-caption text-ink-faint">
+            <span className="font-medium text-ink">operational basis:</span> {simulation.limitations.join('; ')}
           </p>
         )}
       </div>
@@ -117,11 +111,7 @@ export default function WhatIfPanel({
   const selectedCandidate =
     alternatives.find((c) => c.id === selectedCandidateId) || alternatives[0] || null
 
-  const interventions = getSimplifiedInterventions(
-    simulation.finding_scenario,
-    current,
-    alternatives
-  )
+  const interventions = getSimplifiedInterventions(simulation.finding_scenario, current, alternatives)
 
   const problemDescription = (() => {
     const bd = current?.breakdown || {}
@@ -145,82 +135,60 @@ export default function WhatIfPanel({
   })()
 
   return (
-    <div className="border border-line bg-white text-xs shadow-sm">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-line bg-neutral-50 px-4 py-2.5">
+    <div className="border border-line bg-surface">
+      <div className="flex items-center justify-between border-b border-line bg-paper px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <span className="font-bold tracking-wider text-ink text-[11px] uppercase bg-neutral-900 text-white px-1.5 py-0.5">
-            Decision-Support Simulation
+          <span className="bg-ink px-1.5 py-0.5 text-label font-medium text-paper">
+            decision-support simulation
           </span>
-          <span className="font-bold text-[12px] text-neutral-900">
-            {config.title}
-          </span>
+          <span className="text-small font-medium text-ink">{config.title}</span>
         </div>
         {onClose && (
-          <button
-            onClick={onClose}
-            className="text-neutral-400 hover:text-ink px-1.5 py-0.5 text-sm font-bold cursor-pointer"
-            title="Close What-If View"
-          >
-            ✕
+          <button onClick={onClose} className="text-ink-faint hover:text-ink">
+            <X size={15} />
           </button>
         )}
       </div>
 
-      <div className="p-4 flex flex-col gap-4">
-        {/* 1. CURRENT STATE: HIGH RISK */}
-        <div className="border border-red-300 bg-red-50/40 p-4 flex flex-col gap-3">
-          <div className="flex items-center justify-between border-b border-red-200 pb-2">
-            <span className="font-bold text-xs uppercase tracking-wider text-red-900 flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block" />
-              <span>CURRENT STATE: HIGH RISK</span>
-            </span>
-            <span className="text-sm font-mono font-bold text-red-700">
-              {current?.stability_score ? current.stability_score.toFixed(0) : 40} / 100 Stability
+      <div className="flex flex-col gap-4 p-4">
+        <div className="flex flex-col gap-3 border border-danger/40 bg-danger/5 p-4">
+          <div className="flex items-center justify-between border-b border-danger/20 pb-2">
+            <span className="text-small font-medium text-danger">current state: high risk</span>
+            <span className="font-mono text-small font-semibold text-danger">
+              {current?.stability_score ? current.stability_score.toFixed(0) : 40} / 100 stability
             </span>
           </div>
 
-          <p className="text-xs text-red-950 leading-relaxed font-sans font-medium">
-            <strong>Instability Mechanism:</strong> {problemDescription}
+          <p className="text-small text-ink">
+            <span className="font-medium">instability mechanism:</span> {problemDescription}
           </p>
 
-          {/* Physical Stacking Dynamics Card */}
           {(() => {
-            const stackInfo = getPhysicalStackComparison(
-              simulation.finding_scenario,
-              current,
-              selectedCandidate
-            )
+            const stackInfo = getPhysicalStackComparison(simulation.finding_scenario, current, selectedCandidate)
             return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
-                {/* Current Observed Stack */}
-                <div className="border border-red-300 bg-white p-2.5 flex flex-col items-center gap-1.5 text-center shadow-xs">
-                  <span className={`text-[9px] font-bold px-2 py-0.5 uppercase ${stackInfo.current.riskBadgeStyle}`}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col items-center gap-1.5 border border-danger/40 bg-surface p-2.5 text-center">
+                  <span className={`px-2 py-0.5 text-label font-medium ${stackInfo.current.riskBadgeStyle}`}>
                     {stackInfo.current.riskBadge}
                   </span>
-                  <div className={`w-full py-1.5 px-2 border text-[11px] font-bold ${stackInfo.current.top.color}`}>
+                  <div className={`w-full border px-2 py-1.5 text-caption font-medium ${stackInfo.current.top.color}`}>
                     {stackInfo.current.top.label}
                   </div>
-                  <span className="text-[10px] font-bold text-red-700 font-mono">
-                    {stackInfo.current.arrow}
-                  </span>
-                  <div className={`w-full py-1 px-2 border text-[10px] ${stackInfo.current.bottom.color}`}>
+                  <span className="font-mono text-caption text-danger">{stackInfo.current.arrow}</span>
+                  <div className={`w-full border px-2 py-1 text-caption ${stackInfo.current.bottom.color}`}>
                     {stackInfo.current.bottom.label}
                   </div>
                 </div>
 
-                {/* Proposed Corrected Stack */}
-                <div className="border border-emerald-400 bg-white p-2.5 flex flex-col items-center gap-1.5 text-center shadow-xs">
-                  <span className={`text-[9px] font-bold px-2 py-0.5 uppercase ${stackInfo.proposed.riskBadgeStyle}`}>
+                <div className="flex flex-col items-center gap-1.5 border border-ok/40 bg-surface p-2.5 text-center">
+                  <span className={`px-2 py-0.5 text-label font-medium ${stackInfo.proposed.riskBadgeStyle}`}>
                     {stackInfo.proposed.riskBadge}
                   </span>
-                  <div className={`w-full py-1.5 px-2 border text-[11px] font-bold ${stackInfo.proposed.top.color}`}>
+                  <div className={`w-full border px-2 py-1.5 text-caption font-medium ${stackInfo.proposed.top.color}`}>
                     {stackInfo.proposed.top.label}
                   </div>
-                  <span className="text-[10px] font-bold text-emerald-800 font-mono">
-                    {stackInfo.proposed.arrow}
-                  </span>
-                  <div className={`w-full py-1 px-2 border text-[10px] ${stackInfo.proposed.bottom.color}`}>
+                  <span className="font-mono text-caption text-ok">{stackInfo.proposed.arrow}</span>
+                  <div className={`w-full border px-2 py-1 text-caption ${stackInfo.proposed.bottom.color}`}>
                     {stackInfo.proposed.bottom.label}
                   </div>
                 </div>
@@ -229,18 +197,13 @@ export default function WhatIfPanel({
           })()}
         </div>
 
-        {/* 2. WHAT IF WE INTERVENE? (2-3 CLEAR DECISION CHOICES) */}
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center justify-between">
-            <span className="font-bold text-xs uppercase tracking-wider text-neutral-900 flex items-center gap-1.5">
-              <span>⚡ WHAT IF WE INTERVENE?</span>
-            </span>
-            <span className="text-[10px] text-neutral-500">
-              Evaluated against optical scene geometry & manifest rules
-            </span>
+            <span className="text-small font-medium text-ink">what if we intervene?</span>
+            <span className="text-caption text-ink-faint">evaluated against scene geometry & manifest rules</span>
           </div>
 
-          <div className="grid grid-cols-1 gap-2.5">
+          <div className="flex flex-col gap-2.5">
             {interventions.map((option) => {
               const isSelected = selectedCandidate?.id === option.id || (option.id === 'opt-a' && !selectedCandidateId)
               const isDoNothing = option.id === 'opt-c-do-nothing'
@@ -253,46 +216,42 @@ export default function WhatIfPanel({
                       onSelectCandidate(option.candidate.id)
                     }
                   }}
-                  className={`border p-3.5 transition-all flex flex-col gap-2 ${
+                  className={`flex flex-col gap-2 border p-3.5 ${
                     isSelected
-                      ? 'border-emerald-600 bg-emerald-50/70 ring-1 ring-emerald-500 shadow-sm'
+                      ? 'border-ok/40 bg-ok/5'
                       : isDoNothing
-                        ? 'border-neutral-200 bg-neutral-50/50 hover:border-red-300'
-                        : 'border-neutral-200 bg-white hover:border-neutral-400'
+                        ? 'border-line bg-paper hover:border-danger/40'
+                        : 'border-line bg-surface hover:border-line-strong'
                   } ${!isDoNothing ? 'cursor-pointer' : ''}`}
                 >
-                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 uppercase ${option.badgeStyle}`}>
+                      <span className={`px-1.5 py-0.5 text-label font-medium ${option.badgeStyle}`}>
                         {option.badge}
                       </span>
-                      <strong className="text-xs font-bold text-neutral-950">
-                        {option.title}
-                      </strong>
+                      <span className="text-small font-semibold text-ink">{option.title}</span>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className={`border px-2 py-0.5 text-[10px] font-bold uppercase ${option.predictedRiskStyle}`}>
+                      <span className={`border px-2 py-0.5 text-label font-medium ${option.predictedRiskStyle}`}>
                         {option.predictedRisk}
                       </span>
-                      <span className="font-mono font-bold text-xs tabular-nums text-neutral-900">
+                      <span className="font-mono text-caption font-semibold tabular-nums text-ink">
                         {option.score} / 100
                       </span>
                       {option.scoreDelta > 0 && (
-                        <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 border border-emerald-300">
-                          +{option.scoreDelta} Gain
+                        <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 font-mono text-label font-medium text-ok">
+                          +{option.scoreDelta} gain
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <p className="text-[11px] text-neutral-700 leading-relaxed font-sans">
-                    {option.whySafer}
-                  </p>
+                  <p className="text-caption text-ink-soft">{option.whySafer}</p>
 
-                  <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between">
-                    <span className="text-[10px] text-neutral-500">
-                      {isDoNothing ? 'Status quo baseline' : 'Physically feasible placement'}
+                  <div className="flex items-center justify-between border-t border-line pt-2">
+                    <span className="text-caption text-ink-faint">
+                      {isDoNothing ? 'status quo baseline' : 'physically feasible placement'}
                     </span>
                     {!isDoNothing && (
                       <button
@@ -303,13 +262,13 @@ export default function WhatIfPanel({
                             onSelectCandidate(option.candidate.id)
                           }
                         }}
-                        className={`px-2.5 py-1 text-[11px] font-bold border transition-colors cursor-pointer ${
+                        className={`border px-2.5 py-1 text-caption font-medium transition-colors ${
                           isSelected
-                            ? 'border-emerald-700 bg-emerald-800 text-white'
-                            : 'border-neutral-800 bg-neutral-900 text-white hover:bg-neutral-800'
+                            ? 'border-ok bg-ok text-paper'
+                            : 'border-ink bg-ink text-paper hover:bg-ink-soft'
                         }`}
                       >
-                        {isSelected ? '✓ Simulation Active' : option.cta}
+                        {isSelected ? 'simulation active' : option.cta}
                       </button>
                     )}
                   </div>
@@ -319,76 +278,49 @@ export default function WhatIfPanel({
           </div>
         </div>
 
-        {/* 3. PROGRESSIVE DISCLOSURE: MATHEMATICAL BREAKDOWN & TRAJECTORY DETAILS */}
-        <div className="border border-neutral-200 bg-neutral-50/60 p-3 flex flex-col gap-2">
+        <div className="flex flex-col gap-2 border border-line bg-paper p-3">
           <button
             type="button"
             onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-            className="flex items-center justify-between text-xs text-neutral-700 hover:text-neutral-950 font-bold uppercase tracking-wider cursor-pointer"
+            className="flex items-center justify-between text-caption font-medium text-ink-soft hover:text-ink"
           >
-            <span>▸ Mathematical Breakdown & Trajectory Details</span>
-            <span className="font-mono text-[11px]">{showTechnicalDetails ? '▲ Hide' : '▼ Expand'}</span>
+            <span>mathematical breakdown & trajectory details</span>
+            <span className="font-mono">{showTechnicalDetails ? '−' : '+'}</span>
           </button>
 
           {showTechnicalDetails && (
-            <div className="mt-2 pt-2 border-t border-neutral-200 flex flex-col gap-3 text-xs">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* Current Breakdown */}
-                <div className="border border-neutral-200 bg-white p-3 flex flex-col gap-2">
-                  <span className="font-bold text-[10px] uppercase text-neutral-700">
-                    Current Placement Breakdown
-                  </span>
-                  <BreakdownBar
-                    label="Support Alignment"
-                    value={current?.breakdown?.support_alignment || 0}
-                  />
-                  <BreakdownBar label="Centering" value={current?.breakdown?.centering || 0} />
-                  <BreakdownBar label="Mass Order" value={current?.breakdown?.mass_order || 0} />
-                  <BreakdownBar
-                    label="Overhang Penalty"
-                    value={current?.breakdown?.overhang_penalty || 0}
-                    isPenalty={true}
-                  />
+            <div className="mt-2 flex flex-col gap-3 border-t border-line pt-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="flex flex-col gap-2 border border-line bg-surface p-3">
+                  <span className="text-label font-medium text-ink-soft">current placement breakdown</span>
+                  <BreakdownBar label="support alignment" value={current?.breakdown?.support_alignment || 0} />
+                  <BreakdownBar label="centering" value={current?.breakdown?.centering || 0} />
+                  <BreakdownBar label="mass order" value={current?.breakdown?.mass_order || 0} />
+                  <BreakdownBar label="overhang penalty" value={current?.breakdown?.overhang_penalty || 0} isPenalty={true} />
                 </div>
 
-                {/* Simulated Alternative Breakdown */}
                 {selectedCandidate && (
-                  <div className="border border-neutral-200 bg-white p-3 flex flex-col gap-2">
-                    <span className="font-bold text-[10px] uppercase text-neutral-700">
-                      Simulated Placement Breakdown
-                    </span>
-                    <BreakdownBar
-                      label="Support Alignment"
-                      value={selectedCandidate.score_breakdown?.support_alignment || 0}
-                    />
-                    <BreakdownBar
-                      label="Centering"
-                      value={selectedCandidate.score_breakdown?.centering || 0}
-                    />
-                    <BreakdownBar
-                      label="Mass Order"
-                      value={selectedCandidate.score_breakdown?.mass_order || 0}
-                    />
-                    <BreakdownBar
-                      label="Overhang Penalty"
-                      value={selectedCandidate.score_breakdown?.overhang_penalty || 0}
-                      isPenalty={true}
-                    />
+                  <div className="flex flex-col gap-2 border border-line bg-surface p-3">
+                    <span className="text-label font-medium text-ink-soft">simulated placement breakdown</span>
+                    <BreakdownBar label="support alignment" value={selectedCandidate.score_breakdown?.support_alignment || 0} />
+                    <BreakdownBar label="centering" value={selectedCandidate.score_breakdown?.centering || 0} />
+                    <BreakdownBar label="mass order" value={selectedCandidate.score_breakdown?.mass_order || 0} />
+                    <BreakdownBar label="overhang penalty" value={selectedCandidate.score_breakdown?.overhang_penalty || 0} isPenalty={true} />
                   </div>
                 )}
               </div>
 
               {selectedCandidate && (
-                <div className="text-[11px] text-neutral-600 bg-white p-2.5 border border-neutral-200 flex flex-col gap-1 font-mono">
-                  <span>Simulated 2D Normalized Coordinates: [{selectedCandidate.position[0]}, {selectedCandidate.position[1]}]</span>
-                  <span>Support Relationship Edge: {selectedCandidate.support_relationship || 'direct_support'}</span>
-                  <span>Feasibility Check: {selectedCandidate.feasibility ? 'PASSED (Clearance verified)' : 'CAUTION (Tight clearance)'}</span>
+                <div className="flex flex-col gap-1 border border-line bg-surface p-2.5 font-mono text-caption text-ink-soft">
+                  <span>simulated 2D normalized coordinates: [{selectedCandidate.position[0]}, {selectedCandidate.position[1]}]</span>
+                  <span>support relationship edge: {selectedCandidate.support_relationship || 'direct_support'}</span>
+                  <span>feasibility check: {selectedCandidate.feasibility ? 'passed (clearance verified)' : 'caution (tight clearance)'}</span>
                 </div>
               )}
 
               {simulation.limitations?.length > 0 && (
-                <div className="text-[10px] text-neutral-500 pt-1 border-t border-neutral-200">
-                  <strong className="uppercase">Operational Boundaries: </strong>
+                <div className="border-t border-line pt-1 text-caption text-ink-faint">
+                  <span className="font-medium text-ink-soft">operational boundaries: </span>
                   {simulation.limitations.join('; ')}
                 </div>
               )}

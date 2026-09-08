@@ -3,33 +3,28 @@ import { getTemporalPatterns, getPredictiveRisk } from '../api/temporal.js'
 import { getScenarioConfig } from '../lib/scenarios.js'
 
 const SEVERITY_BADGE = {
-  Critical: 'border-red-400 bg-red-50 text-red-800',
-  High: 'border-orange-300 bg-orange-50 text-orange-800',
-  Medium: 'border-amber-300 bg-amber-50 text-amber-800',
-  Low: 'border-neutral-300 bg-neutral-100 text-neutral-700',
+  Critical: 'border-danger/40 bg-danger/10 text-danger',
+  High: 'border-signal/40 bg-signal/10 text-[#8a5f00]',
+  Medium: 'border-steel/40 bg-steel/10 text-steel',
+  Low: 'border-line-strong bg-paper text-ink-soft',
 }
 
-/**
- * Humanizes prediction findings into simple operational cards:
- * - What is happening
- * - When it may happen
- * - What to do
- * - Why we're warning you
- */
 function getHumanPredictionStory(pred) {
   const scenario = pred.predicted_scenario || ''
   const chainKey = pred.supporting_pattern?.scenario || ''
+  const band = pred.predicted_band || 'Medium'
 
   if (scenario === 'precursor_consequence_materialisation') {
     if (chainKey.includes('straps') && chainKey.includes('drop')) {
       return {
-        title: 'Packaging may fail and drop if lifted by straps',
-        explanation: 'Workers were observed lifting cargo by plastic packaging straps followed by sudden drop motion. Straps can snap unexpectedly under tension.',
-        recommendedResponse: 'Lift packages from underneath the carton base with two hands; never carry by packaging straps.',
-        whyWarning: 'Packaging straps used as lifting handles detected in monitored footage.',
-        when: 'Within seconds during handling',
+        title: 'Packaging strap failure leading to package drop',
+        whatWeSaw: 'Worker was observed lifting cargo by plastic packaging straps, followed by sudden downward drop motion.',
+        whyItMatters: 'Packaging straps are designed for carton bundling, not as handles. Tensile stress can snap straps suddenly during carry.',
+        whatMayHappen: 'Strap breakage leading to high-impact floor drop, destroyed merchandise, and hand lacerations.',
+        when: 'Within seconds during this handling operation.',
+        recommendedResponse: 'Require workers to lift from underneath the carton base with two hands; prohibit carrying by straps.',
         derivationChain: [
-          'What we saw: Worker grasping tension straps rather than carton base in video footage',
+          'What we saw: Worker grasping tension straps rather than carton base (observed in video)',
           'Pattern found: Packaging straps used as handles followed by downward acceleration spike',
           'What may happen: Strap rupture causing uncontrolled cargo drop impact',
         ],
@@ -37,25 +32,27 @@ function getHumanPredictionStory(pred) {
     }
     if (chainKey.includes('rolling') && chainKey.includes('dock')) {
       return {
-        title: 'Rolling cargo may fall from unprotected dock ledge',
-        explanation: 'Carton was rolled along the floor toward the open dock ledge boundary. Momentum makes rolling cargo difficult to arrest before reaching the edge.',
-        recommendedResponse: 'Halt cargo rolling immediately; erect safety barrier and transport using a pallet truck.',
-        whyWarning: 'Rolling cargo moving toward dock edge detected in monitored footage.',
-        when: 'Immediate hazard near dock ledge',
+        title: 'Rolling cargo nearing unprotected dock edge',
+        whatWeSaw: 'Carton was rolled along the floor toward the open dock ledge boundary.',
+        whyItMatters: 'Rolling momentum makes heavy cartons difficult to arrest before reaching the unbarricaded dock gap.',
+        whatMayHappen: 'Carton rolls off the dock edge into the truck gap or onto the driveway below.',
+        when: 'Immediate fall risk if rolling motion continues near the ledge.',
+        recommendedResponse: 'Halt cargo rolling immediately; erect dock safety gate and transport with a pallet truck.',
         derivationChain: [
           'What we saw: End-over-end rolling motion detected in loading bay footage',
-          'Pattern found: Rolling trajectory moving toward calibrated dock-edge perimeter',
+          'Pattern found: Rolling trajectory moving into calibrated dock-edge perimeter',
           'What may happen: Uncontrolled cargo fall beyond dock perimeter',
         ],
       }
     }
     if (chainKey.includes('drag') && chainKey.includes('orientation')) {
       return {
-        title: 'Packages may be damaged if floor dragging continues',
-        explanation: 'Carton was dragged along the floor, leaving it inverted and non-compliant with orientation labels. Floor friction flips boxes and damages packaging.',
-        recommendedResponse: 'Lift and rotate carton to upright orientation matching the manifest; use a hand truck for transit.',
-        whyWarning: 'Floor dragging resulting in non-compliant orientation detected in footage.',
-        when: 'Before staging and palletizing',
+        title: 'Floor dragging resulting in wrong package orientation',
+        whatWeSaw: 'Carton was dragged along the floor, leaving it in an inverted or non-compliant orientation.',
+        whyItMatters: 'Floor friction catches carton edges, flipping boxes off-axis and violating this-side-up requirements.',
+        whatMayHappen: 'Liquid product leakage, internal component shifting, or crush failure under top load.',
+        when: 'Before final staging or dispatch palletizing.',
+        recommendedResponse: 'Lift and rotate carton to upright orientation matching the manifest label.',
         derivationChain: [
           'What we saw: Horizontal floor dragging followed by aspect ratio shift',
           'Pattern found: Dragging motion altered final package orientation',
@@ -65,11 +62,12 @@ function getHumanPredictionStory(pred) {
     }
     if (chainKey.includes('solo') && chainKey.includes('drop')) {
       return {
-        title: 'Cargo drop risk from solo heavy handling',
-        explanation: 'A single worker handled heavy cargo without assistance, followed by unstable slip motion. Fatigue from heavy solo lifts causes sudden grip failure.',
+        title: 'Fatigue drop risk from solo heavy lift',
+        whatWeSaw: 'Single worker carried heavy cargo without assistance, followed by unstable slip or drop motion.',
+        whyItMatters: 'Solo carry of heavy items causes rapid muscle fatigue and sudden grip failure.',
+        whatMayHappen: 'Package dropped onto floor or worker foot; potential lumbar strain injury.',
+        when: 'During manual transit across the staging aisle.',
         recommendedResponse: 'Halt solo lifting; assign two-person team lift or dispatch mechanical lifting cart.',
-        whyWarning: 'Solo heavy carry followed by kinematic instability detected in footage.',
-        when: 'During manual transit across aisle',
         derivationChain: [
           'What we saw: Heavy SKU handled by single operator followed by velocity spike',
           'Pattern found: Solo heavy carry followed by kinematic instability',
@@ -79,11 +77,12 @@ function getHumanPredictionStory(pred) {
     }
 
     return {
-      title: 'Unsafe handling action likely to cause secondary hazard',
-      explanation: 'A high-risk handling practice was detected immediately prior to an unstable condition, increasing the probability of a follow-on incident.',
-      recommendedResponse: 'Intervene on the initial handling practice to prevent the downstream hazard.',
-      whyWarning: 'Hazard sequence detected in monitored footage.',
-      when: 'During the current handling cycle',
+      title: 'Warning sign leading to secondary hazard',
+      whatWeSaw: 'A known high-risk handling practice was detected immediately prior to a secondary hazard condition.',
+      whyItMatters: 'The initial unsafe action directly elevates the likelihood of the follow-on incident occurring.',
+      whatMayHappen: 'Compounding damage or handling failure if the initial practice is not corrected.',
+      when: 'During the remainder of the current handling cycle.',
+      recommendedResponse: 'Intervene on the initial handling practice to prevent the downstream outcome.',
       derivationChain: [
         `What we saw: Precursor event sequence detected in footage`,
         `Pattern found: Chain sequence: ${chainKey.replace(/_/g, ' ')}`,
@@ -94,11 +93,12 @@ function getHumanPredictionStory(pred) {
 
   if (scenario === 'confirmed_drop_incident') {
     return {
-      title: 'Packages at risk of impact damage from repeated drops',
-      explanation: 'Downward acceleration shocks and impact vibrations were detected during transfer. Frequent drop shocks shatter contents and rupture outer seals.',
-      recommendedResponse: 'Instruct handlers to lower packages gently; inspect outer cartons for seal failure or breakage.',
-      whyWarning: 'Repeating drop and throw motions detected in monitored footage.',
-      when: 'Within the current shift',
+      title: 'Potential carton impact & drop damage',
+      whatWeSaw: 'Repeated downward acceleration spikes and impact vibrations were detected during cargo transfer.',
+      whyItMatters: 'Frequent drop shocks weaken internal packaging, shatter contents, and rupture tape seals.',
+      whatMayHappen: 'Severe internal product breakage or carton tearing upon delivery.',
+      when: 'Within the current shift if dropping or throwing continues.',
+      recommendedResponse: 'Instruct handlers to lower packages gently to the surface; inspect outer cartons for seal failure.',
       derivationChain: [
         'What we saw: Multiple high-acceleration downward motion spikes',
         'Pattern found: Repeating drop/throw handling pattern',
@@ -109,11 +109,12 @@ function getHumanPredictionStory(pred) {
 
   if (scenario === 'musculoskeletal_injury_risk') {
     return {
-      title: 'Worker strain and dropped cargo risk from heavy solo lifts',
-      explanation: 'Heavy packages are repeatedly being lifted by an individual worker without assistance, exceeding safe ergonomic thresholds.',
+      title: 'Worker ergonomic strain & injury risk',
+      whatWeSaw: 'Heavy packages are repeatedly being lifted and carried by an individual worker without assistance.',
+      whyItMatters: 'Continuous solo lifting of heavy SKUs exceeds ergonomic thresholds and leads to severe back injuries.',
+      whatMayHappen: 'Worker lumbar strain injury, loss of grip, or sudden dropped load.',
+      when: 'Cumulative risk across the current work shift.',
       recommendedResponse: 'Assign a second worker for team lifts or provide a mobile hydraulic lift table.',
-      whyWarning: 'Repeated solo heavy lifting detected in monitored footage.',
-      when: 'Cumulative risk across shift',
       derivationChain: [
         'What we saw: Repeated heavy SKU handling by single operator',
         'Pattern found: Persistent solo heavy lift sequence without assistance',
@@ -124,11 +125,12 @@ function getHumanPredictionStory(pred) {
 
   if (scenario === 'surface_damage_or_packaging_failure') {
     return {
-      title: 'Carton burst and spill hazard from floor dragging',
-      explanation: 'Packages are repeatedly being dragged along the floor surface. Abrasive friction wears through bottom corrugated layers and weakens tape seals.',
+      title: 'Packaging abrasion & floor drag damage',
+      whatWeSaw: 'Packages are repeatedly being dragged along the floor surface instead of being carried or wheeled.',
+      whyItMatters: 'Abrasive floor friction wears through bottom corrugated layers, breaks tape seals, and snags on joints.',
+      whatMayHappen: 'Bottom panel burst when lifted, resulting in spilled and damaged inventory.',
+      when: 'During next lift or transport stage.',
       recommendedResponse: 'Provide hand trucks or flatbed carts; remind handlers that floor dragging is prohibited.',
-      whyWarning: 'Repeated ground-level dragging detected in monitored footage.',
-      when: 'During next lift or transport stage',
       derivationChain: [
         'What we saw: Ground-level translation without vertical clearance',
         'Pattern found: Repeated floor dragging across consecutive packages',
@@ -139,11 +141,12 @@ function getHumanPredictionStory(pred) {
 
   if (scenario === 'unresolved_escalation') {
     return {
-      title: 'Stack collapse hazard from escalating load instability',
-      explanation: 'Risk severity scores have steadily increased across consecutive actions without stabilizing, indicating progressively deteriorating cargo balance.',
+      title: 'Escalating load instability hazard',
+      whatWeSaw: 'Risk severity scores have steadily increased across consecutive handling actions without stabilizing.',
+      whyItMatters: 'An escalating risk trend indicates that cargo balance or handling conditions are progressively deteriorating.',
+      whatMayHappen: 'Sudden stack collapse, toppling cargo, or major handling failure.',
+      when: 'Imminent if the handling operation proceeds without stabilization.',
       recommendedResponse: 'Pause the operation immediately; inspect tier alignment and reset the stack footprint.',
-      whyWarning: 'Progressive risk score escalation detected in monitored footage.',
-      when: 'Imminent if handling proceeds without stabilization',
       derivationChain: [
         'What we saw: Increasing severity scores across consecutive events',
         'Pattern found: Monotonic risk score escalation across observation window',
@@ -155,10 +158,11 @@ function getHumanPredictionStory(pred) {
   const cleanTitle = scenario.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   return {
     title: cleanTitle,
-    explanation: pred.explanation || 'Repeated operational indicators suggest heightened risk during the current workflow.',
+    whatWeSaw: pred.explanation || 'Repeated operational indicators observed during handling.',
+    whyItMatters: 'Unsafe conditions compound over time when handling practices remain uncorrected.',
+    whatMayHappen: 'Elevated risk of operational disruption or physical package damage.',
+    when: pred.horizon_description || 'During the current work shift.',
     recommendedResponse: 'Inspect the staging area and verify proper handling techniques.',
-    whyWarning: 'Detected repeatedly in the monitored footage.',
-    when: pred.horizon_description || 'During the current work shift',
     derivationChain: pred.prediction_chain || [
       'What we saw: Recorded events from footage',
       'Pattern found: Correlated observation sequence',
@@ -167,95 +171,47 @@ function getHumanPredictionStory(pred) {
   }
 }
 
-/**
- * Humanizes temporal sequence patterns into natural, non-repetitive operational summaries.
- */
 function getHumanPatternStory(pat) {
   const patternType = pat.pattern_type
   const scenarioKey = pat.scenario || ''
   const config = getScenarioConfig(scenarioKey)
+  const count = pat.event_count || 1
+  const durationSec = Math.round(pat.time_window_sec || 0)
 
   if (patternType === 'repeated_behaviour') {
+    let title = config.title
     if (scenarioKey === 'entity_in_dock_edge_zone') {
-      return {
-        title: 'Workers repeatedly entering the dock-edge area',
-        badgeLabel: 'UNSAFE BEHAVIOUR REPEATED',
-        badgeStyle: 'border-amber-300 bg-amber-50 text-amber-900',
-        whyItMatters: 'Repeated presence at the unprotected dock ledge significantly increases the risk of a worker falling into the drive gap.',
-        recommendedResponse: 'Move at least 2 m away from the dock edge and secure the bay safety gate.',
-      }
-    }
-    if (scenarioKey === 'entity_in_wet_floor_zone') {
-      return {
-        title: 'Cargo handled repeatedly in marked wet floor zone',
-        badgeLabel: 'UNSAFE BEHAVIOUR REPEATED',
-        badgeStyle: 'border-amber-300 bg-amber-50 text-amber-900',
-        whyItMatters: 'Footwear and wheel traction are severely reduced on wet floors, increasing slip hazards and dropped loads.',
-        recommendedResponse: 'Reroute cargo transit away from the wet zone; place caution cones until dry.',
-      }
-    }
-    if (scenarioKey === 'dragging_precursor') {
-      return {
-        title: 'Packages dragged across floor multiple times',
-        badgeLabel: 'UNSAFE BEHAVIOUR REPEATED',
-        badgeStyle: 'border-amber-300 bg-amber-50 text-amber-900',
-        whyItMatters: 'Floor friction wears through carton bottom panels, causing packages to burst open when lifted.',
-        recommendedResponse: 'Transport packages on hand trucks or flatbed carts; do not drag boxes along the floor.',
-      }
-    }
-    if (scenarioKey === 'stepping_on_carton') {
-      return {
-        title: 'Worker repeatedly stepping onto cargo cartons',
-        badgeLabel: 'UNSAFE BEHAVIOUR REPEATED',
-        badgeStyle: 'border-amber-300 bg-amber-50 text-amber-900',
-        whyItMatters: 'Corrugated boxes are not rated to support human body weight. Carton collapse can cause severe falls and crush contents.',
-        recommendedResponse: 'Step off cartons immediately; use an approved safety ladder or step stool.',
-      }
-    }
-    if (scenarioKey === 'straps_as_handles') {
-      return {
-        title: 'Workers frequently using packaging straps as handles',
-        badgeLabel: 'UNSAFE BEHAVIOUR REPEATED',
-        badgeStyle: 'border-amber-300 bg-amber-50 text-amber-900',
-        whyItMatters: 'Straps can snap without warning under dynamic lifting tension, causing the package to drop heavily onto the floor or feet.',
-        recommendedResponse: 'Lift from the carton base using two hands; strictly prohibit carrying by tension straps.',
-      }
-    }
-    if (scenarioKey === 'box_overhang') {
-      return {
-        title: 'Packages stacked repeatedly with severe overhang',
-        badgeLabel: 'UNSAFE BEHAVIOUR REPEATED',
-        badgeStyle: 'border-amber-300 bg-amber-50 text-amber-900',
-        whyItMatters: 'Unsupported overhang creates an eccentric center of gravity that causes stacks to topple under slight vibration.',
-        recommendedResponse: 'Re-align cartons within the pallet perimeter; ensure 100% base support.',
-      }
-    }
-    if (scenarioKey === 'heavy_on_light_stacking') {
-      return {
-        title: 'Heavy cartons repeatedly stacked on lighter cartons',
-        badgeLabel: 'UNSAFE BEHAVIOUR REPEATED',
-        badgeStyle: 'border-amber-300 bg-amber-50 text-amber-900',
-        whyItMatters: 'Excessive top load crushes base carton sidewalls and leads to top-heavy stack collapse.',
-        recommendedResponse: 'Stack heaviest packages at the base tier; restack pallet before transport.',
-      }
+      title = 'Workers repeatedly in unsafe dock-edge area'
+    } else if (scenarioKey === 'entity_in_wet_floor_zone') {
+      title = 'Cargo handled repeatedly in marked wet floor zone'
+    } else if (scenarioKey === 'dragging_precursor') {
+      title = 'Packages dragged across floor multiple times'
+    } else if (scenarioKey === 'stepping_on_carton') {
+      title = 'Worker stepping directly onto cartons'
+    } else if (scenarioKey === 'straps_as_handles') {
+      title = 'Workers frequently using straps as handles'
     }
 
     return {
-      title: config.title || 'Repeated Unsafe Handling Habit',
-      badgeLabel: 'UNSAFE BEHAVIOUR REPEATED',
-      badgeStyle: 'border-amber-300 bg-amber-50 text-amber-900',
-      whyItMatters: config.whyItMatters || 'Repeated occurrences suggest a persistent handling habit that elevates operational risk.',
-      recommendedResponse: config.recommendedAction || 'Review handling practice with warehouse team.',
+      title,
+      badgeLabel: 'unsafe behaviour repeated',
+      badgeStyle: 'border-signal/40 bg-signal/10 text-[#8a5f00]',
+      whatWeSaw: `This unsafe action was detected ${count} times within ${durationSec > 0 ? `${durationSec} seconds` : 'the observation window'}.`,
+      whyItMatters: `${config.whyItMatters} Because this happened repeatedly rather than as an isolated slip, it suggests a recurring habit that requires supervisor intervention.`,
+      recommendedResponse: config.recommendedAction,
+      trendText: pat.score_trend === 'escalating' ? 'Risk severity is increasing' : 'Consistent recurring frequency',
     }
   }
 
   if (patternType === 'escalating_risk') {
     return {
       title: 'Handling risk severity steadily increasing',
-      badgeLabel: 'RISK IS INCREASING',
-      badgeStyle: 'border-red-400 bg-red-50 text-red-900',
-      whyItMatters: 'Consecutive actions show worsening cargo instability, indicating that the stack or handling posture is progressively deteriorating.',
-      recommendedResponse: 'Pause the operation immediately; inspect tier stability and reset the stack footprint.',
+      badgeLabel: 'risk is increasing',
+      badgeStyle: 'border-danger/40 bg-danger/10 text-danger',
+      whatWeSaw: `Risk score steadily increased across ${count} consecutive actions over ${durationSec} seconds (peaked at ${Math.round(pat.peak_score || 75)}/100).`,
+      whyItMatters: 'A continuous upward severity curve indicates that physical cargo stability or handling posture is deteriorating over time.',
+      recommendedResponse: 'Pause the current task immediately to inspect stability and reset the stack footprint.',
+      trendText: 'Risk is increasing',
     }
   }
 
@@ -268,19 +224,23 @@ function getHumanPatternStory(pat) {
 
     return {
       title: `${preConfig.title} → ${conConfig.title}`,
-      badgeLabel: 'WARNING SIGN SEQUENCE',
-      badgeStyle: 'border-purple-300 bg-purple-50 text-purple-900',
+      badgeLabel: 'warning sign sequence',
+      badgeStyle: 'border-steel/40 bg-steel/10 text-steel',
+      whatWeSaw: `A warning sign (${preConfig.title.toLowerCase()}) occurred, followed by a secondary hazard within ${durationSec} seconds.`,
       whyItMatters: 'The first unsafe handling practice directly created the mechanical conditions for the second hazard to occur.',
-      recommendedResponse: `Correct initial practice: ${preConfig.recommendedAction}`,
+      recommendedResponse: `Correct the initial practice: ${preConfig.recommendedAction}`,
+      trendText: 'Hazard sequence detected',
     }
   }
 
   return {
-    title: config.title || 'Repeated Operational Pattern',
-    badgeLabel: 'PATTERN DETECTED',
-    badgeStyle: 'border-neutral-300 bg-neutral-100 text-neutral-800',
-    whyItMatters: 'Correlated operational actions indicate a repeating handling pattern.',
+    title: config.title || 'Operational sequence pattern',
+    badgeLabel: 'pattern detected',
+    badgeStyle: 'border-line bg-paper text-ink-soft',
+    whatWeSaw: `Identified ${count} related observations over ${durationSec} seconds.`,
+    whyItMatters: 'Correlated operational events indicate an ongoing workflow pattern.',
     recommendedResponse: config.recommendedAction || 'Review handling practice.',
+    trendText: 'Observed pattern',
   }
 }
 
@@ -290,22 +250,17 @@ export default function TemporalRiskPanel({
   scenario = null,
   onSelectEvent = null,
 }) {
-  const [activeTab, setActiveTab] = useState('predictions') // 'predictions' | 'patterns'
+  const [activeTab, setActiveTab] = useState('predictions')
   const [windowSec, setWindowSec] = useState(300)
   const [patternsData, setPatternsData] = useState(null)
   const [predictiveData, setPredictiveData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [collapsed, setCollapsed] = useState(false)
-
-  // Track which cards have their evidence details expanded
   const [expandedEvidence, setExpandedEvidence] = useState({})
 
   const toggleEvidence = (id) => {
-    setExpandedEvidence((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }))
+    setExpandedEvidence((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
   const fetchData = async () => {
@@ -337,7 +292,6 @@ export default function TemporalRiskPanel({
     fetchData()
   }, [videoId, lens, scenario, windowSec])
 
-  // Consolidate redundant predictions by scenario/chain to present compact, non-duplicated intelligence
   const consolidatedPredictions = useMemo(() => {
     if (!predictiveData?.predictions?.length) return []
     const groups = new Map()
@@ -376,7 +330,6 @@ export default function TemporalRiskPanel({
       .sort((a, b) => (rank[b.predicted_band] || 0) - (rank[a.predicted_band] || 0))
   }, [predictiveData])
 
-  // Consolidate redundant temporal patterns by pattern_type and scenario
   const consolidatedPatterns = useMemo(() => {
     if (!patternsData?.patterns?.length) return []
     const groups = new Map()
@@ -422,243 +375,183 @@ export default function TemporalRiskPanel({
   const predictionCount = consolidatedPredictions.length
 
   return (
-    <div className="border border-line bg-white shadow-xs flex flex-col transition-all">
-      {/* 1. Panel Header: Restored Authoritative Black Banner */}
-      <div className="border-b border-line p-4 bg-neutral-900 text-white flex items-center justify-between flex-wrap gap-3">
+    <div className="flex flex-col border border-line bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-ink p-4">
         <div className="flex items-center gap-3">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold tracking-wide text-white uppercase">
-                Early Warning &amp; Operational Patterns
-              </h3>
-              <span className="text-[10px] font-bold bg-neutral-800 text-emerald-400 border border-neutral-700 px-2 py-0.5">
-                ACTIVE MONITORING
-              </span>
-            </div>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              TRACE doesn't only detect incidents — it notices repeated unsafe behaviour and warns about what could happen next.
+          <span className="h-2 w-2 animate-pulse motion-reduce:animate-none bg-signal" />
+          <div>
+            <h3 className="font-display text-display-md font-semibold text-paper">
+              early warning & operational patterns
+            </h3>
+            <p className="mt-0.5 text-caption text-paper/60">
+              TRACE watches sequences of actions across the shift to spot repeating unsafe habits
+              and forecast potential damage before it happens.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Time Scope Selector */}
-          <div className="flex items-center gap-1.5 text-xs text-neutral-300 bg-neutral-800 border border-neutral-700 px-2 py-1">
-            <span className="text-neutral-400 font-medium">Time Scope:</span>
+          <div className="flex items-center gap-1.5 border border-paper/20 bg-ink px-2 py-1">
+            <span className="text-caption text-paper/60">time scope</span>
             <select
               value={windowSec}
               onChange={(e) => setWindowSec(Number(e.target.value))}
-              className="bg-neutral-900 border-none text-white text-xs font-semibold focus:outline-none cursor-pointer"
+              className="bg-transparent text-caption font-medium text-paper focus:outline-none"
             >
-              <option value={60}>Last 1 min (60s)</option>
-              <option value={120}>Last 2 mins (120s)</option>
-              <option value={300}>Last 5 mins (300s)</option>
-              <option value={900}>Last 15 mins</option>
-              <option value={3600}>Entire Shift (1 hr)</option>
+              <option value={60}>last 1 min</option>
+              <option value={120}>last 2 mins</option>
+              <option value={300}>last 5 mins</option>
+              <option value={900}>last 15 mins</option>
+              <option value={3600}>entire shift</option>
             </select>
           </div>
 
           <button
             type="button"
             onClick={() => setCollapsed(!collapsed)}
-            className="text-neutral-300 hover:text-white px-2 py-1 text-xs border border-neutral-700 hover:border-neutral-500 transition-colors cursor-pointer"
-            title={collapsed ? 'Expand section' : 'Collapse section'}
+            className="border border-paper/20 px-2 py-1 text-caption text-paper/80 transition-colors hover:text-paper"
           >
-            {collapsed ? '▼ Show Early Warnings' : '▲ Minimize'}
+            {collapsed ? 'show' : 'minimize'}
           </button>
         </div>
       </div>
 
       {!collapsed && (
         <>
-          {/* 2. Sub-Header: Tabs & Primary Operational Purpose */}
-          <div className="flex items-center justify-between border-b border-line bg-paper px-4 py-2.5 text-xs flex-wrap gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-paper px-4 py-2.5">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setActiveTab('predictions')}
-                className={`px-3 py-1.5 font-bold text-xs border transition-colors cursor-pointer flex items-center gap-2 ${
+                className={`flex items-center gap-2 border px-3 py-1.5 text-caption font-medium transition-colors ${
                   activeTab === 'predictions'
-                    ? 'border-neutral-900 bg-neutral-900 text-white shadow-2xs'
-                    : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100'
+                    ? 'border-ink bg-ink text-paper'
+                    : 'border-line bg-surface text-ink-soft hover:text-ink'
                 }`}
               >
-                <span>LIKELY NEXT RISKS</span>
-                <span className={`px-1.5 py-0.2 text-[10px] font-bold font-mono ${
-                  activeTab === 'predictions' ? 'bg-amber-500 text-white' : 'bg-neutral-200 text-neutral-800'
-                }`}>
-                  {predictionCount}
-                </span>
+                what may happen
+                <span className="font-mono text-label">{predictionCount}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab('patterns')}
-                className={`px-3 py-1.5 font-bold text-xs border transition-colors cursor-pointer flex items-center gap-2 ${
+                className={`flex items-center gap-2 border px-3 py-1.5 text-caption font-medium transition-colors ${
                   activeTab === 'patterns'
-                    ? 'border-neutral-900 bg-neutral-900 text-white shadow-2xs'
-                    : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100'
+                    ? 'border-ink bg-ink text-paper'
+                    : 'border-line bg-surface text-ink-soft hover:text-ink'
                 }`}
               >
-                <span>REPEATED UNSAFE BEHAVIOUR</span>
-                <span className={`px-1.5 py-0.2 text-[10px] font-bold font-mono ${
-                  activeTab === 'patterns' ? 'bg-amber-500 text-white' : 'bg-neutral-200 text-neutral-800'
-                }`}>
-                  {patternCount}
-                </span>
+                repeated actions
+                <span className="font-mono text-label">{patternCount}</span>
               </button>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-neutral-600">
-              <span className="font-semibold text-neutral-800">What should I watch out for next?</span>
-              <span className="text-neutral-400 hidden md:inline">· Forecasts and recurring handling habits</span>
             </div>
           </div>
 
-          {/* 3. Cards Grid: Clean 2-column layout */}
-          <div className="p-4 bg-white">
+          <div className="p-4">
             {loading && (
-              <div className="p-8 text-center text-xs text-neutral-600 flex items-center justify-center gap-2.5">
-                <div className="w-4 h-4 border-2 border-neutral-900 border-t-transparent animate-spin" />
-                <span>Evaluating operational patterns across the shift...</span>
+              <div className="flex items-center justify-center gap-2.5 p-8 text-small text-ink-soft">
+                <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
+                analyzing sequences and checking for repeating safety patterns…
               </div>
             )}
 
             {!loading && error && (
-              <div className="p-3 text-xs bg-red-50 border border-red-200 text-red-800 flex items-center gap-2">
-                <span className="font-bold">Notice:</span> {error}
+              <div className="flex items-center gap-2 border border-danger bg-danger/5 p-3 text-small text-danger">
+                <span className="font-medium">notice:</span> {error}
               </div>
             )}
 
-            {/* TAB 1: LIKELY NEXT RISKS */}
             {!loading && !error && activeTab === 'predictions' && (
               <div className="flex flex-col gap-4">
                 {predictionCount === 0 ? (
-                  <div className="border border-dashed border-line p-6 text-center text-xs text-neutral-600 bg-neutral-50/50">
-                    <p className="font-bold text-neutral-800 text-sm mb-1">
-                      No Compounding Safety Risks Detected
-                    </p>
-                    <p className="text-xs text-neutral-600 max-w-lg mx-auto leading-relaxed">
-                      Current video observations show isolated events without multi-step escalation or repeating warning signs in this time scope.
-                    </p>
-                    <p className="text-[11px] text-neutral-500 mt-2 italic">
-                      TRACE only warns about future risk when genuine repeating patterns or warning signs are observed.
-                    </p>
-                  </div>
+                  <EmptyState title="No compounding safety risks detected">
+                    Current observations show isolated events without multi-step escalation or
+                    repeating warning signs in this time scope. TRACE only generates early warnings
+                    when genuine repeating patterns are observed.
+                  </EmptyState>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {consolidatedPredictions.map((pred) => {
                       const story = getHumanPredictionStory(pred)
                       const isExpanded = Boolean(expandedEvidence[pred.prediction_id])
                       const eventCount = pred.supporting_event_ids?.length || 1
 
                       return (
-                        <div
-                          key={pred.prediction_id}
-                          className="border border-line bg-white p-4 shadow-2xs flex flex-col justify-between gap-3 hover:border-neutral-400 transition-colors"
-                        >
-                          {/* 1. [RISK LEVEL]   [WHEN IT MAY HAPPEN] */}
-                          <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${SEVERITY_BADGE[pred.predicted_band] || SEVERITY_BADGE.Medium}`}>
-                                {pred.predicted_band ? `${pred.predicted_band.toUpperCase()} RISK` : 'LIKELY RISK'}
+                        <div key={pred.prediction_id} className="flex flex-col justify-between gap-3 border border-line bg-surface p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="border border-steel/40 bg-steel/10 px-2 py-0.5 text-label font-medium text-steel">
+                                likely risk
                               </span>
-                              <span className="text-[11px] text-neutral-600 font-medium">
-                                {story.when}
+                              <span className={`border px-2 py-0.5 text-label font-medium ${SEVERITY_BADGE[pred.predicted_band] || SEVERITY_BADGE.Medium}`}>
+                                {pred.predicted_band} risk
+                              </span>
+                              <span className="text-caption text-ink-soft">
+                                certainty: <span className="font-medium text-ink">{pred.confidence}</span>
                               </span>
                             </div>
-                            <span className="text-[11px] text-neutral-500 font-mono">
-                              CONFIDENCE: <strong className="text-neutral-800">{pred.confidence}</strong>
+                            <span className="font-mono text-caption text-ink-faint">
+                              {eventCount} {eventCount === 1 ? 'observation' : 'observations'}
                             </span>
                           </div>
 
-                          {/* 2. Clear human title */}
-                          <h4 className="text-sm font-bold text-neutral-950 leading-snug">
-                            {story.title}
-                          </h4>
+                          <h4 className="text-title font-semibold leading-snug text-ink">{story.title}</h4>
 
-                          {/* 3. Short explanation */}
-                          <p className="text-xs text-neutral-700 leading-relaxed font-sans">
-                            {story.explanation}
-                          </p>
-
-                          {/* 4. WHAT TO DO (Prominent Green Box) */}
-                          {story.recommendedResponse && (
-                            <div className="text-xs text-emerald-950 bg-emerald-50/70 border border-emerald-200/80 p-2.5 leading-relaxed">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block mb-0.5">
-                                WHAT TO DO:
-                              </span>
-                              <p className="font-semibold">{story.recommendedResponse}</p>
-                            </div>
-                          )}
-
-                          {/* 5. WHY WE'RE WARNING YOU (Compact) */}
-                          <div className="text-xs text-neutral-600 leading-relaxed">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-0.5">
-                              WHY WE'RE WARNING YOU:
-                            </span>
-                            <p>{story.whyWarning}</p>
+                          <div className="flex flex-col gap-2">
+                            <StoryBlock label="what we saw" tone="neutral" text={story.whatWeSaw} />
+                            <StoryBlock label="why it matters" tone="signal" text={story.whyItMatters} />
+                            <StoryBlock label="what may happen" tone="steel" text={story.whatMayHappen} footer={`when: ${story.when}`} />
+                            <StoryBlock label="recommended response" tone="ok" text={story.recommendedResponse} strong />
                           </div>
 
-                          {/* 6. Clean Organized Evidence Row (No wall of pills!) */}
-                          <div className="border-t border-line/60 pt-2.5 flex items-center justify-between text-xs text-neutral-600 flex-wrap gap-2">
-                            <div className="flex items-center gap-1.5 font-medium">
-                              <span className="text-neutral-500">Evidence:</span>
-                              <span className="text-neutral-900 font-semibold">{eventCount} video {eventCount === 1 ? 'observation' : 'observations'}</span>
-                            </div>
-
+                          <div className="border-t border-line pt-2">
                             <button
                               type="button"
                               onClick={() => toggleEvidence(pred.prediction_id)}
-                              className="text-xs text-neutral-700 hover:text-neutral-950 font-semibold cursor-pointer flex items-center gap-1 px-2 py-0.5 border border-line bg-neutral-50 hover:bg-neutral-100 transition-colors"
+                              className="flex w-full items-center justify-between py-1 text-caption text-ink-soft hover:text-ink"
                             >
-                              <span>{isExpanded ? 'Hide evidence' : 'View evidence'}</span>
-                              <span className="font-mono text-[10px]">{isExpanded ? '▲' : '▾'}</span>
+                              <span className="font-medium">evidence & derivation ({eventCount} events)</span>
+                              <span className="font-mono">{isExpanded ? '−' : '+'}</span>
                             </button>
-                          </div>
 
-                          {/* 7. Collapsible Organized Evidence Container */}
-                          {isExpanded && (
-                            <div className="mt-1 p-3 bg-neutral-50 border border-line flex flex-col gap-2.5 text-xs">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                                  Monitored Video Observations ({eventCount}):
-                                </span>
-                                <span className="text-[10px] text-neutral-500">
-                                  Click any to inspect incident
-                                </span>
-                              </div>
-
-                              {/* Compact scrollable container */}
-                              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
-                                {pred.supporting_event_ids.map((eid) => (
-                                  <button
-                                    key={eid}
-                                    type="button"
-                                    onClick={() => onSelectEvent && onSelectEvent(eid)}
-                                    className="px-1.5 py-0.5 bg-white hover:bg-neutral-900 hover:text-white border border-neutral-300 text-neutral-800 font-mono text-[10px] font-semibold transition-colors cursor-pointer shadow-2xs"
-                                    title={`Select incident #${eid} in recorded incident list`}
-                                  >
-                                    #{eid}
-                                  </button>
-                                ))}
-                              </div>
-
-                              {/* Technical Details: Reasoning Chain */}
-                              <div className="pt-2 border-t border-line/60 flex flex-col gap-1 text-[11px]">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                                  Why TRACE Thinks This:
-                                </span>
-                                {story.derivationChain.map((step, idx) => (
-                                  <div key={idx} className="flex items-start gap-1.5 text-neutral-700 leading-snug">
-                                    <span className="font-mono font-bold text-neutral-400">{idx + 1}.</span>
-                                    <span>{step}</span>
+                            {isExpanded && (
+                              <div className="mt-2 flex flex-col gap-2.5 border border-line bg-paper p-3">
+                                <div>
+                                  <span className="text-label font-medium text-ink-soft">how TRACE reached this conclusion</span>
+                                  <div className="mt-1 flex flex-col gap-1">
+                                    {story.derivationChain.map((step, idx) => (
+                                      <div key={idx} className="flex items-start gap-1.5 text-caption leading-relaxed">
+                                        <span className="font-mono font-medium text-ink-faint">{idx + 1}.</span>
+                                        <span className={idx === 2 ? 'font-medium text-steel' : 'text-ink-soft'}>{step}</span>
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
+                                </div>
+
+                                <div className="flex flex-col gap-1 border-t border-line pt-2">
+                                  <span className="text-label font-medium text-ink-soft">supporting events</span>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {pred.supporting_event_ids.map((eid) => (
+                                      <button
+                                        key={eid}
+                                        type="button"
+                                        onClick={() => onSelectEvent && onSelectEvent(eid)}
+                                        className="border border-line bg-surface px-2 py-0.5 font-mono text-caption font-medium text-ink transition-colors hover:border-ink"
+                                      >
+                                        #{eid}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="border-t border-line pt-1 text-caption italic text-ink-faint">
+                                  Early warning signal grounded in real video detections. This hazard
+                                  has not yet resulted in physical damage.
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       )
                     })}
@@ -667,127 +560,82 @@ export default function TemporalRiskPanel({
               </div>
             )}
 
-            {/* TAB 2: REPEATED UNSAFE BEHAVIOUR */}
             {!loading && !error && activeTab === 'patterns' && (
               <div className="flex flex-col gap-4">
                 {patternCount === 0 ? (
-                  <div className="border border-dashed border-line p-6 text-center text-xs text-neutral-600 bg-neutral-50/50">
-                    <p className="font-bold text-neutral-800 text-sm mb-1">
-                      No Repeating Behaviour Patterns Detected
-                    </p>
-                    <p className="text-xs text-neutral-600 max-w-lg mx-auto leading-relaxed">
-                      TRACE requires multiple correlating actions within the observation window to establish an operational pattern.
-                    </p>
-                  </div>
+                  <EmptyState title="No repeating behaviour patterns detected">
+                    TRACE requires at least two correlating handling actions within the time scope
+                    to identify a recurring behavioural pattern.
+                  </EmptyState>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {consolidatedPatterns.map((pat, idx) => {
                       const story = getHumanPatternStory(pat)
                       const cardId = `pattern_${idx}_${pat.scenario}`
                       const isExpanded = Boolean(expandedEvidence[cardId])
                       const eventCount = pat.supporting_event_ids?.length || 1
-                      const durationSec = Math.round(pat.time_window_sec || 0)
 
                       return (
-                        <div
-                          key={cardId}
-                          className="border border-line bg-white p-4 shadow-2xs flex flex-col justify-between gap-3 hover:border-neutral-400 transition-colors"
-                        >
-                          {/* 1. Header: UNSAFE BEHAVIOUR REPEATED badge & Peak Risk */}
-                          <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
-                            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${story.badgeStyle}`}>
-                              {story.badgeLabel}
-                            </span>
-                            {pat.peak_score != null && (
-                              <span className="text-[11px] text-neutral-500 font-mono">
-                                Peak Risk: <strong className="text-neutral-800">{Math.round(pat.peak_score)}/100</strong>
+                        <div key={cardId} className="flex flex-col justify-between gap-3 border border-line bg-surface p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`border px-2 py-0.5 text-label font-medium ${story.badgeStyle}`}>
+                                {story.badgeLabel}
                               </span>
-                            )}
-                          </div>
-
-                          {/* 2. Clear human title */}
-                          <h4 className="text-sm font-bold text-neutral-950 leading-snug">
-                            {story.title}
-                          </h4>
-
-                          {/* 3. Occurrence Count in natural terms */}
-                          <div className="text-xs text-neutral-600 font-medium">
-                            Detected <strong className="font-mono text-neutral-900">{eventCount} times</strong> {durationSec > 0 ? `in ${durationSec} seconds.` : 'during the observation window.'}
-                          </div>
-
-                          {/* 4. WHY IT MATTERS */}
-                          <div className="text-xs text-neutral-700 leading-relaxed">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 block mb-0.5">
-                              WHY IT MATTERS:
-                            </span>
-                            <p>{story.whyItMatters}</p>
-                          </div>
-
-                          {/* 5. WHAT TO DO (Prominent Green Box) */}
-                          {story.recommendedResponse && (
-                            <div className="text-xs text-emerald-950 bg-emerald-50/70 border border-emerald-200/80 p-2.5 leading-relaxed">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block mb-0.5">
-                                WHAT TO DO:
+                              <span className="border border-line bg-paper px-2 py-0.5 text-label text-ink-soft">
+                                {story.trendText}
                               </span>
-                              <p className="font-semibold">{story.recommendedResponse}</p>
-                            </div>
-                          )}
-
-                          {/* 6. Clean Organized Evidence Row (No wall of pills!) */}
-                          <div className="border-t border-line/60 pt-2.5 flex items-center justify-between text-xs text-neutral-600 flex-wrap gap-2">
-                            <div className="flex items-center gap-1.5 font-medium">
-                              <span className="text-neutral-500">Evidence:</span>
-                              <span className="text-neutral-900 font-semibold">{eventCount} video {eventCount === 1 ? 'observation' : 'observations'}</span>
-                              {durationSec > 0 && (
-                                <>
-                                  <span className="text-neutral-400">·</span>
-                                  <span className="font-mono text-neutral-600">{durationSec}s</span>
-                                </>
+                              {pat.peak_score != null && (
+                                <span className="font-mono text-caption text-ink-soft">
+                                  peak: <span className="font-medium text-ink">{Math.round(pat.peak_score)}/100</span>
+                                </span>
                               )}
                             </div>
+                            <span className="font-mono text-caption text-ink-faint">
+                              {eventCount} {eventCount === 1 ? 'event' : 'events'}
+                            </span>
+                          </div>
 
+                          <h4 className="text-title font-semibold leading-snug text-ink">{story.title}</h4>
+
+                          <div className="flex flex-col gap-2">
+                            <StoryBlock label="what we saw" tone="neutral" text={story.whatWeSaw} />
+                            <StoryBlock label="why this matters" tone="signal" text={story.whyItMatters} />
+                            <StoryBlock label="recommended response" tone="ok" text={story.recommendedResponse} strong />
+                          </div>
+
+                          <div className="border-t border-line pt-2">
                             <button
                               type="button"
                               onClick={() => toggleEvidence(cardId)}
-                              className="text-xs text-neutral-700 hover:text-neutral-950 font-semibold cursor-pointer flex items-center gap-1 px-2 py-0.5 border border-line bg-neutral-50 hover:bg-neutral-100 transition-colors"
+                              className="flex w-full items-center justify-between py-1 text-caption text-ink-soft hover:text-ink"
                             >
-                              <span>{isExpanded ? 'Hide evidence' : 'View evidence'}</span>
-                              <span className="font-mono text-[10px]">{isExpanded ? '▲' : '▾'}</span>
+                              <span className="font-medium">evidence details ({eventCount} events)</span>
+                              <span className="font-mono">{isExpanded ? '−' : '+'}</span>
                             </button>
+
+                            {isExpanded && (
+                              <div className="mt-2 flex flex-col gap-2 border border-line bg-paper p-3">
+                                <span className="text-label font-medium text-ink-soft">supporting events</span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {pat.supporting_event_ids.map((eid) => (
+                                    <button
+                                      key={eid}
+                                      type="button"
+                                      onClick={() => onSelectEvent && onSelectEvent(eid)}
+                                      className="border border-line bg-surface px-2 py-0.5 font-mono text-caption font-medium text-ink transition-colors hover:border-ink"
+                                    >
+                                      #{eid}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="border-t border-line pt-1 text-caption italic text-ink-faint">
+                                  Derived deterministically from consecutive video analysis detections
+                                  across the specified time scope.
+                                </div>
+                              </div>
+                            )}
                           </div>
-
-                          {/* 7. Collapsible Organized Evidence Container */}
-                          {isExpanded && (
-                            <div className="mt-1 p-3 bg-neutral-50 border border-line flex flex-col gap-2 text-xs">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                                  Monitored Video Observations ({eventCount}):
-                                </span>
-                                <span className="text-[10px] text-neutral-500">
-                                  Click any to inspect incident
-                                </span>
-                              </div>
-
-                              {/* Compact scrollable container */}
-                              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
-                                {pat.supporting_event_ids.map((eid) => (
-                                  <button
-                                    key={eid}
-                                    type="button"
-                                    onClick={() => onSelectEvent && onSelectEvent(eid)}
-                                    className="px-1.5 py-0.5 bg-white hover:bg-neutral-900 hover:text-white border border-neutral-300 text-neutral-800 font-mono text-[10px] font-semibold transition-colors cursor-pointer shadow-2xs"
-                                    title={`Select incident #${eid} in recorded incident list`}
-                                  >
-                                    #{eid}
-                                  </button>
-                                ))}
-                              </div>
-
-                              <div className="text-[10px] text-neutral-500 italic pt-1 border-t border-line/50">
-                                Observed across {eventCount} video detections over {durationSec} seconds.
-                              </div>
-                            </div>
-                          )}
                         </div>
                       )
                     })}
@@ -797,6 +645,43 @@ export default function TemporalRiskPanel({
             )}
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+function EmptyState({ title, children }) {
+  return (
+    <div className="border border-dashed border-line-strong p-6 text-center">
+      <p className="text-title font-semibold text-ink">{title}</p>
+      <p className="mx-auto mt-1 max-w-lg text-small text-ink-soft">{children}</p>
+    </div>
+  )
+}
+
+function StoryBlock({ label, tone, text, footer, strong }) {
+  const toneCls = {
+    neutral: 'border-line bg-paper',
+    signal: 'border-signal/40 bg-signal/5',
+    steel: 'border-steel/40 bg-steel/5',
+    ok: 'border-ok/40 bg-ok/5',
+  }[tone]
+  const labelCls = {
+    neutral: 'text-ink-faint',
+    signal: 'text-[#8a5f00]',
+    steel: 'text-steel',
+    ok: 'text-ok',
+  }[tone]
+  return (
+    <div className={`border p-2.5 ${toneCls}`}>
+      <span className={`block text-label font-medium ${labelCls}`}>{label}</span>
+      <p className={`mt-0.5 text-caption leading-relaxed ${tone === 'neutral' ? 'text-ink-soft' : 'text-ink'} ${strong ? 'font-medium' : ''}`}>
+        {text}
+      </p>
+      {footer && (
+        <div className="mt-1.5 flex items-center justify-between border-t border-line pt-1.5 text-caption text-ink-faint">
+          <span>{footer}</span>
+        </div>
       )}
     </div>
   )

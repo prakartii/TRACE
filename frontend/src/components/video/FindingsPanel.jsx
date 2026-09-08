@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ArrowRight } from 'lucide-react'
 import {
   getScenarioConfig,
   RISK_BAND_STYLES,
@@ -71,13 +72,12 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
   const evidenceEntries = Object.entries(finding.evidence || {})
   const hasEvidence = evidenceEntries.length > 0 || plan?.basis
 
-  // Effective presentation fields
   const riskBand = finding.band || config.defaultBand || 'Medium'
   const bandStyle = RISK_BAND_STYLES[riskBand] || RISK_BAND_STYLES.Medium
   const statusMeta = STATUS_STYLES[finding.status] || STATUS_STYLES.insufficient_evidence
   const epistemicMeta = EPISTEMIC_LEVELS[finding.epistemic_level] || EPISTEMIC_LEVELS.INFERRED
 
-  const displayTitle = plan?.risk_title || config.title || finding.scenario?.replace(/_/g, ' ') || 'Observed Condition'
+  const displayTitle = plan?.risk_title || config.title || finding.scenario?.replace(/_/g, ' ') || 'Observed condition'
   const whatIsHappening = finding.explanation || config.whatIsHappening
   const whyItMatters = plan?.rationale || config.whyItMatters
   const safeAction = plan?.action || finding.recommended_action || config.recommendedAction
@@ -87,94 +87,64 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
 
   return (
     <div
-      className={`border bg-white text-xs flex flex-col gap-3.5 shadow-sm transition-all ${
-        isPrimary
-          ? 'border-neutral-900 ring-1 ring-neutral-900/15 p-4.5'
-          : 'border-line p-3.5 hover:border-neutral-400'
+      className={`flex flex-col gap-3.5 border bg-surface ${
+        isPrimary ? 'border-ink p-4' : 'border-line p-3.5'
       }`}
     >
-      {/* 1. Header: Risk Band, Status, Lens, Confidence */}
-      <div className="flex items-center justify-between gap-2 border-b border-line pb-2.5 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           {isPrimary && (
-            <span className="bg-neutral-900 text-white font-bold text-[10px] uppercase tracking-wider px-2 py-0.5">
-              ★ PRIMARY INCIDENT
-            </span>
+            <span className="bg-ink px-2 py-0.5 text-label font-medium text-paper">primary finding</span>
           )}
-          <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide border ${bandStyle.subtle}`}>
+          <span className={`border px-2 py-0.5 text-label font-medium ${bandStyle.subtle}`}>
             {bandStyle.label}
           </span>
-          <span className={`border px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${statusMeta.style}`}>
+          <span className={`border px-1.5 py-0.5 text-label font-medium ${statusMeta.style}`}>
             {statusMeta.label}
           </span>
         </div>
-
-        <div className="flex items-center gap-2 text-[10px] text-neutral-500 uppercase">
-          <span className="bg-neutral-100 border border-line px-1.5 py-0.5 font-bold text-neutral-700">
+        <div className="flex items-center gap-2 text-caption text-ink-soft">
+          <span className="border border-line bg-paper px-1.5 py-0.5 text-label text-ink-soft">
             {finding.lens}
           </span>
           {finding.confidence && (
             <span>
-              Certainty: <strong className="font-mono text-neutral-800">{finding.confidence}</strong>
+              certainty: <span className="font-mono text-ink">{finding.confidence}</span>
             </span>
           )}
         </div>
       </div>
 
-      {/* Title */}
-      <div>
-        <h3 className="text-base font-bold text-neutral-900 tracking-tight leading-snug">
-          {displayTitle}
-        </h3>
-      </div>
+      <h3 className="font-display text-display-md font-semibold leading-tight text-ink">{displayTitle}</h3>
 
-      {/* STEP 1: WHAT IS HAPPENING? */}
-      <div className="flex flex-col gap-1 border-l-2 border-neutral-300 pl-3">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-          1. What Is Happening?
-        </span>
-        <p className="text-xs text-neutral-800 leading-relaxed font-sans">
-          {whatIsHappening}
-        </p>
+      <div className="flex flex-col gap-1 border-l-2 border-line pl-3">
+        <span className="text-label font-medium text-ink-faint">1. what is happening</span>
+        <p className="text-small text-ink">{whatIsHappening}</p>
         {finding.entities?.length > 0 && (
-          <p className="text-[11px] text-neutral-500">
-            Tracked Object: <span className="font-mono text-neutral-800 font-semibold">{finding.entities.join(', ')}</span>
+          <p className="text-caption text-ink-faint">
+            tracked object: <span className="font-mono text-ink-soft">{finding.entities.join(', ')}</span>
           </p>
         )}
       </div>
 
-      {/* STEP 2: WHY DOES IT MATTER? */}
-      <div className="flex flex-col gap-1 border-l-2 border-amber-400 pl-3">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
-          2. Why Does It Matter?
-        </span>
-        <p className="text-xs text-neutral-800 leading-relaxed font-sans">
-          {whyItMatters}
-        </p>
+      <div className="flex flex-col gap-1 border-l-2 border-signal pl-3">
+        <span className="text-label font-medium text-[#8a5f00]">2. why it matters</span>
+        <p className="text-small text-ink">{whyItMatters}</p>
       </div>
 
-      {/* STEP 3: WHAT SHOULD WE DO NOW? */}
-      <div className="border border-emerald-300 bg-emerald-50/50 p-3.5 flex flex-col gap-2">
+      <div className="flex flex-col gap-2 border border-ok/40 bg-ok/5 p-3.5">
         <div className="flex items-center justify-between">
-          <span className="font-bold text-[10px] uppercase tracking-wider text-emerald-950 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-            <span>3. What Should We Do Now?</span>
-          </span>
-          <span className="text-[9.5px] font-bold text-emerald-900 uppercase bg-emerald-100/80 px-1.5 py-0.5 border border-emerald-300">
-            Recommended Action
+          <span className="text-label font-medium text-ok">3. what to do now</span>
+          <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label text-ok">
+            recommended action
           </span>
         </div>
-        <p className="font-bold text-neutral-950 text-xs leading-snug">
-          "{safeAction}"
-        </p>
+        <p className="text-small font-semibold text-ink">"{safeAction}"</p>
 
-        {/* Alternative Actions */}
         {alternativeActions.length > 0 && (
-          <div className="mt-1 border-t border-emerald-200/70 pt-2 text-[11px] text-neutral-700">
-            <span className="font-bold text-[10px] uppercase tracking-wider text-neutral-600 block mb-1">
-              Alternative Options:
-            </span>
-            <ul className="list-disc list-inside space-y-0.5 text-neutral-600 pl-1">
+          <div className="mt-1 border-t border-ok/20 pt-2">
+            <span className="block text-label font-medium text-ink-soft">alternative options</span>
+            <ul className="mt-1 list-inside list-disc space-y-0.5 pl-1 text-caption text-ink-soft">
               {alternativeActions.map((act, idx) => (
                 <li key={idx}>{act}</li>
               ))}
@@ -183,27 +153,20 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
         )}
       </div>
 
-      {/* STEP 4: WHAT HAPPENS IF WE DO THAT? */}
-      <div className="border border-line bg-neutral-50/80 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex-1">
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-700">
-              4. What Happens If We Do That?
-            </span>
+      <div className="flex flex-col justify-between gap-3 border border-line bg-paper p-3 sm:flex-row sm:items-center">
+        <div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-label font-medium text-ink-soft">4. what happens if we act</span>
             {isEligible ? (
-              <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 border border-emerald-300 uppercase">
-                What-If Available
-              </span>
+              <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label text-ok">what-if available</span>
             ) : (
-              <span className="text-[9px] font-semibold text-neutral-500 bg-neutral-200 px-1.5 py-0.5 uppercase">
-                Procedural Intervention
-              </span>
+              <span className="border border-line px-1.5 py-0.5 text-label text-ink-faint">procedural intervention</span>
             )}
           </div>
-          <p className="text-[11px] text-neutral-600 leading-snug font-sans">
+          <p className="mt-0.5 text-caption text-ink-soft">
             {isEligible
-              ? 'TRACE has structured geometric evidence to simulate alternative placement stability before cargo is moved.'
-              : config.whatIfNotice || 'Dynamic motion or environmental zone — physical retreat applies; cargo repositioning is not simulated.'}
+              ? 'TRACE has structured geometric evidence to simulate alternative placement stability before the load is moved.'
+              : config.whatIfNotice || 'Dynamic motion or environmental zone — physical retreat applies; repositioning is not simulated.'}
           </p>
         </div>
 
@@ -211,62 +174,51 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
           <button
             type="button"
             onClick={() => onSimulateWhatIf(finding)}
-            className="border border-neutral-900 bg-neutral-900 hover:bg-neutral-800 text-white font-bold px-3 py-1.5 text-xs tracking-wide shadow-xs transition-colors cursor-pointer shrink-0"
+            className="inline-flex shrink-0 items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
           >
-            Simulate Safer Placement →
+            simulate safer placement
+            <ArrowRight size={13} />
           </button>
         )}
       </div>
 
-      {/* STEP 5: HOW TRACE KNOWS (PROGRESSIVE DISCLOSURE) */}
       <div className="border-t border-line pt-2">
         <button
           type="button"
           onClick={() => setShowHowTraceKnows(!showHowTraceKnows)}
-          className="w-full flex items-center justify-between text-[11px] text-neutral-600 hover:text-neutral-950 cursor-pointer py-1"
+          className="flex w-full items-center justify-between py-1 text-caption text-ink-soft hover:text-ink"
         >
-          <span className="font-semibold flex items-center gap-1.5">
-            <span>{showHowTraceKnows ? '▼' : '▶'}</span>
-            <span>How TRACE Knows ({evidenceEntries.length} telemetry metric{evidenceEntries.length === 1 ? '' : 's'})</span>
+          <span className="font-medium">
+            how TRACE knows ({evidenceEntries.length} telemetry metric{evidenceEntries.length === 1 ? '' : 's'})
           </span>
-          <span className="text-[10px] text-neutral-500 font-normal uppercase tracking-wide">
-            {showHowTraceKnows ? 'Hide Technical Evidence' : 'Audit Inspector for Judges'}
-          </span>
+          <span className="font-mono">{showHowTraceKnows ? '−' : '+'}</span>
         </button>
 
         {showHowTraceKnows && (
-          <div className="mt-2.5 flex flex-col gap-3 bg-neutral-50 p-3.5 border border-line text-xs">
-            {/* Epistemic Level Breakdown */}
-            <div className="flex items-center justify-between border-b border-neutral-200 pb-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                Epistemic Classification
-              </span>
-              <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase border ${epistemicMeta.badge}`}>
-                {finding.epistemic_level || 'INFERRED'}
+          <div className="mt-2.5 flex flex-col gap-3 border border-line bg-paper p-3.5">
+            <div className="flex items-center justify-between border-b border-line pb-2">
+              <span className="text-label font-medium text-ink-soft">epistemic classification</span>
+              <span className={`border px-1.5 py-0.5 text-label font-medium ${epistemicMeta.badge}`}>
+                {finding.epistemic_level || 'inferred'}
               </span>
             </div>
-            <p className="text-[11px] text-neutral-600 leading-snug">
-              {epistemicMeta.desc}
-            </p>
+            <p className="text-caption text-ink-soft">{epistemicMeta.desc}</p>
 
-            {/* Evidence Metrics */}
             {hasEvidence && (
-              <div className="border-t border-neutral-200 pt-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1.5">
-                  Observed Computer Vision Telemetry
-                </span>
-                <ul className="flex flex-col gap-1 text-[11px] text-neutral-700 list-none pl-0">
+              <div className="border-t border-line pt-2">
+                <span className="block text-label font-medium text-ink-soft">observed telemetry</span>
+                <ul className="mt-1.5 flex flex-col gap-1">
                   {evidenceEntries.map(([key, val]) => (
-                    <li key={key} className="flex items-center justify-between border-b border-dotted border-neutral-200 py-0.5">
-                      <span className="text-neutral-600">{formatEvidenceKey(key)}:</span>
-                      <span className="font-mono font-bold text-neutral-900 tabular-nums">
+                    <li key={key} className="flex items-center justify-between border-b border-dotted border-line py-0.5">
+                      <span className="text-caption text-ink-soft">{formatEvidenceKey(key)}:</span>
+                      <span className="font-mono text-caption font-medium tabular-nums text-ink">
                         {formatEvidenceValue(key, val)}
                       </span>
                     </li>
                   ))}
                   {plan?.basis && (
-                    <li className="text-[10px] text-neutral-500 mt-1 leading-snug">
-                      <span className="font-medium text-neutral-700">Operational Basis: </span>
+                    <li className="mt-1 text-caption text-ink-soft">
+                      <span className="font-medium text-ink">operational basis: </span>
                       {plan.basis}
                     </li>
                   )}
@@ -274,33 +226,24 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
               </div>
             )}
 
-            {/* Sensor & Epistemic Limitations */}
             {finding.limitations?.length > 0 && (
-              <div className="border-t border-neutral-200 pt-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-0.5">
-                  Sensor & Physics Limitations
-                </span>
-                <p className="text-[10px] text-neutral-600 leading-snug">
-                  {finding.limitations.join('; ')}
-                </p>
+              <div className="border-t border-line pt-2">
+                <span className="block text-label font-medium text-ink-soft">sensor & physics limitations</span>
+                <p className="mt-0.5 text-caption text-ink-soft">{finding.limitations.join('; ')}</p>
               </div>
             )}
 
-            {/* Tracked Entities */}
             {finding.entities?.length > 0 && (
-              <div className="border-t border-neutral-200 pt-1.5">
-                <span className="text-[10px] text-neutral-500">
-                  Tracked Entity Identifiers: <span className="font-mono text-neutral-800">{finding.entities.join(', ')}</span>
+              <div className="border-t border-line pt-1.5">
+                <span className="text-caption text-ink-faint">
+                  tracked entity identifiers: <span className="font-mono text-ink-soft">{finding.entities.join(', ')}</span>
                 </span>
               </div>
             )}
 
-            {/* Raw Audit JSON */}
-            <div className="border-t border-neutral-200 pt-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1">
-                Raw Audit Event JSON
-              </span>
-              <pre className="max-h-36 overflow-auto bg-neutral-900 p-2.5 font-mono text-[10px] text-emerald-400 leading-tight border border-neutral-800">
+            <div className="border-t border-line pt-2">
+              <span className="block text-label font-medium text-ink-soft">raw audit event JSON</span>
+              <pre className="mt-1 max-h-36 overflow-auto bg-ink p-2.5 font-mono text-caption leading-tight text-paper">
                 {JSON.stringify(
                   {
                     status: finding.status,
@@ -327,96 +270,75 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
 export default function FindingsPanel({ findings, loading, error, currentTime = 0, onSimulateWhatIf }) {
   const [showOtherObservations, setShowOtherObservations] = useState(false)
 
-  if (error) return <p className="text-xs text-red-600">{error}</p>
+  if (error) return <p className="text-small text-danger">{error}</p>
   if (loading) {
     return (
-      <div className="border border-line bg-white p-4 text-xs text-neutral-500 flex flex-col gap-1">
+      <div className="flex flex-col gap-1 border border-line bg-surface p-4">
         <div className="flex items-center gap-2">
-          <span className="inline-block h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-          <span className="font-bold text-ink text-[11px] uppercase tracking-wider">
-            Evaluating Risk Lenses for Frame {currentTime.toFixed(1)}s…
+          <span className="h-2 w-2 animate-pulse motion-reduce:animate-none bg-signal" />
+          <span className="text-caption font-medium text-ink">
+            evaluating risk lenses for frame {currentTime.toFixed(1)}s…
           </span>
         </div>
-        <p className="text-[11px] text-neutral-400">
-          Running 2D spatial graph and kinematic temporal analysis.
-        </p>
+        <p className="text-caption text-ink-faint">running 2D spatial graph and kinematic analysis.</p>
       </div>
     )
   }
 
   if (!findings || findings.length === 0) {
     return (
-      <div className="border border-line bg-neutral-50 p-4 text-xs text-neutral-500 flex flex-col gap-1">
+      <div className="flex flex-col gap-1 border border-line bg-surface p-4">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-wider text-neutral-400">
-            ANALYSIS AT <span className="font-mono tabular-nums">{formatTimestamp(currentTime)} ({currentTime.toFixed(1)}s)</span>
+          <span className="text-label text-ink-faint">
+            analysis at <span className="font-mono tabular-nums">{formatTimestamp(currentTime)}</span>
           </span>
-          <span className="text-emerald-700 font-bold text-[10px] uppercase">
-            ✓ Normal Operation
-          </span>
+          <span className="text-label font-medium text-ok">normal operation</span>
         </div>
-        <p className="mt-1 text-neutral-600">
+        <p className="mt-1 text-caption text-ink-soft">
           No actionable risk or conformance findings detected in this frame.
         </p>
       </div>
     )
   }
 
-  // Prioritize findings deterministically based on status, severity, and confidence
   const sortedFindings = [...findings].sort((a, b) => getFindingPriorityScore(b) - getFindingPriorityScore(a))
   const primaryFinding = sortedFindings[0]
   const secondaryFindings = sortedFindings.slice(1)
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Dynamic Frame Context Indicator */}
-      <div className="flex items-center justify-between border border-line bg-neutral-50 px-3.5 py-2 text-xs">
+      <div className="flex items-center justify-between border border-line bg-paper px-3.5 py-2">
         <div className="flex items-center gap-2">
-          <span className="inline-block h-2 w-2 rounded-full bg-emerald-600" />
-          <span className="font-bold text-ink text-[11px] tracking-wide">
-            ANALYSIS AT <span className="font-mono tabular-nums">{formatTimestamp(currentTime)} ({currentTime.toFixed(1)}s)</span>
+          <span className="h-2 w-2 bg-ok" />
+          <span className="text-caption font-medium text-ink">
+            analysis at <span className="font-mono tabular-nums">{formatTimestamp(currentTime)}</span>
           </span>
         </div>
-        <span className="text-[10px] text-neutral-500">
-          <span className="font-mono tabular-nums font-semibold text-neutral-800">{findings.length}</span> Finding{findings.length === 1 ? '' : 's'} Evaluated
+        <span className="text-caption text-ink-faint">
+          <span className="font-mono font-medium tabular-nums text-ink-soft">{findings.length}</span> finding{findings.length === 1 ? '' : 's'} evaluated
         </span>
       </div>
 
-      {/* Primary Action Card */}
-      <div>
-        <FindingCard
-          finding={primaryFinding}
-          isPrimary={true}
-          onSimulateWhatIf={onSimulateWhatIf}
-        />
-      </div>
+      <FindingCard finding={primaryFinding} isPrimary={true} onSimulateWhatIf={onSimulateWhatIf} />
 
-      {/* Secondary Observations (if multiple findings exist) */}
       {secondaryFindings.length > 0 && (
-        <div className="border border-line bg-neutral-50 p-3 flex flex-col gap-2">
+        <div className="flex flex-col gap-2 border border-line bg-surface p-3">
           <div className="flex items-center justify-between">
-            <span className="font-bold text-[11px] text-neutral-700 uppercase tracking-wider">
-              Other Observations at This Frame ({secondaryFindings.length})
+            <span className="text-label font-medium text-ink-soft">
+              other observations at this frame ({secondaryFindings.length})
             </span>
             <button
               onClick={() => setShowOtherObservations(!showOtherObservations)}
-              className="text-[11px] font-semibold text-neutral-800 hover:underline cursor-pointer"
+              className="text-caption font-medium text-ink-soft hover:text-ink hover:underline"
             >
-              {showOtherObservations
-                ? 'Collapse other observations'
-                : `View ${secondaryFindings.length} other observation${secondaryFindings.length === 1 ? '' : 's'} →`}
+              {showOtherObservations ? 'collapse' : `view ${secondaryFindings.length} more`}
             </button>
           </div>
 
           {showOtherObservations && (
-            <div className="mt-2 flex flex-col gap-3 border-t border-neutral-200 pt-3">
+            <div className="mt-2 flex flex-col gap-3 border-t border-line pt-3">
               {secondaryFindings.map((finding, index) => (
-                <FindingCard
-                  key={index}
-                  finding={finding}
-                  isPrimary={false}
-                  onSimulateWhatIf={onSimulateWhatIf}
-                />
+                <FindingCard key={index} finding={finding} isPrimary={false} onSimulateWhatIf={onSimulateWhatIf} />
               ))}
             </div>
           )}

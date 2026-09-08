@@ -23,9 +23,7 @@ const SCREENS = [
   'Live View',
 ]
 
-const SECONDARY_SCREENS = [
-  'Settings',
-]
+const SECONDARY_SCREENS = ['Settings']
 
 function useBackendStatus() {
   const [status, setStatus] = useState('checking')
@@ -49,16 +47,16 @@ function AppContent() {
   const { activeScreen, navigateTo } = useLiveViewContext()
 
   return (
-    <div className="min-h-screen bg-paper text-ink">
+    <div className="min-h-screen bg-paper text-ink selection:bg-signal selection:text-ink">
       <Header backendStatus={backendStatus} />
-      <div className="mx-auto flex max-w-6xl">
+      <div className="mx-auto flex max-w-[1240px]">
         <NavRail
           screens={SCREENS}
           secondaryScreens={SECONDARY_SCREENS}
           active={activeScreen}
           onSelect={navigateTo}
         />
-        <main className="flex-1 border-l border-line px-8 py-6">
+        <main className="min-w-0 flex-1 border-l border-line px-8 py-7">
           {activeScreen === 'Dashboard' ? (
             <Dashboard />
           ) : activeScreen === 'Scenario Coverage' || activeScreen === 'Operational Intelligence' ? (
@@ -91,4 +89,3 @@ export default function App() {
     </LiveViewProvider>
   )
 }
-
