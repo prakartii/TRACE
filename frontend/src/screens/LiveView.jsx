@@ -7,6 +7,7 @@ import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
 import LiveAnalysisSummary from '../components/video/LiveAnalysisSummary.jsx'
 import MetadataPanel from '../components/video/MetadataPanel.jsx'
 import PerceptionOverlay from '../components/video/PerceptionOverlay.jsx'
+import FaceRedactionOverlay from '../components/video/FaceRedactionOverlay.jsx'
 import SceneOverlay from '../components/video/SceneOverlay.jsx'
 import VideoLibrary from '../components/video/VideoLibrary.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
@@ -41,7 +42,9 @@ export default function LiveView() {
   const videoRef = useRef(null)
   const modelName = pilotModelEnabled ? 'pilot' : 'stock'
 
-  const perception = useOverlayData(getEntities, overlayEnabled, selectedId, currentTime, modelName)
+  // Always fetched: personnel boxes feed the by-default face redaction overlay,
+  // independent of the `overlayEnabled` detection-box debug toggle.
+  const perception = useOverlayData(getEntities, true, selectedId, currentTime, modelName)
   const scene = useOverlayData(getScene, sceneEnabled, selectedId, currentTime, modelName)
   const findings = useOverlayData(getFindings, findingsEnabled, selectedId, currentTime, modelName)
 
@@ -147,7 +150,7 @@ export default function LiveView() {
     setCurrentTime(newTime)
     setWhatIfSimulation(null)
     setWhatIfError(null)
-    if (overlayEnabled) perception.fetchImmediate(newTime)
+    perception.fetchImmediate(newTime)
     if (sceneEnabled) scene.fetchImmediate(newTime)
     if (findingsEnabled) findings.fetchImmediate(newTime)
   }
@@ -182,7 +185,7 @@ export default function LiveView() {
                 setWhatIfSimulation(null)
                 setWhatIfError(null)
               }
-              if (overlayEnabled) perception.fetchThrottled(t)
+              perception.fetchThrottled(t)
               if (sceneEnabled) scene.fetchThrottled(t)
               if (findingsEnabled) findings.fetchThrottled(t)
             }}
@@ -190,6 +193,15 @@ export default function LiveView() {
             onPause={() => setPlaying(false)}
             onEnded={() => setPlaying(false)}
           >
+            {/* Responsible AI: personnel faces obscured by default, independent
+                of the detection-box debug toggle. */}
+            <FaceRedactionOverlay
+              entities={entities}
+              sourceWidth={selectedVideo.metadata.width}
+              sourceHeight={selectedVideo.metadata.height}
+              displayWidth={videoBoxSize.width}
+              displayHeight={videoBoxSize.height}
+            />
             {overlayEnabled && (
               <PerceptionOverlay
                 entities={entities}

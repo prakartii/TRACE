@@ -7,6 +7,7 @@ import { getEntities, getScene, getWhatIf, listVideos, streamUrl } from '../api/
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
 import PerceptionOverlay from '../components/video/PerceptionOverlay.jsx'
+import FaceRedactionOverlay from '../components/video/FaceRedactionOverlay.jsx'
 import SceneOverlay from '../components/video/SceneOverlay.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
 import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
@@ -290,7 +291,7 @@ export default function IncidentReplay() {
   const selectedVideo = resolveVideoRecord(videos, targetVideoId)
   const videoNotFound = Boolean(targetVideoId && !videosLoading && !selectedVideo)
 
-  const perception = useOverlayData(getEntities, overlayEnabled, selectedVideo?.id, currentTime, modelName)
+  const perception = useOverlayData(getEntities, true, selectedVideo?.id, currentTime, modelName)
   const scene = useOverlayData(getScene, sceneEnabled, selectedVideo?.id, currentTime, modelName)
 
   useEffect(() => {
@@ -337,7 +338,7 @@ export default function IncidentReplay() {
   const handleTimeUpdate = (event) => {
     const t = event.currentTarget.currentTime
     setCurrentTime(t)
-    if (overlayEnabled) perception.fetchThrottled(t)
+    perception.fetchThrottled(t)
     if (sceneEnabled) scene.fetchThrottled(t)
   }
 
@@ -845,6 +846,16 @@ export default function IncidentReplay() {
                 onPause={() => setPlaying(false)}
                 onEnded={() => setPlaying(false)}
               >
+                {/* Responsible AI: personnel faces obscured by default,
+                    independent of the detection-box debug toggle. */}
+                <FaceRedactionOverlay
+                  entities={perception.data?.entities}
+                  frame={perception.data}
+                  sourceWidth={selectedVideo?.metadata?.width || 1280}
+                  sourceHeight={selectedVideo?.metadata?.height || 720}
+                  displayWidth={videoBoxSize.width}
+                  displayHeight={videoBoxSize.height}
+                />
                 {overlayEnabled && perception.data && (
                   <PerceptionOverlay
                     entities={perception.data.entities}

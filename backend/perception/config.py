@@ -7,8 +7,10 @@ backend/api/.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from backend.perception.redaction import DEFAULT_REDACTION, RedactionConfig
 
 # backend/perception/config.py -> backend/perception -> backend -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -73,6 +75,11 @@ class PerceptionConfig:
     box_smoothing_alpha_min: float = 0.35  # Jitter suppression when stationary / slow
     box_smoothing_alpha_max: float = 0.95  # Fast response during rapid motion / drops
     secondary_confidence_threshold: float = 0.10  # Low-confidence threshold for ByteTrack 2nd stage
+
+    # Responsible AI (CLAUDE.md §22): personnel head regions are obscured on
+    # every frame TRACE encodes back to a user. On by default — see
+    # backend/perception/redaction.py.
+    redaction: RedactionConfig = field(default_factory=lambda: DEFAULT_REDACTION)
 
 
 DEFAULT_CONFIG = PerceptionConfig()
