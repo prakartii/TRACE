@@ -1,0 +1,110 @@
+"""Deterministic intent router for the grounded assistant.
+
+Maps a free-text supervisor question to one (or a few) read-only queries from
+``backend.assistant.queries``. Deliberately keyword/regex based, not an LLM:
+retrieval must be reproducible and must work with no API key (CLAUDE.md §25),
+and the LLM — when present — only rephrases what these queries return.
+"""
+
+from __future__ import annotations
+
+import re
+import sqlite3
+from dataclasses import dataclass
+from typing import Callable
+
+from backend.assistant import queries as q
+
+QueryFn = Callable[[sqlite3.Connection], q.QueryResult]
+
+
+@dataclass
+class Route:
+    intent: str
+    run: list[QueryFn]
+
+
+_EVENT_ID_RE = re.compile(r"(?:event|incident|#)\s*#?\s*(\d{1,6})", re.I)
+
+
+def _kw(text: str, *needles: str) -> bool:
+    return any(n in text for n in needles)
+
+
+def _entity_keyword(text: str) -> str | None:
+    """A scenario-discriminating term the user named, used to pick the event to
+    explain when no numeric id is given. Scenario words win over generic cargo
+    nouns like "carton"/"box" (which match too many scenarios); when only a
+    generic noun is present we return None and let the query fall back to the
+    highest-band recent event — it says so rather than fabricating a match."""
+    for scen in (
+        "overhang", "bending", "unsupported", "orientation", "heavy-on-light",
+        "heavy on light", "stacking", "dragging", "dragged", "throwing", "thrown",
+        "dropping", "dropped", "rolling", "stepping", "strap", "wet floor",
+        "dock", "equipment", "trolley", "solo", "sequence",
+    ):
+        if scen in text:
+            return scen.split()[0]
+    return None
+
+
+def route(question: str) -> Route:
+    t = (question or "").lower().strip()
+    m = _EVENT_ID_RE.search(t)
+    event_id = int(m.group(1)) if m else None
+    kw = _entity_keyword(t)
+
+    # "what did TRACE recommend / what should we do" ---------------------------
+    if _kw(t, "recommend", "what did trace", "safe action", "what should", "advice", "mitigat"):
+        return Route("recommendation_for",
+                     [lambda c: q.recommendation_for(c, event_id=event_id, keyword=kw)])
+
+    # "why was X risky / explain event N" ------------------------------------
+    if _kw(t, "why was", "why is", "why did", "explain", "what made", "reason") or (
+        event_id is not None and _kw(t, "risk", "danger", "flag")
+    ) or (event_id is not None and len(t.split()) <= 6):
+        return Route("explain_event",
+                     [lambda c: q.explain_event(c, event_id=event_id, keyword=kw)])
+
+    # prevention / outcomes --------------------------------------------------
+    if _kw(t, "prevent", "how many were stopped", "how many did trace stop", "outcome", "damage"):
+        return Route("prevention_breakdown", [q.prevention_breakdown])
+
+    # near-miss (+ which bay/zone/source) ----------------------------------
+    if _kw(t, "near miss", "near-miss", "nearmiss"):
+        if _kw(t, "bay", "zone", "camera", "source", "area", "which", "where"):
+            return Route("near_misses_by_source", [q.near_misses_by_source])
+        return Route("near_misses_by_source", [q.near_misses_by_source])
+
+    # most common risks / scenarios --------------------------------------
+    if _kw(t, "most common", "common risk", "top risk", "which risks", "what risks",
+           "frequent risk", "biggest risk", "main risk"):
+        return Route("top_scenarios", [q.top_scenarios])
+
+    # most frequent behaviour ------------------------------------------
+    if _kw(t, "behaviour", "behavior") and _kw(t, "most", "frequent", "common", "which"):
+        return Route("top_behaviours", [q.top_behaviours])
+    if _kw(t, "throwing", "dragging", "dropping", "rolling", "stepping", "strap"):
+        return Route("top_behaviours", [q.top_behaviours])
+
+    # high-risk events / by bay --------------------------------------
+    if _kw(t, "high risk", "high-risk", "critical", "most dangerous", "worst"):
+        return Route("high_risk_events", [q.high_risk_events])
+
+    # false positives ---------------------------------------------
+    if _kw(t, "false positive", "false-positive", "wrong", "misfire", "incorrect"):
+        return Route("false_positives", [q.false_positives])
+
+    # default: a grounded overview + the two headline aggregates -----------
+    return Route("overview", [q.overview, q.top_scenarios, q.prevention_breakdown])
+
+
+SUGGESTIONS = [
+    "What were the most common risks?",
+    "How many events were prevented?",
+    "Which source had the most near misses?",
+    "Why was event #73 risky?",
+    "What did TRACE recommend for event #73?",
+    "Which behaviour occurred most frequently?",
+    "Show me the High-risk events.",
+]

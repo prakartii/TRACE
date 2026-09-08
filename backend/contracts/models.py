@@ -821,3 +821,31 @@ class InterventionFeedResponse(BaseModel):
     active_count: int
     alerts: list[InterventionAlert] = Field(default_factory=list)
 
+
+# --------------------------------------------------------------------------- #
+# Grounded AI assistant (ARCHITECTURE.md Screen 7 / CLAUDE.md §21)
+# --------------------------------------------------------------------------- #
+
+class AssistantAskRequest(BaseModel):
+    question: str
+
+
+class AssistantGrounding(BaseModel):
+    query: str
+    source: str
+    row_count: int = 0
+    event_ids: list[int] = Field(default_factory=list)
+
+
+class AssistantAnswer(BaseModel):
+    question: str
+    answer: str
+    # The retrieval-only answer, always present even when `used_llm` is True.
+    deterministic_answer: Optional[str] = None
+    used_llm: bool = False
+    intent: str
+    grounding: list[AssistantGrounding] = Field(default_factory=list)
+    grounded_row_count: int = 0
+    data: dict = Field(default_factory=dict)
+    suggestions: list[str] = Field(default_factory=list)
+

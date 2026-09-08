@@ -15,6 +15,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.assistant import router as assistant_router
 from backend.api.behaviour import router as behaviour_router
 from backend.api.actions import router as actions_router
 from backend.api.events import router as events_router
@@ -77,6 +78,7 @@ app.include_router(rules_router)
 app.include_router(temporal_router)
 app.include_router(intervention_router)
 app.include_router(intervention_ws_router)
+app.include_router(assistant_router)
 
 
 

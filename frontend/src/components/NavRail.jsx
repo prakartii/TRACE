@@ -2,6 +2,7 @@ import {
   Crosshair,
   GitCompareArrows,
   LayoutGrid,
+  MessagesSquare,
   Rewind,
   Settings,
   TriangleAlert,
@@ -17,6 +18,7 @@ const SCREEN_META = {
   'Action Center': { icon: Zap },
   'What-If Simulation': { icon: GitCompareArrows },
   'Live View': { icon: Video },
+  Assistant: { icon: MessagesSquare },
   Settings: { icon: Settings },
 }
 

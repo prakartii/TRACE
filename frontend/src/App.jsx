@@ -12,6 +12,7 @@ import SupervisorSettings from './screens/SupervisorSettings.jsx'
 import WhatIfReplay from './screens/WhatIfReplay.jsx'
 import Dashboard from './screens/Dashboard.jsx'
 import ScenarioCoverage from './screens/ScenarioCoverage.jsx'
+import AiAssistant from './screens/AiAssistant.jsx'
 import { InterventionProvider, useIntervention } from './context/InterventionContext.jsx'
 import InterventionBanner from './components/intervention/InterventionBanner.jsx'
 import InterventionModal from './components/intervention/InterventionModal.jsx'
@@ -24,6 +25,7 @@ const SCREENS = [
   'Action Center',
   'What-If Simulation',
   'Live View',
+  'Assistant',
 ]
 
 const SECONDARY_SCREENS = ['Settings']
@@ -77,6 +79,8 @@ function AppContent() {
             <WhatIfReplay />
           ) : activeScreen === 'Live View' ? (
             <LiveView />
+          ) : activeScreen === 'Assistant' || activeScreen === 'AI Assistant' ? (
+            <AiAssistant />
           ) : activeScreen === 'Settings' ? (
             <SupervisorSettings />
           ) : (
