@@ -12,6 +12,9 @@ import SupervisorSettings from './screens/SupervisorSettings.jsx'
 import WhatIfReplay from './screens/WhatIfReplay.jsx'
 import Dashboard from './screens/Dashboard.jsx'
 import ScenarioCoverage from './screens/ScenarioCoverage.jsx'
+import { InterventionProvider, useIntervention } from './context/InterventionContext.jsx'
+import InterventionBanner from './components/intervention/InterventionBanner.jsx'
+import InterventionModal from './components/intervention/InterventionModal.jsx'
 
 const SCREENS = [
   'Dashboard',
@@ -45,6 +48,7 @@ function useBackendStatus() {
 function AppContent() {
   const backendStatus = useBackendStatus()
   const { activeScreen, navigateTo } = useLiveViewContext()
+  const { selectedAlert, setSelectedAlert } = useIntervention()
 
   return (
     <div className="min-h-screen bg-paper text-ink selection:bg-signal selection:text-ink">
@@ -57,6 +61,8 @@ function AppContent() {
           onSelect={navigateTo}
         />
         <main className="min-w-0 flex-1 border-l border-line px-8 py-7">
+          <InterventionBanner onOpenDetail={setSelectedAlert} />
+
           {activeScreen === 'Dashboard' ? (
             <Dashboard />
           ) : activeScreen === 'Scenario Coverage' || activeScreen === 'Operational Intelligence' ? (
@@ -78,6 +84,10 @@ function AppContent() {
           )}
         </main>
       </div>
+
+      {selectedAlert && (
+        <InterventionModal alert={selectedAlert} onClose={() => setSelectedAlert(null)} />
+      )}
     </div>
   )
 }
@@ -85,7 +95,10 @@ function AppContent() {
 export default function App() {
   return (
     <LiveViewProvider>
-      <AppContent />
+      <InterventionProvider>
+        <AppContent />
+      </InterventionProvider>
     </LiveViewProvider>
   )
 }
+

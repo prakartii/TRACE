@@ -11,6 +11,9 @@ import SceneOverlay from '../components/video/SceneOverlay.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
 import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
+import { useIntervention } from '../context/InterventionContext.jsx'
+import InterventionStatusChip from '../components/intervention/InterventionStatusChip.jsx'
+
 import {
   getScenarioConfig,
   getVideoScenarioInfo,
@@ -81,6 +84,8 @@ function resolveVideoRecord(videoList, targetId) {
 
 export default function IncidentReplay() {
   const { replayTarget, navigateTo } = useLiveViewContext()
+  const { activeAlerts, setSelectedAlert } = useIntervention()
+
 
   const [videos, setVideos] = useState([])
   const [videosLoading, setVideosLoading] = useState(true)
@@ -473,6 +478,11 @@ export default function IncidentReplay() {
   const videoInfo = getVideoScenarioInfo(incidentEvent?.video_id || selectedVideo?.id)
   const title = resolveIncidentTitle(incidentEvent) || config.title || 'Recorded operational hazard'
 
+  const activeIntervention = (incidentEvent && activeAlerts) ? activeAlerts.find(
+    (a) => a.event_id === incidentEvent.event_id || (a.video_id === incidentEvent.video_id && a.scenario === incidentEvent.scenario)
+  ) : null
+
+
   const rawDelta = currentTime - targetTimestamp
   const timeDelta = Math.abs(rawDelta) < 0.05 ? 0 : rawDelta
   const isNearBookmark = Math.abs(currentTime - targetTimestamp) <= 0.3
@@ -624,9 +634,17 @@ export default function IncidentReplay() {
               </span>
             </div>
             <div className="flex items-center gap-2">
+              {activeIntervention && (
+                <InterventionStatusChip
+                  state={activeIntervention.state}
+                  severity={activeIntervention.severity}
+                  onClick={() => setSelectedAlert(activeIntervention)}
+                />
+              )}
               <span className="border border-line bg-paper px-2 py-0.5 font-mono text-caption tabular-nums text-ink">
                 recorded: {formatTimestamp(targetTimestamp)} ({targetTimestamp.toFixed(1)}s)
               </span>
+
               {isVerifiedPrevented ? (
                 <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-medium text-ok">
                   prevention verified

@@ -12,6 +12,9 @@ import {
   humanizeExplanation,
 } from '../lib/format.js'
 import TemporalRiskPanel from '../components/TemporalRiskPanel.jsx'
+import { useIntervention } from '../context/InterventionContext.jsx'
+import InterventionStatusChip from '../components/intervention/InterventionStatusChip.jsx'
+
 
 const STATUS_STYLE = {
   supported: 'border-ok/40 bg-ok/10 text-ok',
@@ -75,10 +78,23 @@ function formatEvidenceItem(key, value) {
 
 export default function EventFeed() {
   const { navigateTo } = useLiveViewContext()
+  const { activeAlerts, setSelectedAlert } = useIntervention()
   const [events, setEvents] = useState([])
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  const activeAlertByEventId = useMemo(() => {
+    const map = new Map()
+    for (const alert of activeAlerts || []) {
+      if (alert.event_id) map.set(alert.event_id, alert)
+      for (const supId of alert.supporting_event_ids || []) {
+        map.set(supId, alert)
+      }
+    }
+    return map
+  }, [activeAlerts])
+
 
   const handleReplayIncident = (ev) => {
     if (!ev) return
@@ -558,6 +574,17 @@ export default function EventFeed() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5">
+                        {activeAlertByEventId.get(ev.event_id) && (
+                          <InterventionStatusChip
+                            state={activeAlertByEventId.get(ev.event_id).state}
+                            severity={activeAlertByEventId.get(ev.event_id).severity}
+                            compact
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedAlert(activeAlertByEventId.get(ev.event_id))
+                            }}
+                          />
+                        )}
                         <span className={`border px-1.5 py-0.5 text-label ${statusCls}`}>
                           {STATUS_LABEL[ev.status] || ev.status}
                         </span>
@@ -568,6 +595,7 @@ export default function EventFeed() {
                           <span className="border border-signal/40 bg-signal/10 px-1.5 py-0.5 text-label text-[#8a5f00]">near-miss</span>
                         )}
                       </div>
+
                     </div>
 
                     <div className="mt-3">
@@ -743,6 +771,26 @@ export default function EventFeed() {
                     {getVideoName(selectedEvent.video_id)} · <span className="font-mono font-medium text-ink">{formatTimestamp(selectedEvent.timestamp)}</span> · entity: <span className="font-mono text-ink">{formatEntityName(selectedEvent.entity_id) || 'global scene'}</span>
                   </div>
                 </div>
+
+                {activeAlertByEventId.get(selectedEvent.event_id) && (
+                  <div className="flex items-center justify-between rounded-lg border border-danger/40 bg-danger/5 p-3">
+                    <div className="flex items-center gap-2">
+                      <InterventionStatusChip
+                        state={activeAlertByEventId.get(selectedEvent.event_id).state}
+                        severity={activeAlertByEventId.get(selectedEvent.event_id).severity}
+                      />
+                      <span className="text-xs text-ink-soft">Active operational alert</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAlert(activeAlertByEventId.get(selectedEvent.event_id))}
+                      className="text-xs font-bold text-ink underline hover:text-danger cursor-pointer"
+                    >
+                      Manage Intervention →
+                    </button>
+                  </div>
+                )}
+
 
                 {/* 3. WHY THIS MATTERS */}
                 <div className="flex flex-col gap-1 border-t border-line pt-3">

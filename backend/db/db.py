@@ -77,7 +77,55 @@ def ensure_schema_migrations(conn: sqlite3.Connection) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_outcomes_class ON outcome_measurements(classification)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_outcomes_video ON outcome_measurements(video_id)")
 
+    if "interventions" not in tables:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS interventions (
+                alert_id TEXT PRIMARY KEY,
+                event_id INTEGER NOT NULL REFERENCES events(event_id),
+                video_id TEXT NOT NULL,
+                timestamp REAL NOT NULL,
+                scenario TEXT NOT NULL,
+                lens TEXT,
+                severity TEXT NOT NULL,
+                urgency TEXT NOT NULL,
+                state TEXT NOT NULL,
+                title TEXT NOT NULL,
+                immediate_action TEXT NOT NULL,
+                secondary_actions_json TEXT NOT NULL,
+                steps_json TEXT NOT NULL,
+                verification TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                score REAL,
+                band TEXT,
+                evidence_status TEXT,
+                evidence_summary TEXT,
+                entity_id TEXT,
+                supporting_event_ids_json TEXT NOT NULL,
+                occurrence_count INTEGER DEFAULT 1,
+                dedup_key TEXT UNIQUE NOT NULL,
+                acknowledged_at REAL,
+                acknowledged_by TEXT,
+                action_in_progress_at REAL,
+                verified_at REAL,
+                verified_by TEXT,
+                resolved_at REAL,
+                resolution_notes TEXT,
+                outcome_id INTEGER REFERENCES outcome_measurements(outcome_id),
+                outcome_classification TEXT,
+                safe_plan_json TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_interventions_state ON interventions(state)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_interventions_video ON interventions(video_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_interventions_event ON interventions(event_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_interventions_dedup ON interventions(dedup_key)")
+
     conn.commit()
+
 
 
 def init_db(conn: sqlite3.Connection, schema_path: str | Path = SCHEMA_PATH) -> None:

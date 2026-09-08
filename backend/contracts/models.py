@@ -717,3 +717,96 @@ class PredictiveRiskResponse(BaseModel):
         "Predictions are deterministic given the same event inputs. "
         "No statistical model, no ML inference — pure rule-based sequence logic."
     )
+
+
+# ---------------------------------------------------------------------------
+# Feature: Intervention & Real-Time Alert Delivery Contracts
+# ---------------------------------------------------------------------------
+
+class AlertSeverity(str, Enum):
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+
+
+class AlertUrgency(str, Enum):
+    IMMEDIATE = "IMMEDIATE"
+    URGENT = "URGENT"
+    ADVISORY = "ADVISORY"
+
+
+class AlertState(str, Enum):
+    NEW = "NEW"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    ACTION_IN_PROGRESS = "ACTION_IN_PROGRESS"
+    VERIFICATION_REQUIRED = "VERIFICATION_REQUIRED"
+    RESOLVED = "RESOLVED"
+    FALSE_POSITIVE = "FALSE_POSITIVE"
+
+
+class InterventionAlert(BaseModel):
+    """An operational safety intervention alert delivered in real time."""
+
+    alert_id: str = Field(..., description="Unique deterministic or sequential alert ID")
+    event_id: int = Field(..., description="Root DB event ID grounding the alert")
+    video_id: str
+    timestamp: float
+    scenario: str
+    lens: str
+    severity: AlertSeverity
+    urgency: AlertUrgency
+    state: AlertState
+    title: str
+    immediate_action: str
+    secondary_actions: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    verification: str
+    reason: str
+    score: Optional[float] = None
+    band: str = "Medium"
+    evidence_status: str = "Seen in video"
+    evidence_summary: Optional[str] = None
+    entity_id: Optional[str] = None
+    supporting_event_ids: list[int] = Field(default_factory=list)
+    occurrence_count: int = 1
+    dedup_key: str
+    acknowledged_at: Optional[float] = None
+    acknowledged_by: Optional[str] = None
+    action_in_progress_at: Optional[float] = None
+    verified_at: Optional[float] = None
+    verified_by: Optional[str] = None
+    resolved_at: Optional[float] = None
+    resolution_notes: Optional[str] = None
+    outcome_id: Optional[int] = None
+    outcome_classification: Optional[str] = None
+    safe_plan: Optional[SafeActionPlan] = None
+    created_at: float
+    updated_at: float
+
+
+class AlertAcknowledgeRequest(BaseModel):
+    user: Optional[str] = "operator"
+
+
+class AlertActionProgressRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class AlertVerifyRequest(BaseModel):
+    verified_by: Optional[str] = "supervisor"
+    notes: Optional[str] = None
+
+
+class AlertResolveRequest(BaseModel):
+    notes: Optional[str] = None
+    outcome_classification: Optional[str] = "prevented"
+
+
+class AlertDismissRequest(BaseModel):
+    reason: Optional[str] = "Marked as false positive"
+
+
+class InterventionFeedResponse(BaseModel):
+    active_count: int
+    alerts: list[InterventionAlert] = Field(default_factory=list)
+
