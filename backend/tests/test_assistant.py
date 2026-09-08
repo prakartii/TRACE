@@ -167,15 +167,23 @@ def test_engine_blank_question(seeded_db):
 # endpoint
 # --------------------------------------------------------------------------- #
 
-def test_ask_endpoint_answers_and_carries_grounding():
-    client = TestClient(app)
-    r = client.post("/api/assistant/ask", json={"question": "What were the most common risks?"})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["intent"] == "top_scenarios"
-    assert body["answer"]
-    assert isinstance(body["grounding"], list)
-    assert body["used_llm"] is False  # no ANTHROPIC_API_KEY in CI
+def test_ask_endpoint_answers_and_carries_grounding(seeded_db):
+    """Seeds its own data: this used to read whatever the real demo database
+    happened to hold, so the assertion depended on ambient state."""
+    from backend.db.db import get_db
+
+    app.dependency_overrides[get_db] = lambda: seeded_db
+    try:
+        client = TestClient(app)
+        r = client.post("/api/assistant/ask", json={"question": "What were the most common risks?"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["intent"] == "top_scenarios"
+        assert body["answer"]
+        assert isinstance(body["grounding"], list)
+        assert body["used_llm"] is False  # no ANTHROPIC_API_KEY in CI
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_suggestions_endpoint():
