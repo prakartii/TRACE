@@ -15,6 +15,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Optional
 
+from backend.contracts.models import EVIDENCE_BACKED_SQL, EVIDENCE_BASIS_NOTE
 from backend.video.labels import source_label as _source_label
 
 
@@ -60,21 +61,32 @@ def _explanation(factor_breakdown_json: Optional[str]) -> Optional[str]:
 # --------------------------------------------------------------------------- #
 
 def overview(conn: sqlite3.Connection) -> QueryResult:
-    total = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-    by_band = {r["band"]: r["n"] for r in _rows(conn, "SELECT band, COUNT(*) n FROM events GROUP BY band")}
-    by_lens = {r["lens"]: r["n"] for r in _rows(conn, "SELECT lens, COUNT(*) n FROM events GROUP BY lens")}
+    logged = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    total = conn.execute(f"SELECT COUNT(*) FROM events WHERE {EVIDENCE_BACKED_SQL}").fetchone()[0]
+    by_band = {
+        r["band"]: r["n"]
+        for r in _rows(conn, f"SELECT band, COUNT(*) n FROM events WHERE {EVIDENCE_BACKED_SQL} GROUP BY band")
+    }
+    by_lens = {
+        r["lens"]: r["n"]
+        for r in _rows(conn, f"SELECT lens, COUNT(*) n FROM events WHERE {EVIDENCE_BACKED_SQL} GROUP BY lens")
+    }
     outcomes = {
         r["classification"]: r["n"]
         for r in _rows(conn, "SELECT classification, COUNT(*) n FROM outcome_measurements GROUP BY classification")
     }
     top = _rows(
         conn,
-        "SELECT scenario, COUNT(*) n FROM events WHERE scenario IS NOT NULL GROUP BY scenario ORDER BY n DESC LIMIT 1",
+        "SELECT scenario, COUNT(*) n FROM events WHERE scenario IS NOT NULL "
+        f"AND {EVIDENCE_BACKED_SQL} GROUP BY scenario ORDER BY n DESC LIMIT 1",
     )
     top_scenario = top[0]["scenario"] if top else None
 
     high = (by_band.get("High", 0) or 0) + (by_band.get("Critical", 0) or 0)
-    parts = [f"TRACE has {total} logged events ({high} High/Critical)."]
+    parts = [
+        f"TRACE has {total} evidence-backed findings ({high} High/Critical) "
+        f"out of {logged} logged observations."
+    ]
     if top_scenario:
         parts.append(f"The most frequent scenario is '{top_scenario}'.")
     if outcomes:
@@ -86,9 +98,9 @@ def overview(conn: sqlite3.Connection) -> QueryResult:
     return QueryResult(
         kind="overview",
         summary=" ".join(parts),
-        data={"total_events": total, "by_band": by_band, "by_lens": by_lens, "outcomes": outcomes,
-              "top_scenario": top_scenario},
-        source="events + outcome_measurements",
+        data={"evidence_backed_events": total, "logged_observations": logged, "by_band": by_band,
+              "by_lens": by_lens, "outcomes": outcomes, "top_scenario": top_scenario},
+        source=f"events + outcome_measurements — {EVIDENCE_BASIS_NOTE}",
         row_count=total,
     )
 
@@ -96,28 +108,35 @@ def overview(conn: sqlite3.Connection) -> QueryResult:
 def top_scenarios(conn: sqlite3.Connection, limit: int = 6) -> QueryResult:
     rows = _rows(
         conn,
-        """
+        f"""
         SELECT scenario, COUNT(*) n,
                ROUND(AVG(score), 1) avg_score,
                SUM(CASE WHEN band IN ('High','Critical') THEN 1 ELSE 0 END) high_ct
         FROM events
-        WHERE scenario IS NOT NULL
+        WHERE scenario IS NOT NULL AND {EVIDENCE_BACKED_SQL}
         GROUP BY scenario ORDER BY n DESC, high_ct DESC LIMIT ?
         """,
         (limit,),
     )
     if not rows:
-        return QueryResult("top_scenarios", "No risk events are recorded yet.", {"scenarios": []},
-                           "events", row_count=0)
+        return QueryResult("top_scenarios", "No evidence-backed risk findings are recorded yet.",
+                           {"scenarios": []}, "events", row_count=0)
     listing = ", ".join(f"{r['scenario']} ({r['n']})" for r in rows)
-    summary = f"The most common risks in the log are: {listing}."
-    ids = [r["event_id"] for r in _rows(conn, "SELECT event_id FROM events WHERE scenario IN (%s)"
-                                        % ",".join("?" * len(rows)), tuple(r["scenario"] for r in rows))]
+    summary = f"The most common evidence-backed risks are: {listing}."
+    ids = [
+        r["event_id"]
+        for r in _rows(
+            conn,
+            "SELECT event_id FROM events WHERE scenario IN (%s) AND %s"
+            % (",".join("?" * len(rows)), EVIDENCE_BACKED_SQL),
+            tuple(r["scenario"] for r in rows),
+        )
+    ]
     return QueryResult(
         kind="top_scenarios",
         summary=summary,
         data={"scenarios": [dict(r) for r in rows]},
-        source="events grouped by scenario",
+        source=f"events grouped by scenario — {EVIDENCE_BASIS_NOTE}",
         event_ids=ids,
         row_count=sum(r["n"] for r in rows),
     )
@@ -126,16 +145,16 @@ def top_scenarios(conn: sqlite3.Connection, limit: int = 6) -> QueryResult:
 def top_behaviours(conn: sqlite3.Connection, limit: int = 6) -> QueryResult:
     rows = _rows(
         conn,
-        """
+        f"""
         SELECT scenario, COUNT(*) n
         FROM events
-        WHERE lens = 'behaviour' AND scenario IS NOT NULL
+        WHERE lens = 'behaviour' AND scenario IS NOT NULL AND {EVIDENCE_BACKED_SQL}
         GROUP BY scenario ORDER BY n DESC LIMIT ?
         """,
         (limit,),
     )
     if not rows:
-        return QueryResult("top_behaviours", "No behaviour-lens events are recorded yet.",
+        return QueryResult("top_behaviours", "No evidence-backed behaviour findings are recorded yet.",
                            {"behaviours": []}, "events (lens='behaviour')", row_count=0)
     listing = ", ".join(f"{r['scenario']} ({r['n']})" for r in rows)
     return QueryResult(
@@ -206,14 +225,14 @@ def near_misses_by_source(conn: sqlite3.Connection) -> QueryResult:
 def high_risk_events(conn: sqlite3.Connection) -> QueryResult:
     rows = _rows(
         conn,
-        """
+        f"""
         SELECT event_id, video_id, scenario, band, score, confidence, status
-        FROM events WHERE band IN ('High','Critical')
+        FROM events WHERE band IN ('High','Critical') AND {EVIDENCE_BACKED_SQL}
         ORDER BY CASE band WHEN 'Critical' THEN 0 ELSE 1 END, score DESC
         """,
     )
     if not rows:
-        return QueryResult("high_risk_events", "There are no High or Critical risk events in the log.",
+        return QueryResult("high_risk_events", "There are no evidence-backed High or Critical findings.",
                            {"events": []}, "events (band in High/Critical)", row_count=0)
     by_source: dict[str, int] = {}
     for r in rows:

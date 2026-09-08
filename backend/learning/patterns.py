@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from backend.contracts.models import EVIDENCE_BACKED_SQL, EVIDENCE_BASIS_NOTE
 from backend.video.labels import source_label as _source_label
 
 _BEHAVIOUR_LENS = "behaviour"
@@ -44,17 +45,21 @@ def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[sqlite
 # --------------------------------------------------------------------------- #
 
 def recurring_scenarios(conn: sqlite3.Connection, min_count: int = 2) -> list[dict]:
-    """Scenarios seen more than once — the configurations worth a coaching note."""
+    """Scenarios seen more than once — the configurations worth a coaching note.
+
+    Evidence-backed findings only: an insufficient-evidence or unsupported
+    observation must never become a "this recurs, coach your team on it" claim.
+    """
     rows = _rows(
         conn,
-        """
+        f"""
         SELECT scenario,
                COUNT(*)                                            AS count,
                SUM(CASE WHEN band IN ('High','Critical') THEN 1 ELSE 0 END) AS high_count,
                ROUND(AVG(score), 1)                                AS avg_score,
                COUNT(DISTINCT video_id)                            AS source_count
         FROM events
-        WHERE scenario IS NOT NULL
+        WHERE scenario IS NOT NULL AND {EVIDENCE_BACKED_SQL}
         GROUP BY scenario
         HAVING COUNT(*) >= ?
         ORDER BY count DESC, high_count DESC
@@ -65,11 +70,14 @@ def recurring_scenarios(conn: sqlite3.Connection, min_count: int = 2) -> list[di
     for r in rows:
         srcs = _rows(
             conn,
-            "SELECT DISTINCT video_id FROM events WHERE scenario = ? AND video_id IS NOT NULL",
+            "SELECT DISTINCT video_id FROM events WHERE scenario = ? AND video_id IS NOT NULL "
+            f"AND {EVIDENCE_BACKED_SQL}",
             (r["scenario"],),
         )
         ids = [x["event_id"] for x in _rows(
-            conn, "SELECT event_id FROM events WHERE scenario = ? ORDER BY event_id", (r["scenario"],)
+            conn,
+            f"SELECT event_id FROM events WHERE scenario = ? AND {EVIDENCE_BACKED_SQL} ORDER BY event_id",
+            (r["scenario"],),
         )]
         out.append({
             "scenario": r["scenario"],
@@ -89,7 +97,8 @@ def behaviour_frequency(conn: sqlite3.Connection) -> list[dict]:
         for r in _rows(
             conn,
             "SELECT scenario, COUNT(*) AS count FROM events "
-            "WHERE lens = ? AND scenario IS NOT NULL GROUP BY scenario ORDER BY count DESC",
+            f"WHERE lens = ? AND scenario IS NOT NULL AND {EVIDENCE_BACKED_SQL} "
+            "GROUP BY scenario ORDER BY count DESC",
             (_BEHAVIOUR_LENS,),
         )
     ]
@@ -99,7 +108,8 @@ def zone_hotspots(conn: sqlite3.Connection) -> list[dict]:
     rows = _rows(
         conn,
         "SELECT video_id, scenario, COUNT(*) AS count FROM events "
-        "WHERE lens = ? GROUP BY video_id, scenario ORDER BY count DESC",
+        f"WHERE lens = ? AND {EVIDENCE_BACKED_SQL} "
+        "GROUP BY video_id, scenario ORDER BY count DESC",
         (_ENV_LENS,),
     )
     return [
@@ -154,12 +164,12 @@ def source_scenario_heatmap(conn: sqlite3.Connection) -> dict:
     — no spatial pixel data is invented (CLAUDE.md §30)."""
     rows = _rows(
         conn,
-        """
+        f"""
         SELECT video_id, scenario,
                COUNT(*) AS count,
                SUM(CASE WHEN band IN ('High','Critical') THEN 1 ELSE 0 END) AS high_count
         FROM events
-        WHERE scenario IS NOT NULL AND video_id IS NOT NULL
+        WHERE scenario IS NOT NULL AND video_id IS NOT NULL AND {EVIDENCE_BACKED_SQL}
         GROUP BY video_id, scenario
         """,
     )
@@ -192,8 +202,9 @@ def source_scenario_heatmap(conn: sqlite3.Connection) -> dict:
         "source_totals": src_totals,
         "scenario_totals": scen_totals,
         "max_cell_count": max_count,
-        "basis": "events grouped by (source, scenario); intensity = event count, "
-                 "High/Critical shown separately. Not a spatial pixel map.",
+        "basis": "evidence-backed findings grouped by (source, scenario); intensity = "
+                 "finding count, High/Critical shown separately. Not a spatial pixel map. "
+                 + EVIDENCE_BASIS_NOTE,
     }
 
 
@@ -201,12 +212,12 @@ def process_scorecards(conn: sqlite3.Connection) -> list[dict]:
     """Per-source (team / process) scorecards. CLAUDE.md §22: never per individual."""
     rows = _rows(
         conn,
-        """
+        f"""
         SELECT video_id,
                COUNT(*) AS events,
                SUM(CASE WHEN band IN ('High','Critical') THEN 1 ELSE 0 END) AS high_events
         FROM events
-        WHERE video_id IS NOT NULL
+        WHERE video_id IS NOT NULL AND {EVIDENCE_BACKED_SQL}
         GROUP BY video_id
         ORDER BY events DESC
         """,
@@ -226,7 +237,7 @@ def process_scorecards(conn: sqlite3.Connection) -> list[dict]:
         top = _rows(
             conn,
             "SELECT scenario, COUNT(*) AS n FROM events WHERE video_id = ? AND scenario IS NOT NULL "
-            "GROUP BY scenario ORDER BY n DESC LIMIT 1",
+            f"AND {EVIDENCE_BACKED_SQL} GROUP BY scenario ORDER BY n DESC LIMIT 1",
             (vid,),
         )
         cards.append({

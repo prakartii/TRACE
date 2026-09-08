@@ -183,3 +183,50 @@ def test_suggestions_endpoint():
     r = client.get("/api/assistant/suggestions")
     assert r.status_code == 200
     assert r.json()["suggestions"]
+
+
+# --------------------------------------------------------------------------- #
+# Evidence bar — the assistant must not report an unsupported observation as a
+# top risk (CLAUDE.md §21/§30).
+# --------------------------------------------------------------------------- #
+
+def test_top_scenarios_excludes_below_evidence_bar(seeded_db):
+    seeded_db.executescript(
+        """
+        INSERT INTO events (event_id, video_id, timestamp, event_type, lens, entity_id, score, band, confidence, status, scenario, factor_breakdown_json)
+        VALUES (90, 'vidA', 1.0, 'risk', 'conformance', 'vidA:p', 10, 'Low', 'Low', 'unsupported', 'product_rule_coverage', '{}'),
+               (91, 'vidA', 2.0, 'risk', 'conformance', 'vidA:p', 10, 'Low', 'Low', 'unsupported', 'product_rule_coverage', '{}'),
+               (92, 'vidA', 3.0, 'risk', 'conformance', 'vidA:p', 10, 'Low', 'Low', 'unsupported', 'product_rule_coverage', '{}'),
+               (93, 'vidA', 4.0, 'risk', 'conformance', 'vidA:p', 10, 'Low', 'Low', 'insufficient_evidence', 'product_rule_coverage', '{}');
+        """
+    )
+    seeded_db.commit()
+    r = q.top_scenarios(seeded_db)
+    names = [s["scenario"] for s in r.data["scenarios"]]
+    # 4 unsupported probes would otherwise outrank the 2 real box_overhang findings
+    assert "product_rule_coverage" not in names
+    assert names[0] == "box_overhang"
+    assert "evidence-backed" in r.summary
+
+
+def test_overview_separates_backed_findings_from_logged_observations(seeded_db):
+    seeded_db.execute(
+        "INSERT INTO events (event_id, video_id, timestamp, event_type, lens, entity_id, band, confidence, status, scenario, factor_breakdown_json)"
+        " VALUES (94, 'vidA', 1.0, 'risk', 'conformance', 'vidA:p', 'Low', 'Low', 'unsupported', 'product_rule_coverage', '{}')"
+    )
+    seeded_db.commit()
+    r = q.overview(seeded_db)
+    assert r.data["evidence_backed_events"] == 5
+    assert r.data["logged_observations"] == 6
+    assert "5 evidence-backed findings" in r.summary
+    assert "6 logged observations" in r.summary
+
+
+def test_high_risk_events_excludes_below_evidence_bar(seeded_db):
+    seeded_db.execute(
+        "INSERT INTO events (event_id, video_id, timestamp, event_type, lens, entity_id, band, confidence, status, scenario, factor_breakdown_json)"
+        " VALUES (95, 'vidZ', 1.0, 'risk', 'conformance', 'vidZ:p', 'Critical', 'Low', 'insufficient_evidence', 'product_rule_coverage', '{}')"
+    )
+    seeded_db.commit()
+    r = q.high_risk_events(seeded_db)
+    assert 95 not in r.event_ids

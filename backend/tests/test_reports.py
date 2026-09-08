@@ -103,7 +103,8 @@ def test_incidents_csv_empty_db_is_header_only(empty_client):
 
 def test_shift_summary_json(client):
     s = client.get("/api/reports/shift-summary").json()
-    assert s["totals"]["events"] == 3
+    assert s["totals"]["evidence_backed_findings"] == 3
+    assert s["totals"]["logged_observations"] == 3
     assert s["totals"]["by_band"] == {"High": 2, "Medium": 1}
     # four separate buckets, never summed
     assert s["prevention"]["prevented"] == 1
@@ -128,6 +129,28 @@ def test_shift_summary_markdown_is_a_printable_download(client):
 
 def test_shift_summary_empty_db(empty_client):
     s = empty_client.get("/api/reports/shift-summary").json()
-    assert s["totals"]["events"] == 0
+    assert s["totals"]["evidence_backed_findings"] == 0
+    assert s["totals"]["logged_observations"] == 0
     assert s["recurring_scenarios"] == []
     assert s["process_scorecards"] == []
+
+
+def test_shift_summary_separates_backed_findings_from_logged_observations(client, db):
+    """An unsupported coverage probe is logged and exported in the CSV, but must
+    not inflate the shift report's headline finding count."""
+    db.execute(
+        "INSERT INTO events (event_id, video_id, timestamp, event_type, lens, entity_id, band, confidence, status, scenario, factor_breakdown_json)"
+        " VALUES (9, 'bayA', 1.0, 'risk', 'conformance', 'bayA:p', 'Low', 'Low', 'unsupported', 'product_rule_coverage', '{}')"
+    )
+    db.commit()
+
+    s = client.get("/api/reports/shift-summary").json()
+    assert s["totals"]["evidence_backed_findings"] == 3
+    assert s["totals"]["logged_observations"] == 4
+    assert "Low" not in s["totals"]["by_band"]
+    assert all(r["scenario"] != "product_rule_coverage" for r in s["recurring_scenarios"])
+
+    # the raw CSV audit trail still carries it, with its status
+    rows = list(csv.DictReader(io.StringIO(client.get("/api/reports/incidents.csv").text)))
+    probe = next(r for r in rows if r["event_id"] == "9")
+    assert probe["status"] == "unsupported"

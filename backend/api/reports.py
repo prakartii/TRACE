@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
+from backend.contracts.models import EVIDENCE_BACKED_STATUSES, EVIDENCE_BASIS_NOTE
 from backend.db.db import get_db
 from backend.db.events import query_events
 from backend.db.outcomes import get_prevention_summary
@@ -90,9 +91,14 @@ def incidents_csv(
 
 def _summary(db: sqlite3.Connection) -> dict:
     events = query_events(db, limit=10000, order="asc")
+    backed = [
+        e
+        for e in events
+        if (e.status.value if hasattr(e.status, "value") else e.status) in EVIDENCE_BACKED_STATUSES
+    ]
     by_band: dict[str, int] = {}
     by_lens: dict[str, int] = {}
-    for e in events:
+    for e in backed:
         b = e.band.value if (e.band and hasattr(e.band, "value")) else (e.band or "unspecified")
         ln = e.lens.value if hasattr(e.lens, "value") else str(e.lens)
         by_band[b] = by_band.get(b, 0) + 1
@@ -103,10 +109,12 @@ def _summary(db: sqlite3.Connection) -> dict:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "window": "all logged events (demo dataset)",
         "totals": {
-            "events": len(events),
+            "evidence_backed_findings": len(backed),
+            "logged_observations": len(events),
             "high_or_critical": (by_band.get("High", 0) + by_band.get("Critical", 0)),
             "by_band": by_band,
             "by_lens": by_lens,
+            "basis": EVIDENCE_BASIS_NOTE,
         },
         "prevention": {
             "total_evaluated": prev.total_evaluated,
@@ -142,7 +150,8 @@ def shift_summary_md(db: sqlite3.Connection = Depends(get_db)) -> Response:
         f"_Generated {s['generated_at']} · {s['window']}_",
         "",
         "## Totals",
-        f"- Logged events: **{t['events']}** ({t['high_or_critical']} High/Critical)",
+        f"- Evidence-backed findings: **{t['evidence_backed_findings']}** "
+        f"({t['high_or_critical']} High/Critical), from {t['logged_observations']} logged observations",
         "- By band: " + ", ".join(f"{k} {v}" for k, v in sorted(t["by_band"].items())),
         "- By lens: " + ", ".join(f"{k} {v}" for k, v in sorted(t["by_lens"].items())),
         "",

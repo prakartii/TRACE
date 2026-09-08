@@ -28,7 +28,13 @@ def db():
           (3, 'bayB', 3, 'risk', 'structural', 'bayB:b3', 55, 'Medium', 'Medium', 'supported', 'box_overhang'),
           (4, 'bayB', 4, 'behaviour', 'behaviour', 'bayB:w1', 60, 'Medium', 'Medium', 'probable', 'dragging_precursor'),
           (5, 'bayB', 5, 'behaviour', 'behaviour', 'bayB:w1', 61, 'Medium', 'Medium', 'probable', 'dragging_precursor'),
-          (6, 'bayC', 6, 'risk', 'environmental', 'bayC:z1', 40, 'Low', 'Low', 'supported', 'entity_in_wet_floor_zone');
+          (6, 'bayC', 6, 'risk', 'environmental', 'bayC:z1', 40, 'Low', 'Low', 'supported', 'entity_in_wet_floor_zone'),
+          -- Below the evidence bar: a coverage probe and an unverifiable guess.
+          -- These are logged (honest audit trail) but must never drive an insight.
+          (7, 'bayA', 7, 'risk', 'conformance', 'bayA:p', 10, 'Low', 'Low', 'unsupported', 'product_rule_coverage'),
+          (8, 'bayA', 8, 'risk', 'conformance', 'bayA:p', 10, 'Low', 'Low', 'unsupported', 'product_rule_coverage'),
+          (9, 'bayB', 9, 'behaviour', 'behaviour', 'bayB:w9', 20, 'High', 'Low', 'insufficient_evidence', 'dragging_precursor'),
+          (10, 'bayC', 10, 'risk', 'environmental', 'bayC:z2', 15, 'High', 'Low', 'insufficient_evidence', 'entity_in_wet_floor_zone');
 
         INSERT INTO outcome_measurements
           (outcome_id, event_id, video_id, initial_timestamp, classification,
@@ -146,3 +152,51 @@ def test_scorecards_endpoint(client):
     d = client.get("/api/learning/scorecards").json()
     assert len(d["scorecards"]) == 3
     assert "never per individual worker" in d["note"]
+
+
+# --------------------------------------------------------------------------- #
+# Evidence bar — aggregates must never be built from unsupported /
+# insufficient-evidence observations (CLAUDE.md §20/§30).
+# --------------------------------------------------------------------------- #
+
+def test_recurring_scenarios_excludes_below_evidence_bar(db):
+    """A coverage probe logged twice as `unsupported` is not a recurring
+    configuration and must not earn a coaching note."""
+    scen = {r["scenario"] for r in p.recurring_scenarios(db, min_count=2)}
+    assert "product_rule_coverage" not in scen
+    assert "box_overhang" in scen
+
+    recs = {r["scenario"] for r in p.training_recommendations(db, min_count=2)}
+    assert "product_rule_coverage" not in recs
+
+
+def test_recurring_counts_ignore_insufficient_evidence_rows(db):
+    """dragging_precursor has 2 probable + 1 insufficient_evidence rows."""
+    r = next(x for x in p.recurring_scenarios(db, min_count=2) if x["scenario"] == "dragging_precursor")
+    assert r["count"] == 2
+    assert 9 not in r["event_ids"]
+
+
+def test_behaviour_frequency_respects_the_evidence_bar(db):
+    assert p.behaviour_frequency(db) == [{"scenario": "dragging_precursor", "count": 2}]
+
+
+def test_zone_hotspots_respect_the_evidence_bar(db):
+    zones = p.zone_hotspots(db)
+    assert sum(z["count"] for z in zones) == 1  # the supported one only
+
+
+def test_heatmap_excludes_below_evidence_bar(db):
+    hm = p.source_scenario_heatmap(db)
+    assert "product_rule_coverage" not in hm["scenarios"]
+    assert hm["scenario_totals"]["dragging_precursor"] == 2
+    assert "evidence-backed" in hm["basis"]
+
+
+def test_scorecards_count_only_evidence_backed_findings(db):
+    cards = {c["video_id"]: c for c in p.process_scorecards(db)}
+    # bayA: 2 supported box_overhang (+2 unsupported probes that must not count)
+    assert cards["bayA"]["events"] == 2
+    assert cards["bayA"]["top_scenario"] == "box_overhang"
+    # bayC: 1 supported wet-floor (+1 insufficient_evidence that must not count)
+    assert cards["bayC"]["events"] == 1

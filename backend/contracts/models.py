@@ -233,6 +233,29 @@ class FindingStatus(str, Enum):
     UNSUPPORTED = "unsupported"
 
 
+# The statuses that cleared the evidence bar and may therefore back a *claim*
+# ("the most common risks are…", "this configuration recurs", "coach the team
+# on X", risk-density heat map, scorecards).
+#
+# INSUFFICIENT_EVIDENCE / UNSUPPORTED findings are still persisted and still
+# shown in the event log with their status badge — that is the honest audit
+# trail — but aggregating them into an insight would be inventing one
+# (CLAUDE.md §30, and §20's "do not claim learning beyond what is implemented").
+EVIDENCE_BACKED_STATUSES: tuple[str, ...] = (
+    FindingStatus.SUPPORTED.value,
+    FindingStatus.PROBABLE.value,
+)
+
+# Reusable SQL fragment for the `events` table. Callers append it to a WHERE.
+EVIDENCE_BACKED_SQL = "status IN ('supported', 'probable')"
+
+EVIDENCE_BASIS_NOTE = (
+    "Counts evidence-backed findings only (status supported or probable). "
+    "Insufficient-evidence and unsupported observations stay in the event log "
+    "with their status but never drive an aggregate claim."
+)
+
+
 class RiskEvent(BaseModel):
     """Phase 1 risk-event contract, extended in Phase 5 for evidence-
     aware findings. All Phase 5 fields are additive/defaulted so the
