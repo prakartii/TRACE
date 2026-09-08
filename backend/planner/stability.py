@@ -18,6 +18,7 @@ from backend.contracts.models import (
     BoundingBox,
     MassClass,
     ProductMetadata,
+    RiskBand,
     StabilityBreakdown,
     StabilityScore,
 )
@@ -43,6 +44,27 @@ def classify_stability(score: float) -> str:
     if score >= 40.0:
         return "weak_geometric_support"
     return "poor_geometric_support"
+
+
+def risk_band_from_stability(stability_score: float) -> RiskBand:
+    """Single source of truth for turning a stability score (0-100) into a
+    RiskBand.
+
+    The cut points are the exact complement of `classify_stability` so the
+    two engines (single-frame `simulation.py` and multi-frame `whatif.py`)
+    can never disagree about the same number:
+      stability >= 80  (high_geometric_support)     -> LOW
+      60 <= stability < 80 (moderate_geometric_...)  -> MEDIUM
+      40 <= stability < 60 (weak_geometric_...)      -> HIGH
+      stability < 40  (poor_geometric_support)       -> CRITICAL
+    """
+    if stability_score >= 80.0:
+        return RiskBand.LOW
+    if stability_score >= 60.0:
+        return RiskBand.MEDIUM
+    if stability_score >= 40.0:
+        return RiskBand.HIGH
+    return RiskBand.CRITICAL
 
 
 def compute_stability_score(

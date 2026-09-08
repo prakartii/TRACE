@@ -41,6 +41,11 @@ def _clamp_bbox(bbox: BoundingBox) -> BoundingBox:
     return BoundingBox(x1=round(x1, 4), y1=round(y1, 4), x2=round(x2, 4), y2=round(y2, 4))
 
 
+# Support-deck margin: a candidate whose footprint extends past the support
+# node's horizontal extent by more than this (normalized) is off the deck.
+_SUPPORT_EXTENT_MARGIN = 0.05
+
+
 def _check_person_collision(candidate_box: BoundingBox, snapshot: SceneGraphSnapshot) -> bool:
     """Returns True if candidate collides significantly with any person in the scene."""
     for node in snapshot.nodes:
@@ -48,6 +53,35 @@ def _check_person_collision(candidate_box: BoundingBox, snapshot: SceneGraphSnap
             if intersection_over_union(candidate_box, node.footprint) > 0.20:
                 return True
     return False
+
+
+def _check_cargo_collision(
+    candidate_box: BoundingBox,
+    snapshot: SceneGraphSnapshot,
+    *,
+    target_id: str,
+    support_id: Optional[str],
+) -> bool:
+    """True if the candidate overlaps another cargo/structural entity (not the
+    target being moved and not its own support deck)."""
+    for node in snapshot.nodes:
+        if node.entity_class == EntityClass.PERSON or not node.footprint:
+            continue
+        if node.entity_id in (target_id, support_id):
+            continue
+        if intersection_over_union(candidate_box, node.footprint) > 0.10:
+            return True
+    return False
+
+
+def _off_support_deck(candidate_box: BoundingBox, support_box: Optional[BoundingBox]) -> bool:
+    """True if the candidate protrudes past the support deck's horizontal extent
+    by more than the allowed margin (an unsupported cantilever placement)."""
+    if support_box is None:
+        return False
+    left = support_box.x1 - candidate_box.x1
+    right = candidate_box.x2 - support_box.x2
+    return max(left, 0.0) + max(right, 0.0) > _SUPPORT_EXTENT_MARGIN
 
 
 def generate_placement_candidates(
@@ -307,11 +341,25 @@ def generate_placement_candidates(
             })
 
     # Evaluate each candidate deterministically
+    target_id = target_node.entity_id
+    support_id = supporting_node.entity_id if supporting_node else None
     candidates: list[PlacementCandidate] = []
     for cand in raw_candidates:
         fp = cand["footprint"]
+
+        # Hard feasibility constraints — a candidate that fails any of these is
+        # kept (so the operator sees why) but flagged infeasible so it is never
+        # auto-selected as the recommendation.
         person_collision = _check_person_collision(fp, snapshot)
-        feasible = not person_collision and not bbox_is_degenerate(fp)
+        cargo_collision = _check_cargo_collision(
+            fp, snapshot, target_id=target_id, support_id=support_id
+        )
+        off_deck = not cand["is_base"] and _off_support_deck(fp, cand["supp_box"])
+        at_frame_edge = fp.x1 <= 0.011 or fp.y1 <= 0.011 or fp.x2 >= 0.989 or fp.y2 >= 0.989
+        degenerate = bbox_is_degenerate(fp)
+        feasible = not (
+            person_collision or cargo_collision or off_deck or at_frame_edge or degenerate
+        )
 
         # Compute stability score for candidate
         stab = compute_stability_score(
@@ -328,7 +376,13 @@ def generate_placement_candidates(
 
         limitations = list(stab.limitations)
         if person_collision:
-            limitations.append("Candidate trajectory intersects detected worker position.")
+            limitations.append("Candidate footprint intersects a detected worker position.")
+        if cargo_collision:
+            limitations.append("Candidate footprint overlaps another cargo or structural entity.")
+        if off_deck:
+            limitations.append("Candidate protrudes past the supporting deck's extent (unsupported cantilever).")
+        if at_frame_edge:
+            limitations.append("Candidate is pinned against the frame boundary; the placement may not physically fit.")
 
         candidates.append(
             PlacementCandidate(
@@ -353,6 +407,7 @@ def generate_placement_candidates(
             )
         )
 
-    # Rank candidates by stability score descending
-    candidates.sort(key=lambda c: c.score, reverse=True)
+    # Rank feasible candidates first, then by stability score descending, so the
+    # top of the list is always a placement the operator can actually make.
+    candidates.sort(key=lambda c: (not c.feasibility, -c.score))
     return candidates

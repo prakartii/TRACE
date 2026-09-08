@@ -121,10 +121,26 @@ When a structural finding occurs, the candidate generator (`backend/planner/gene
   2. Rotate upright and center on support foundation.
 
 ### Feasibility Constraints
-All candidates must satisfy:
-- Normalized frame boundaries: $x_1, y_1 \ge 0.01, x_2, y_2 \le 0.99$.
-- Worker safety clearance: Candidate bounding box must not collide with detected `PERSON` entities ($\text{IoU} \le 0.20$).
+Candidates are always returned (so the operator sees why one is unsafe) but a
+candidate failing any hard constraint is flagged `feasibility = false` /
+`hard_constraints_passed = false`, is sorted below every feasible candidate, and
+is never auto-selected as the recommendation:
 - Non-degenerate footprint: width, height $> 0.02$.
+- Not pinned against the frame boundary ($x_1, y_1 > 0.011$ and $x_2, y_2 < 0.989$) —
+  a clamped candidate describes a box that may not physically fit.
+- Worker safety clearance: no collision with detected `PERSON` entities ($\text{IoU} > 0.20$).
+- No collision with any other cargo/structural entity ($\text{IoU} > 0.10$), excluding the
+  target being moved and its own support deck.
+- Not an unsupported cantilever: footprint does not protrude past the support deck's
+  horizontal extent by more than $0.05$ (normalized).
+
+### Shared epistemic gate
+Both the single-frame engine (`planner/simulation.py`) and the multi-frame
+trajectory engine (`planner/whatif.py`) route every refusal through
+`planner/eligibility.py::whatif_refusal` — one allowlist
+(`WHAT_IF_ELIGIBLE_SCENARIOS`), one worker-entity check, one evidence-status
+check. The trajectory engine no longer defaults an unrecognised scenario to
+`box_overhang`; an unspecified or non-structural scenario is refused.
 
 ---
 

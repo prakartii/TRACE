@@ -24,7 +24,7 @@ from backend.contracts.models import (
     WhatIfCurrentState,
     WhatIfSimulation,
 )
-from backend.planner.actions import WHAT_IF_ELIGIBLE_SCENARIOS
+from backend.planner.eligibility import whatif_refusal
 from backend.planner.generator import generate_placement_candidates
 from backend.planner.stability import STABILITY_DISCLAIMER, compute_stability_score
 
@@ -45,44 +45,23 @@ def run_what_if_simulation(
     meta_by_id = product_metadata_by_id or {}
     scen = finding.scenario or "unknown_scenario"
 
-    # 1. Epistemic Safety Gates (Section 16)
-    if finding.status == FindingStatus.UNSUPPORTED:
+    # 1. Epistemic safety gate — the single shared gate also used by the
+    #    multi-frame trajectory engine (`backend.planner.whatif`). Covers
+    #    evidence status and the structural/conformance scenario allowlist.
+    #    The human-worker check runs below, once the target node (and thus its
+    #    entity class) has been resolved from the snapshot.
+    gate = whatif_refusal(scenario=finding.scenario, finding_status=finding.status)
+    if gate is not None:
         return WhatIfSimulation(
             video_id=video_id,
             timestamp=snapshot.timestamp,
             finding_scenario=scen,
             finding_status=finding.status,
             simulation_available=False,
-            simulation_notice="Simulation unavailable: TRACE cannot safely determine this condition from available evidence.",
+            simulation_notice=gate.notice,
             current=None,
             alternatives=[],
-            limitations=["unsupported_evidence"],
-        )
-
-    if finding.status == FindingStatus.INSUFFICIENT_EVIDENCE:
-        return WhatIfSimulation(
-            video_id=video_id,
-            timestamp=snapshot.timestamp,
-            finding_scenario=scen,
-            finding_status=finding.status,
-            simulation_available=False,
-            simulation_notice="Simulation unavailable because the underlying scene evidence is insufficient.",
-            current=None,
-            alternatives=[],
-            limitations=["insufficient_scene_evidence"],
-        )
-
-    if scen not in WHAT_IF_ELIGIBLE_SCENARIOS:
-        return WhatIfSimulation(
-            video_id=video_id,
-            timestamp=snapshot.timestamp,
-            finding_scenario=scen,
-            finding_status=finding.status,
-            simulation_available=False,
-            simulation_notice=f"Simulation unavailable: scenario '{scen}' is an operational or environmental hazard, not a physical placement.",
-            current=None,
-            alternatives=[],
-            limitations=["non_placement_scenario"],
+            limitations=gate.limitations,
         )
 
     notice = (
