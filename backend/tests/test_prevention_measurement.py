@@ -450,6 +450,50 @@ def test_api_get_outcome_unverified_baseline(client, test_db, mock_registry):
     assert "condition_1_risk_predicted" in data["three_condition_check"]
 
 
+def test_api_get_outcome_does_not_write_to_the_ledger(client, test_db, mock_registry):
+    """Reading an outcome must not create one.
+
+    The GET used to persist the baseline it computed, so merely opening an
+    incident in Incident Replay wrote an `outcome_unclear` row: browsing four
+    incidents took the prevention panel from 3 evaluated outcomes to 7. §15
+    forbids inflating prevention numbers, and an outcome nobody verified is
+    not an evaluated outcome.
+    """
+    video = mock_registry.list_videos()[0]
+    ids = []
+    for eid in (401, 402, 403):
+        ev = make_sample_risk_event(event_id=eid, video_id=video.id)
+        persist_findings([ev], video.id, video.id, float(eid), test_db)
+        ids.append(ev.event_id)
+
+    before = client.get("/api/measurement/summary").json()["total_evaluated"]
+
+    for eid in ids:
+        r = client.get(f"/api/measurement/events/{eid}/outcome")
+        assert r.status_code == 200          # still answers
+        assert "three_condition_check" in r.json()
+
+    after = client.get("/api/measurement/summary").json()["total_evaluated"]
+    assert after == before, "browsing incidents must not add evaluated outcomes"
+    placeholders = ",".join("?" * len(ids))
+    assert test_db.execute(
+        f"SELECT COUNT(*) FROM outcome_measurements WHERE event_id IN ({placeholders})",
+        ids,
+    ).fetchone()[0] == 0
+
+
+def test_api_verify_still_persists(client, test_db, mock_registry):
+    """The explicit POST is what records an outcome."""
+    video = mock_registry.list_videos()[0]
+    ev = make_sample_risk_event(event_id=404, video_id=video.id)
+    persist_findings([ev], video.id, video.id, 404.0, test_db)
+
+    assert client.post(f"/api/measurement/events/{ev.event_id}/verify").status_code == 200
+    assert test_db.execute(
+        "SELECT COUNT(*) FROM outcome_measurements WHERE event_id = ?", (ev.event_id,)
+    ).fetchone()[0] == 1
+
+
 def test_api_get_outcome_event_not_found(client):
     res = client.get("/api/measurement/events/999999/outcome")
     assert res.status_code == 404
