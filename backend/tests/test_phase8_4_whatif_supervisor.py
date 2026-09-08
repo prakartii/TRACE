@@ -441,3 +441,34 @@ def test_operator_zone_overrides_builtin_of_same_id():
         assert z.severity_multiplier == 9.9
     finally:
         _ZONE_REGISTRY.pop("dock_08_wet_floor", None)
+
+
+def test_every_listed_manifest_is_retrievable_by_source_id():
+    """The list resolves built-in manifests by filename; the detail endpoint
+    called get_manifest_for_source(source_id) with no filename, which never
+    matches a built-in. Every one of the eight sources the list reported
+    404'd on drill-in."""
+    from starlette.testclient import TestClient
+
+    from backend.main import app
+
+    with TestClient(app) as client:
+        listed = client.get("/api/config/manifests").json()
+        assert listed, "expected the built-in challenge manifests to be listed"
+
+        for entry in listed:
+            r = client.get(f"/api/config/manifests/{entry['source_id']}")
+            assert r.status_code == 200, (
+                f"source {entry['source_id']} is listed with manifest "
+                f"{entry['manifest_id']} but its detail endpoint returned {r.status_code}"
+            )
+            assert r.json()["manifest_id"] == entry["manifest_id"]
+
+
+def test_unknown_source_still_404s():
+    from starlette.testclient import TestClient
+
+    from backend.main import app
+
+    with TestClient(app) as client:
+        assert client.get("/api/config/manifests/not-a-real-source").status_code == 404

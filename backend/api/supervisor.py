@@ -182,6 +182,28 @@ def delete_zone(zone_id: str) -> dict:
 # Operational Manifest Endpoints
 # ==============================================================================
 
+def _resolve_manifest(source_id: str) -> Optional[OperationalManifest]:
+    """Resolves the manifest in force for a source, built-in ones included.
+
+    Built-in challenge manifests are matched on the source's *filename*, so
+    `get_manifest_for_source(source_id)` alone never finds them. Both the list
+    and the detail endpoint must look the filename up the same way — when only
+    the list did, every one of the eight sources it reported 404'd on drill-in.
+    """
+    m = get_manifest_for_source(source_id)
+    if m is not None:
+        return m
+    try:
+        from backend.video.registry import VideoRegistry
+
+        record = VideoRegistry().get(source_id)
+    except Exception:
+        return None
+    if record is None:
+        return None
+    return get_manifest_for_source(record.id, record.filename)
+
+
 @router.get("/manifests", response_model=list[dict])
 def list_manifests() -> list[dict]:
     """Lists every operational manifest in force, keyed to its camera source.
@@ -198,7 +220,7 @@ def list_manifests() -> list[dict]:
         from backend.video.registry import VideoRegistry
 
         for record in VideoRegistry().list_videos():
-            m = get_manifest_for_source(record.id, record.filename)
+            m = _resolve_manifest(record.id)
             if m is None:
                 continue
             seen.add(record.id)
@@ -236,7 +258,7 @@ def list_manifests() -> list[dict]:
 
 @router.get("/manifests/{source_id}")
 def get_source_manifest(source_id: str) -> dict:
-    manifest = get_manifest_for_source(source_id)
+    manifest = _resolve_manifest(source_id)
     if manifest is None:
         raise HTTPException(status_code=404, detail=f"No manifest configured for source '{source_id}'.")
     return {
