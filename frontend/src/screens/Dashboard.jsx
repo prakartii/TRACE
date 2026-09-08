@@ -12,6 +12,7 @@ import {
 import { listEvents } from '../api/events.js'
 import { getPreventionSummary } from '../api/measurement.js'
 import { listVideos } from '../api/videos.js'
+import LearningInsights from '../components/LearningInsights.jsx'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import {
   getScenarioConfig,
@@ -489,6 +490,8 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+
+      <LearningInsights />
     </div>
   )
 }
