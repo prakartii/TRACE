@@ -31,6 +31,7 @@ from backend.lenses.environmental import (
 from backend.world_model.manifest import (
     PRODUCT_CATALOG,
     OperationalManifest,
+    _CHALLENGE_MANIFESTS,
     _MANIFEST_BY_SOURCE_ID,
     get_manifest_for_source,
     register_manifest,
@@ -108,7 +109,20 @@ def delete_product(product_id: str) -> dict:
 
 @router.get("/zones", response_model=list[EnvironmentalZoneConfig])
 def list_zones() -> list[EnvironmentalZoneConfig]:
-    """Returns all calibrated environmental zones."""
+    """Returns every calibrated environmental zone actually in force.
+
+    That includes the zones carried by the built-in challenge manifests — those
+    are what `backend/api/findings.py` hands to the environmental lens, so a
+    supervisor must be able to see and audit them (CLAUDE.md §22). Previously
+    this listed only operator-created zones, so the screen showed "0" while
+    dock-edge and wet-floor alerts were actively being raised.
+    """
+    zones: dict[str, EnvironmentalZone] = {}
+    for _prefix, manifest in _CHALLENGE_MANIFESTS:
+        for z in manifest.environmental_zones:
+            zones.setdefault(z.zone_id, z)
+    # Operator-configured zones win on id collision.
+    zones.update(_ZONE_REGISTRY)
     return [
         EnvironmentalZoneConfig(
             zone_id=z.zone_id,
@@ -116,7 +130,7 @@ def list_zones() -> list[EnvironmentalZoneConfig]:
             polygon=z.polygon,
             severity_multiplier=z.severity_multiplier,
         )
-        for z in _ZONE_REGISTRY.values()
+        for z in zones.values()
     ]
 
 
@@ -170,16 +184,52 @@ def delete_zone(zone_id: str) -> dict:
 
 @router.get("/manifests", response_model=list[dict])
 def list_manifests() -> list[dict]:
-    """Lists all active operational manifests linked to camera sources."""
+    """Lists every operational manifest in force, keyed to its camera source.
+
+    Built-in challenge manifests are resolved by filename at request time
+    (`get_manifest_for_source`), so listing only the operator-registered dict
+    reported "0" while all eight sources were in fact running a manifest with
+    its product metadata and hazard zones. Both are listed now, tagged by origin.
+    """
     results = []
+    seen: set[str] = set()
+
+    try:
+        from backend.video.registry import VideoRegistry
+
+        for record in VideoRegistry().list_videos():
+            m = get_manifest_for_source(record.id, record.filename)
+            if m is None:
+                continue
+            seen.add(record.id)
+            results.append({
+                "source_id": record.id,
+                "source_filename": record.filename,
+                "manifest_id": m.manifest_id,
+                "bay_name": m.bay_name,
+                "primary_product_id": m.primary_product_id,
+                "product_count": len(m.product_metadata),
+                "zone_count": len(m.environmental_zones),
+                "zone_ids": [z.zone_id for z in m.environmental_zones],
+                "origin": "operator" if record.id in _MANIFEST_BY_SOURCE_ID else "built-in",
+            })
+    except Exception:
+        # A registry problem must not blank the operator-registered manifests.
+        pass
+
     for sid, m in _MANIFEST_BY_SOURCE_ID.items():
+        if sid in seen:
+            continue
         results.append({
             "source_id": sid,
+            "source_filename": None,
             "manifest_id": m.manifest_id,
             "bay_name": m.bay_name,
             "primary_product_id": m.primary_product_id,
             "product_count": len(m.product_metadata),
             "zone_count": len(m.environmental_zones),
+            "zone_ids": [z.zone_id for z in m.environmental_zones],
+            "origin": "operator",
         })
     return results
 

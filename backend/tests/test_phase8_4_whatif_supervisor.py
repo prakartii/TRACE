@@ -388,3 +388,56 @@ def test_what_if_refusal_when_no_supporter_for_overhang():
     assert "No actionable placement scenario" in sim.simulation_notice
     assert sim.alternatives == []
 
+
+
+# --------------------------------------------------------------------------- #
+# Configuration transparency — a supervisor must be able to audit the zones and
+# manifests that are actually driving findings (CLAUDE.md §22).
+# --------------------------------------------------------------------------- #
+
+def test_list_zones_includes_zones_actually_driving_findings():
+    """backend/api/findings.py feeds the environmental lens the *manifest's*
+    zones. Listing only operator-created zones reported 0 while dock-edge and
+    wet-floor alerts were being raised."""
+    from backend.api.supervisor import list_zones
+
+    zone_ids = {z.zone_id for z in list_zones()}
+    assert "dock_09_threshold_gap" in zone_ids
+    assert "dock_08_wet_floor" in zone_ids
+    for z in list_zones():
+        assert len(z.polygon) >= 3
+        assert z.severity_multiplier > 0
+
+
+def test_list_manifests_includes_builtin_challenge_manifests():
+    from backend.api.supervisor import list_manifests
+
+    ms = list_manifests()
+    assert len(ms) >= 7
+    ids = {m["manifest_id"] for m in ms}
+    assert "manifest_dock_09_cupboard" in ids
+    assert "manifest_dock_08_wet_floor" in ids
+
+    # every entry is attributable and carries its zone linkage
+    for m in ms:
+        assert m["origin"] in ("built-in", "operator")
+        assert m["zone_count"] == len(m["zone_ids"])
+        assert m["source_id"]
+
+
+def test_operator_zone_overrides_builtin_of_same_id():
+    from backend.api.supervisor import _ZONE_REGISTRY, list_zones
+    from backend.lenses.environmental import EnvironmentalZone, ZoneType
+
+    override = EnvironmentalZone(
+        zone_id="dock_08_wet_floor",
+        zone_type=ZoneType.WET_FLOOR,
+        polygon=[(0.0, 0.0), (0.5, 0.0), (0.5, 0.5)],
+        severity_multiplier=9.9,
+    )
+    _ZONE_REGISTRY["dock_08_wet_floor"] = override
+    try:
+        z = next(z for z in list_zones() if z.zone_id == "dock_08_wet_floor")
+        assert z.severity_multiplier == 9.9
+    finally:
+        _ZONE_REGISTRY.pop("dock_08_wet_floor", None)
