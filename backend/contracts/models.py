@@ -274,6 +274,11 @@ class StabilityBreakdown(BaseModel):
     mass_order: float = 0.0
     orientation_alignment: float = 0.0
     overhang_penalty: float = 0.0
+    # Tipping-moment estimate (ARCHITECTURE.md §5.1): mass_class_weight x
+    # normalized COG offset, 0 (no tipping tendency) - 100. A comparative
+    # indicator reported for explainability; it is NOT an independent weighted
+    # term in the final score (see backend/planner/stability.py).
+    tipping_estimate: float = 0.0
 
 
 class StabilityScore(BaseModel):

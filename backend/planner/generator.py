@@ -403,6 +403,7 @@ def generate_placement_candidates(
                     "centering": stab.breakdown.centering,
                     "mass_order": stab.breakdown.mass_order,
                     "overhang_penalty": stab.breakdown.overhang_penalty,
+                    "tipping_estimate": stab.breakdown.tipping_estimate,
                 },
             )
         )
