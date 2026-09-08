@@ -27,6 +27,24 @@ export function LiveViewProvider({ children }) {
   const [activeScreen, setActiveScreen] = useState('Dashboard')
   const [replayTarget, setReplayTarget] = useState(null)
 
+  // Responsible-AI view mode (ARCHITECTURE.md §15). Presentation filter only —
+  // there is no authentication layer yet, so this does not enforce access.
+  const [role, setRole] = useState(() => {
+    try {
+      return localStorage.getItem('trace.role') || 'supervisor'
+    } catch {
+      return 'supervisor'
+    }
+  })
+  const changeRole = (r) => {
+    setRole(r)
+    try {
+      localStorage.setItem('trace.role', r)
+    } catch {
+      /* ignore */
+    }
+  }
+
   const SCREEN_ALIASES = {
     'Safe Action Planner': 'Action Center',
     'Event Feed': 'Incidents',
@@ -52,6 +70,8 @@ export function LiveViewProvider({ children }) {
         replayTarget,
         setReplayTarget,
         navigateTo,
+        role,
+        setRole: changeRole,
       }}
     >
       {children}

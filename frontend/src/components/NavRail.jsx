@@ -5,6 +5,7 @@ import {
   MessagesSquare,
   Rewind,
   Settings,
+  ShieldCheck,
   TriangleAlert,
   Video,
   Zap,
@@ -19,6 +20,7 @@ const SCREEN_META = {
   'What-If Simulation': { icon: GitCompareArrows },
   'Live View': { icon: Video },
   Assistant: { icon: MessagesSquare },
+  'Responsible AI': { icon: ShieldCheck },
   Settings: { icon: Settings },
 }
 

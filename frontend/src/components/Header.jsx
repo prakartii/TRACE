@@ -1,5 +1,6 @@
 import { ShieldAlert } from 'lucide-react'
 import { useIntervention } from '../context/InterventionContext.jsx'
+import { useLiveViewContext } from '../LiveViewContext.jsx'
 
 const STATUS = {
   online: { dot: 'bg-ok', label: 'backend online' },
@@ -20,6 +21,16 @@ export default function Header({ backendStatus }) {
     connectionStatus = intervention.connectionStatus
     setSelectedAlert = intervention.setSelectedAlert
     bannerAlert = intervention.bannerAlert
+  } catch {
+    // Graceful fallback if rendered outside provider
+  }
+
+  let role = 'supervisor'
+  let setRole = null
+  try {
+    const ctx = useLiveViewContext()
+    role = ctx.role
+    setRole = ctx.setRole
   } catch {
     // Graceful fallback if rendered outside provider
   }
@@ -55,6 +66,19 @@ export default function Header({ backendStatus }) {
             />
             <span>{connectionStatus === 'connected' ? 'live monitoring' : 'offline fallback'}</span>
           </div>
+
+          <div className="h-3 w-px bg-line" />
+
+          {setRole && (
+            <button
+              type="button"
+              onClick={() => setRole(role === 'operator' ? 'supervisor' : 'operator')}
+              title="Responsible-AI view mode (presentation filter, not enforced access)"
+              className="font-mono text-caption text-ink-soft hover:text-ink"
+            >
+              view: <span className="font-semibold text-ink">{role}</span>
+            </button>
+          )}
 
           <div className="h-3 w-px bg-line" />
 
