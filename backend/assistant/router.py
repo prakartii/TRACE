@@ -48,11 +48,38 @@ def _entity_keyword(text: str) -> str | None:
     return None
 
 
+def _asks_to_rank_a_person(text: str) -> bool:
+    """True when the question invites individual blame or ranking.
+
+    CLAUDE.md §22 forbids punitive individual worker rankings. "Who was the
+    worst worker?" used to hit the generic "worst" keyword and come back with
+    a ranked "X has the most" answer. Both a person noun and a ranking/blame
+    term are required so ordinary questions ("which behaviour was most
+    frequent?", "worst scenario") keep their existing routes.
+    """
+    person = _kw(
+        text, "worker", "employee", "staff", "operator", "person", "people",
+        "individual", "crew", "handler", "guy", "someone", "who ",
+    )
+    blame = _kw(
+        text, "worst", "best", "blame", "fault", "responsible", "rank",
+        "careless", "unsafe", "performance", "name", "which one", "most",
+        # punitive action, not just ranking
+        "disciplin", "punish", "reprimand", "fired", "firing", "sack",
+        "write up", "written up",
+    )
+    return person and blame
+
+
 def route(question: str) -> Route:
     t = (question or "").lower().strip()
     m = _EVENT_ID_RE.search(t)
     event_id = int(m.group(1)) if m else None
     kw = _entity_keyword(t)
+
+    # §22 guard runs before every other route: no individual rankings.
+    if _asks_to_rank_a_person(t):
+        return Route("process_attribution", [q.process_attribution])
 
     # "what did TRACE recommend / what should we do" ---------------------------
     if _kw(t, "recommend", "what did trace", "safe action", "what should", "advice", "mitigat"):

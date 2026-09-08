@@ -253,6 +253,62 @@ def high_risk_events(conn: sqlite3.Connection) -> QueryResult:
     )
 
 
+def process_attribution(conn: sqlite3.Connection) -> QueryResult:
+    """Answer for questions that ask TRACE to rank or blame an individual.
+
+    CLAUDE.md §22 forbids punitive individual worker rankings and requires
+    worker-independent structural/conformance/environmental analysis. Routing
+    "who was the worst worker?" to `high_risk_events` used to return a ranked
+    "X has the most" answer, which reads as naming a culprit even though the
+    rows are per-source. TRACE declines the individual framing, says why, and
+    gives the process-level view it is actually able to support.
+
+    This does not withhold data: the same per-source counts are returned, just
+    without the individual-blame framing the question invited.
+    """
+    rows = _rows(
+        conn,
+        f"""
+        SELECT video_id, COUNT(*) AS n,
+               SUM(CASE WHEN band IN ('High','Critical') THEN 1 ELSE 0 END) AS high_ct
+        FROM events WHERE {EVIDENCE_BACKED_SQL}
+        GROUP BY video_id ORDER BY high_ct DESC, n DESC
+        """,
+    )
+    decline = (
+        "TRACE does not rank or identify individual workers. Its structural, "
+        "conformance and environmental analysis is worker-independent by design, "
+        "and findings are attributed to a process and camera source, never a person. "
+    )
+    if not rows:
+        return QueryResult(
+            "process_attribution",
+            decline + "There are no evidence-backed findings to summarise by process yet.",
+            {"by_source": []},
+            "events grouped by source (no individual attribution)",
+            row_count=0,
+        )
+
+    by_source = [
+        {"video_id": r["video_id"], "source": _source_label(r["video_id"]),
+         "findings": r["n"], "high_or_critical": r["high_ct"]}
+        for r in rows
+    ]
+    top = by_source[0]
+    return QueryResult(
+        kind="process_attribution",
+        summary=(
+            decline
+            + f"At process level, {top['source']} carries the most High/Critical "
+              f"findings ({top['high_or_critical']} of {top['findings']}). "
+              "Use these to target coaching and process changes, not individual review."
+        ),
+        data={"by_source": by_source, "basis": EVIDENCE_BASIS_NOTE},
+        source="events grouped by source (no individual attribution)",
+        row_count=len(rows),
+    )
+
+
 def false_positives(conn: sqlite3.Connection) -> QueryResult:
     rows = _rows(
         conn,

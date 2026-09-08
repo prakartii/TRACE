@@ -230,3 +230,57 @@ def test_high_risk_events_excludes_below_evidence_bar(seeded_db):
     seeded_db.commit()
     r = q.high_risk_events(seeded_db)
     assert 95 not in r.event_ids
+
+
+# --------------------------------------------------------------------------- #
+# CLAUDE.md §22 — no punitive individual worker rankings
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("question", [
+    "Who was the worst worker?",
+    "Which employee is most responsible?",
+    "Name the worker at fault",
+    "who was the most careless operator",
+    "Which employee should I discipline?",
+    "who should be punished",
+])
+def test_individual_ranking_questions_are_declined(question):
+    """"worst" alone used to route these to high_risk_events, which answers
+    with a ranked "X has the most" — an individual-blame answer in all but
+    name. §22 forbids punitive individual rankings."""
+    from backend.assistant.router import route
+
+    assert route(question).intent == "process_attribution"
+
+
+@pytest.mark.parametrize("question,intent", [
+    ("What were the most common risks?", "top_scenarios"),
+    ("Which behaviour occurred most frequently?", "top_behaviours"),
+    ("How many events were prevented?", "prevention_breakdown"),
+    ("Which bay had the most near misses?", "near_misses_by_source"),
+    ("show me the most dangerous events", "high_risk_events"),
+    ("what were the false positives", "false_positives"),
+])
+def test_the_guard_does_not_capture_ordinary_questions(question, intent):
+    """The guard needs a person noun AND a blame term, so superlatives about
+    scenarios, behaviours and sources keep their routes."""
+    from backend.assistant.router import route
+
+    assert route(question).intent == intent
+
+
+def test_process_attribution_declines_then_gives_the_process_level_view(seeded_db):
+    r = q.process_attribution(seeded_db)
+    assert "does not rank or identify individual workers" in r.summary
+    assert "worker-independent" in r.summary
+    # it still answers, at the level TRACE can actually support
+    assert r.data["by_source"]
+    for row in r.data["by_source"]:
+        assert "entity_id" not in row and "worker" not in row
+
+
+def test_process_attribution_is_honest_on_an_empty_db(empty_db):
+    r = q.process_attribution(empty_db)
+    assert "does not rank or identify individual workers" in r.summary
+    assert r.data["by_source"] == []
+    assert r.row_count == 0

@@ -203,7 +203,7 @@ export default function SupervisorSettings() {
                     <th className="py-2 font-medium">mass class</th>
                     <th className="py-2 font-medium">fragility</th>
                     <th className="py-2 font-medium">orientation</th>
-                    <th className="py-2 font-medium">max stack</th>
+                    <th className="py-2 font-medium">max stack <span className="font-normal text-ink-faint">(not enforced)</span></th>
                     <th className="py-2 text-right font-medium">action</th>
                   </tr>
                 </thead>
@@ -258,6 +258,15 @@ export default function SupervisorSettings() {
               <Select label="mass class" value={newSku.mass_class} onChange={(v) => setNewSku({ ...newSku, mass_class: v })} options={[['light', 'light (< 10 kg)'], ['medium', 'medium (10–25 kg)'], ['heavy', 'heavy (> 25 kg)']]} />
               <Select label="required orientation" value={newSku.required_orientation || ''} onChange={(v) => setNewSku({ ...newSku, required_orientation: v || null })} options={[['', 'unconstrained'], ['vertical', 'vertical (this side up)'], ['horizontal', 'horizontal (flatpack)']]} />
               <Input label="max stack height" type="number" value={newSku.max_stack_height} onChange={(v) => setNewSku({ ...newSku, max_stack_height: Number(v) })} />
+              {/* CLAUDE.md §30: stored and exported, but no lens reads it. Counting
+                  stack tiers needs vertical support-chain depth that single-camera
+                  2D geometry cannot resolve reliably, so TRACE says so rather than
+                  implying the limit is being checked. Orientation, by contrast, is
+                  enforced by the conformance lens and as a planner hard constraint. */}
+              <p className="-mt-1 text-caption text-ink-faint">
+                Stored on the SKU and included in exports, but not currently enforced —
+                no risk lens evaluates stack height. Required orientation is enforced.
+              </p>
               <button type="submit" className="mt-2 border border-ink bg-ink py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft">
                 register SKU metadata
               </button>
