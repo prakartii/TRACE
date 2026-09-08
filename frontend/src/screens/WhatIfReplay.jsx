@@ -13,8 +13,39 @@ import { humanizeExplanation } from '../lib/format.js'
 
 // A known-good sequence kept as a quick-select. It is only offered when the
 // backend actually reports an event with this id — never as a value that gets
-// silently substituted into the display.
-const CANONICAL_DEMO = { eventId: 73, label: 'Event #73 — Cargo Overhang' }
+// silently substituted into the display. #140 (unsupported bending placement)
+// is the clearest end-to-end demo: an observed cantilever the alternative
+// placement measurably corrects.
+const CANONICAL_DEMO = { eventId: 140, label: 'Event #140 — Cantilever Placement' }
+
+// Structural/conformance scenarios the backend will actually simulate
+// (mirrors backend/planner/actions.py::WHAT_IF_ELIGIBLE_SCENARIOS). Worker-
+// positioning and environmental-zone incidents are deliberately refused, so
+// the screen defaults to — and highlights — the events that can be simulated.
+const WHATIF_ELIGIBLE = new Set([
+  'heavy_on_light_stacking',
+  'pallet_overhang',
+  'box_overhang',
+  'unsupported_bending_placement',
+  'wrong_product_orientation',
+  'image_space_support_hypothesis',
+])
+
+const isEligible = (ev) => !!ev && WHATIF_ELIGIBLE.has(ev.scenario)
+
+function pickDefaultEvent(events, preferVideoId = null) {
+  if (!events?.length) return null
+  const pool = preferVideoId ? events.filter((e) => e.video_id === preferVideoId) : events
+  const canonical = !preferVideoId && events.find((e) => e.event_id === CANONICAL_DEMO.eventId && isEligible(e))
+  return (
+    canonical ||
+    pool.find(isEligible) ||
+    events.find(isEligible) ||
+    pool[0] ||
+    events[0] ||
+    null
+  )
+}
 
 const DASH = '—'
 const pct = (v) => (typeof v === 'number' && Number.isFinite(v) ? `${v.toFixed(1)}%` : DASH)
@@ -56,11 +87,11 @@ export default function WhatIfReplay() {
       setVideos(vidList || [])
       setRecentEvents(evList || [])
       if (replayTarget?.eventId) return
-      if (evList?.length) {
-        const first = evList[0]
-        setSelectedEventId(first.event_id)
-        setSelectedVideoId(first.video_id)
-        setTargetTimestamp(first.timestamp || 0)
+      const def = pickDefaultEvent(evList)
+      if (def) {
+        setSelectedEventId(def.event_id)
+        setSelectedVideoId(def.video_id)
+        setTargetTimestamp(def.timestamp || 0)
       }
     })
     return () => {
@@ -225,8 +256,17 @@ export default function WhatIfReplay() {
             <select
               value={selectedVideoId}
               onChange={(e) => {
-                setSelectedVideoId(e.target.value)
-                setSelectedEventId(null)
+                const vid = e.target.value
+                setSelectedVideoId(vid)
+                // Prefer a simulatable incident from the chosen source rather
+                // than dropping straight into manual-timestamp mode.
+                const ev = pickDefaultEvent(recentEvents, vid)
+                if (ev && ev.video_id === vid) {
+                  setSelectedEventId(ev.event_id)
+                  setTargetTimestamp(ev.timestamp || 0)
+                } else {
+                  setSelectedEventId(null)
+                }
               }}
               className="border border-line bg-white px-2.5 py-1 text-xs text-neutral-800 focus:outline-none focus:border-neutral-500 truncate"
             >
@@ -260,10 +300,14 @@ export default function WhatIfReplay() {
               <option value="">Manual timestamp mode…</option>
               {recentEvents.map((ev) => (
                 <option key={ev.event_id} value={ev.event_id}>
-                  #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {resolveIncidentTitle(ev)}
+                  {isEligible(ev) ? '' : '⚠ '}#{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {resolveIncidentTitle(ev)}
+                  {isEligible(ev) ? '' : ' [not simulatable]'}
                 </option>
               ))}
             </select>
+            <span className="text-[10px] text-neutral-400">
+              ⚠ = worker-positioning / zone incident — What-If applies to cargo placement only
+            </span>
           </div>
 
           <div className="flex flex-col gap-1">
