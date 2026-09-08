@@ -41,3 +41,15 @@ against a live server (`.venv/bin/python -m uvicorn backend.main:app`).
   (which is seeded with `evaluated_at = 0` so no retention purge can age it out).
 - **Assistant with no `ANTHROPIC_API_KEY`:** answers are the deterministic
   retrieval layer verbatim — still fully grounded, just not rephrased.
+
+## Voice alerts (multilingual)
+
+Header → **🔊 voice** toggle (only shown when the browser supports
+`speechSynthesis`). Enabling it plays a short confirmation (this is the required
+user gesture, so subsequent auto-speech is not blocked by autoplay policy). Pick
+a language (English / Español / हिन्दी / Français / Deutsch); a NEW High/Critical
+alert is then spoken once from a fixed table of reviewed safety phrases
+(`frontend/src/lib/voiceAlerts.js`). The banner also has a per-alert speaker
+button. Phrases without a reviewed translation are read in English. If the demo
+machine has no installed voice for the chosen language the toggle tooltip says
+so and it falls back to English.

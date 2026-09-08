@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import { API_BASE_URL } from '../config.js'
+import { useSpeech } from '../hooks/useSpeech.js'
+import { spokenTextFor } from '../lib/voiceAlerts.js'
 import {
   listActiveInterventions,
   acknowledgeIntervention,
@@ -209,6 +211,18 @@ export function InterventionProvider({ children }) {
     (a) => !dismissedBannerIds.has(a.alert_id) && (a.severity === 'CRITICAL' || a.severity === 'HIGH')
   ) || activeAlerts.find((a) => !dismissedBannerIds.has(a.alert_id)) || null
 
+  // Multilingual voice alerts (GEG bonus). Speak a NEW banner alert once, in the
+  // configured language, from a fixed table of reviewed safety phrases.
+  const voice = useSpeech()
+  const spokenAlertIdRef = useRef(null)
+  useEffect(() => {
+    if (!voice.enabled || !bannerAlert) return
+    if (bannerAlert.state !== 'NEW') return
+    if (spokenAlertIdRef.current === bannerAlert.alert_id) return
+    spokenAlertIdRef.current = bannerAlert.alert_id
+    voice.speak(spokenTextFor(bannerAlert, voice.lang))
+  }, [bannerAlert, voice])
+
   return (
     <InterventionContext.Provider
       value={{
@@ -226,6 +240,7 @@ export function InterventionProvider({ children }) {
         dismissAlert,
         dismissBanner,
         refresh: fetchActive,
+        voice,
       }}
     >
       {children}

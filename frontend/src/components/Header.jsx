@@ -1,6 +1,7 @@
-import { ShieldAlert } from 'lucide-react'
+import { ShieldAlert, Volume2, VolumeX } from 'lucide-react'
 import { useIntervention } from '../context/InterventionContext.jsx'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
+import { spokenTextFor } from '../lib/voiceAlerts.js'
 
 const STATUS = {
   online: { dot: 'bg-ok', label: 'backend online' },
@@ -14,6 +15,7 @@ export default function Header({ backendStatus }) {
   let connectionStatus = 'connecting'
   let setSelectedAlert = null
   let bannerAlert = null
+  let voice = null
 
   try {
     const intervention = useIntervention()
@@ -21,6 +23,7 @@ export default function Header({ backendStatus }) {
     connectionStatus = intervention.connectionStatus
     setSelectedAlert = intervention.setSelectedAlert
     bannerAlert = intervention.bannerAlert
+    voice = intervention.voice
   } catch {
     // Graceful fallback if rendered outside provider
   }
@@ -78,6 +81,52 @@ export default function Header({ backendStatus }) {
             >
               view: <span className="font-semibold text-ink">{role}</span>
             </button>
+          )}
+
+          {voice?.supported && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !voice.enabled
+                  voice.setEnabled(next)
+                  if (next) {
+                    voice.speak(
+                      bannerAlert
+                        ? spokenTextFor(bannerAlert, voice.lang)
+                        : 'Voice alerts on.',
+                      { force: true },
+                    )
+                  }
+                }}
+                title={
+                  voice.enabled
+                    ? 'Voice alerts on'
+                    : voice.voiceAvailable
+                      ? 'Enable voice alerts'
+                      : 'Enable voice alerts (no installed voice for this language — will read English)'
+                }
+                className={`inline-flex items-center gap-1 font-mono text-caption ${
+                  voice.enabled ? 'text-ink' : 'text-ink-soft hover:text-ink'
+                }`}
+              >
+                {voice.enabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                voice
+              </button>
+              {voice.enabled && (
+                <select
+                  value={voice.lang}
+                  onChange={(e) => voice.setLang(e.target.value)}
+                  className="border border-line bg-paper px-1 py-0.5 font-mono text-caption text-ink focus:border-ink"
+                >
+                  {voice.langs.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           )}
 
           <div className="h-3 w-px bg-line" />

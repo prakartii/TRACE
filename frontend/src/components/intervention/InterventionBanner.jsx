@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, ShieldAlert, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, ShieldAlert, Volume2, X } from 'lucide-react'
 import { useIntervention } from '../../context/InterventionContext.jsx'
+import { spokenTextFor } from '../../lib/voiceAlerts.js'
 
 export default function InterventionBanner({ onOpenDetail }) {
   const {
@@ -9,6 +10,7 @@ export default function InterventionBanner({ onOpenDetail }) {
     connectionNotice,
     acknowledgeAlert,
     dismissBanner,
+    voice,
   } = useIntervention()
 
   const [acknowledging, setAcknowledging] = useState(false)
@@ -122,6 +124,19 @@ export default function InterventionBanner({ onOpenDetail }) {
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
               {acknowledging ? 'Acknowledging...' : 'Acknowledge'}
+            </button>
+          )}
+
+          {voice?.supported && (
+            <button
+              type="button"
+              onClick={() =>
+                voice.speak(spokenTextFor(bannerAlert, voice.lang), { force: true })
+              }
+              title={`Speak this alert${voice.enabled ? '' : ' (voice alerts off)'}`}
+              className="rounded-lg border border-line-strong bg-paper p-1.5 text-ink shadow-sm transition-all hover:bg-paper-subtle active:scale-95"
+            >
+              <Volume2 className="h-3.5 w-3.5" />
             </button>
           )}
 
