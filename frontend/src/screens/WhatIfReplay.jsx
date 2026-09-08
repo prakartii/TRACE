@@ -14,10 +14,10 @@ import { humanizeExplanation } from '../lib/format.js'
 
 // A known-good sequence kept as a quick-select. It is only offered when the
 // backend actually reports an event with this id — never as a value that gets
-// silently substituted into the display. #140 (unsupported bending placement)
-// is the clearest end-to-end demo: an observed cantilever the alternative
-// placement measurably corrects.
-const CANONICAL_DEMO = { eventId: 140, label: 'Event #140 — cantilever placement' }
+// silently substituted into the display. #73 (carton overhang past the pallet
+// deck) is the clearest end-to-end demo: the recorded overhang is scored High
+// and a feasible inward-shift alternative measurably corrects it.
+const CANONICAL_DEMO = { eventId: 73, label: 'Event #73 — carton overhang' }
 
 // Structural/conformance scenarios the backend will actually simulate
 // (mirrors backend/planner/actions.py::WHAT_IF_ELIGIBLE_SCENARIOS). Worker-
@@ -158,6 +158,13 @@ export default function WhatIfReplay() {
   const candidates = simulation?.available_candidates || []
   const activeCandidate =
     candidates.find((c) => c.id === selectedCandidateId) || candidates[0] || null
+  const activeFeasible = !activeCandidate || (activeCandidate.feasibility && activeCandidate.hard_constraints_passed)
+  const gain = typeof simulation?.stability_gain_at_placement === 'number'
+    ? simulation.stability_gain_at_placement
+    : null
+  // "No measurable change" is an honest outcome, not a success — surfaced when
+  // the alternative barely moves the geometric score at the intervention frame.
+  const negligibleChange = available && gain != null && Math.abs(gain) < 1
 
   const loadCanonicalDemo = () => {
     setSelectedEventId(CANONICAL_DEMO.eventId)
@@ -301,7 +308,7 @@ export default function WhatIfReplay() {
             }}
             className="border border-line bg-surface px-2.5 py-1.5 text-small text-ink focus:border-ink"
           >
-            <option value="">manual timestamp mode…</option>
+            <option value="">manual timestamp mode (needs a structural incident)…</option>
             {recentEvents.map((ev) => (
               <option key={ev.event_id} value={ev.event_id}>
                 {isEligible(ev) ? '' : '⚠ '}event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {resolveIncidentTitle(ev)}
@@ -310,7 +317,8 @@ export default function WhatIfReplay() {
             ))}
           </select>
           <span className="text-caption text-ink-faint">
-            ⚠ = worker-positioning / zone incident — what-if applies to cargo placement only
+            ⚠ = worker-positioning / zone incident — what-if applies to cargo placement only.
+            Manual mode needs a recorded structural incident for context.
           </span>
         </Field>
         <Field label="intervention moment">
@@ -505,14 +513,31 @@ export default function WhatIfReplay() {
           </section>
 
           {/* step 3 — predicted outcome for the selected candidate */}
-          <section className="border border-ok/40 bg-surface">
-            <div className="h-1 bg-ok" />
+          <section className={`border bg-surface ${!activeFeasible ? 'border-signal/40' : negligibleChange ? 'border-line' : 'border-ok/40'}`}>
+            <div className={`h-1 ${!activeFeasible ? 'bg-signal' : negligibleChange ? 'bg-line-strong' : 'bg-ok'}`} />
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-              <span className="font-mono text-caption font-semibold text-ok">
-                step 3 · predicted outcome — {activeCandidate?.description || simulation.candidate_label}
+              <span className={`font-mono text-caption font-semibold ${!activeFeasible ? 'text-[#8a5f00]' : negligibleChange ? 'text-ink-soft' : 'text-ok'}`}>
+                step 3 · {!activeFeasible ? 'this alternative is not feasible' : negligibleChange ? 'no measurable stability change' : 'predicted outcome'} — {activeCandidate?.description || simulation.candidate_label}
               </span>
             </div>
             <div className="p-5">
+              {!activeFeasible && (
+                <div className="mb-4 border-l-2 border-signal bg-signal/5 px-3 py-2 text-small text-[#8a5f00]">
+                  <span className="font-medium">Not a recommendation.</span> This placement fails a
+                  physical / boundary constraint
+                  {activeCandidate?.limitations?.length
+                    ? `: ${activeCandidate.limitations.filter((l) => !l.startsWith('This score')).slice(0, 2).join(' ')}`
+                    : '.'}{' '}
+                  The scores below are shown for comparison only.
+                </div>
+              )}
+              {activeFeasible && negligibleChange && (
+                <div className="mb-4 border-l-2 border-line-strong bg-paper px-3 py-2 text-small text-ink-soft">
+                  This alternative does not measurably change the geometric stability score at the
+                  intervention frame ({gain >= 0 ? '+' : ''}{num(gain, 1)} pts). The recommended
+                  action still applies as a {activeEvent?.scenario === 'wrong_product_orientation' ? 'conformance' : 'placement'} correction.
+                </div>
+              )}
               <div className="grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-3">
                 <BeforeAfter label="stability" before={origK?.stability_score} after={simK?.stability_score} suffix=" / 100" />
                 <BeforeAfter label="overhang penalty" before={origK?.breakdown?.overhang_penalty} after={simK?.breakdown?.overhang_penalty} suffix="%" />
@@ -521,10 +546,10 @@ export default function WhatIfReplay() {
 
               <div className="mt-4 text-small text-ink-soft">
                 <span className="font-mono">{simulation.risk_transition}</span>
-                {typeof simulation.stability_gain_at_placement === 'number' && (
-                  <span className="ml-2 font-semibold text-ok">
-                    ({simulation.stability_gain_at_placement >= 0 ? '+' : ''}
-                    {num(simulation.stability_gain_at_placement, 1)} pts at the intervention frame)
+                {gain != null && (
+                  <span className={`ml-2 font-semibold ${activeFeasible && !negligibleChange ? 'text-ok' : 'text-ink-soft'}`}>
+                    ({gain >= 0 ? '+' : ''}
+                    {num(gain, 1)} pts at the intervention frame)
                   </span>
                 )}
               </div>

@@ -60,16 +60,22 @@ class _Registry:
         return _Record() if video_id == "vid_fix" else None
 
 
+# Fixtures are written in normalized [0, 1] coordinates for readability; the
+# world model consumes Entity.bbox in absolute pixels, so scale by the fake
+# frame size before constructing the entities.
+_W, _H = _Meta.width, _Meta.height
+
+
 def _box(x1, x2, *, y1=0.30, y2=0.58):
-    return BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+    return BoundingBox(x1=x1 * _W, y1=y1 * _H, x2=x2 * _W, y2=y2 * _H)
 
 
-def _frame(t, *, box=None):
+def _frame(t, *, box=None, pallet=(0.20, 0.80)):
     ents = [
         Entity(
             id="pallet_1", track_id="2", timestamp=t,
             entity_class=EntityClass.PALLET, confidence=0.95,
-            bbox=BoundingBox(x1=0.20, y1=0.60, x2=0.80, y2=0.80),
+            bbox=BoundingBox(x1=pallet[0] * _W, y1=0.60 * _H, x2=pallet[1] * _W, y2=0.80 * _H),
         )
     ]
     if box is not None:
@@ -133,9 +139,12 @@ def test_risk_band_matches_stability_classification(stability, expected):
 # ---------------------------------------------------------------------------
 
 def test_trajectory_refuses_unspecified_scenario(monkeypatch):
+    # No event_id and no scenario == manual timestamp mode with no incident
+    # context: refused with a specific, actionable message rather than silently
+    # coerced to "box_overhang".
     res = _run(monkeypatch, [_frame(3.0, box=_box(0.74, 0.98))], scenario=None)
     assert res.simulation_available is False
-    assert "non_placement_scenario" in res.limitations
+    assert "manual_mode_requires_incident_context" in res.limitations
 
 
 def test_trajectory_refuses_non_placement_scenario(monkeypatch):
@@ -233,6 +242,52 @@ def test_candidate_flagged_when_it_collides_with_other_cargo():
     assert centered is not None
     assert centered.feasibility is False
     assert any("overlaps another cargo" in lim for lim in centered.limitations)
+
+
+# ---------------------------------------------------------------------------
+# P2 — no infeasible recommendation, static counterfactual, k-guard
+# ---------------------------------------------------------------------------
+
+def test_refuses_when_no_candidate_is_feasible(monkeypatch):
+    # A narrow support hard against the right frame edge, with a wide box
+    # overhanging it: every generated alternative (centre / shift / rotate) gets
+    # clamped onto the frame boundary or off the deck and fails feasibility, so
+    # the engine must refuse rather than headline an improvement from a
+    # placement nobody can make.
+    frames = [
+        _frame(t, box=_box(0.75, 0.999), pallet=(0.90, 0.99)) for t in (2.0, 3.0, 4.0)
+    ]
+    res = _run(monkeypatch, frames)
+    assert res.simulation_available is False
+    assert "no_feasible_candidate" in res.limitations
+    assert "none satisfy" in (res.simulation_notice or "")
+
+
+def test_counterfactual_is_held_static_not_translated(monkeypatch):
+    # The observed box drifts left across the window after the intervention.
+    # The counterfactual must hold the repositioned box at ONE footprint, so its
+    # post-intervention curve is flat (no per-frame value produced by sliding
+    # the box along the observed motion path).
+    frames = [
+        _frame(2.0, box=_box(0.55, 0.80)),
+        _frame(3.0, box=_box(0.55, 0.80)),   # intervention frame
+        _frame(4.0, box=_box(0.45, 0.70)),
+        _frame(5.0, box=_box(0.35, 0.60)),
+    ]
+    res = _run(monkeypatch, frames, window_before=3.0, window_after=4.0)
+    assert res.simulation_available is True
+    k = next(i for i, p in enumerate(res.simulated_trajectory) if p.is_placement_moment)
+    post = [round(p.stability_score, 2) for p in res.simulated_trajectory[k:]]
+    assert len(set(post)) == 1, f"counterfactual not held static: {post}"
+
+
+def test_no_pre_intervention_context_is_flagged(monkeypatch):
+    # Single-frame window: the intervention frame is index 0, so there is no
+    # "before" context — the result must say so and drop to low confidence.
+    res = _run(monkeypatch, [_frame(3.0, box=_box(0.55, 0.80))])
+    assert res.simulation_available is True
+    assert res.confidence == "low"
+    assert "no_pre_intervention_frames" in res.limitations
 
 
 # ---------------------------------------------------------------------------

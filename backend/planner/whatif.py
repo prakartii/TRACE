@@ -23,6 +23,7 @@ NON-NEGOTIABLE EPISTEMIC RULES:
 from __future__ import annotations
 
 import copy
+import json
 import sqlite3
 from typing import Optional
 
@@ -30,6 +31,8 @@ from backend.api import perception
 from backend.contracts.models import (
     BoundingBox,
     EntityClass,
+    Fragility,
+    MassClass,
     PlacementCandidate,
     ProductMetadata,
     RiskBand,
@@ -56,6 +59,145 @@ _COMPARISON_CAVEAT = (
     "occlusion; the counterfactual curve holds the repositioned cargo static from "
     "that frame. The two halves of the comparison are therefore not symmetric."
 )
+
+# Synthetic ids used only within a single simulation run to reconstruct the
+# geometry / SKU metadata the recorded finding was based on, so the observed
+# baseline is scored by the SAME stability engine (CLAUDE.md §12) against the
+# configuration the detector actually flagged rather than a fresh (and usually
+# "fully supported") re-derivation from the perception cache.
+_SYNTH_SUPPORT_EID = "__whatif_synth_deck"
+_SYNTH_TARGET_PID = "__whatif_synth_target"
+_SYNTH_SUPPORT_PID = "__whatif_synth_support"
+
+
+def _parse_event_evidence(
+    db_conn: Optional[sqlite3.Connection], event_id: Optional[int]
+) -> dict:
+    """Recorded `evidence` block for a seeded finding (support ratios, mass
+    ratio, required orientation, …). Empty when there is no event or no JSON."""
+    if not (event_id and db_conn):
+        return {}
+    row = db_conn.execute(
+        "SELECT factor_breakdown_json FROM events WHERE event_id = ?", (event_id,)
+    ).fetchone()
+    if not row or not row[0]:
+        return {}
+    try:
+        return (json.loads(row[0]) or {}).get("evidence", {}) or {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _evidence_support_ratio(evidence: dict) -> Optional[float]:
+    """Recorded fraction of the item base resting on support, from the finding
+    evidence. `None` when the finding is not geometry-anchored."""
+    for key in ("support_ratio", "horizontal_deck_overlap", "pre_action_support_ratio"):
+        v = evidence.get(key)
+        if isinstance(v, (int, float)) and 0.0 < v <= 1.0:
+            return float(v)
+    for key in ("overhang_ratio", "initial_overhang_ratio"):
+        v = evidence.get(key)
+        if isinstance(v, (int, float)) and 0.0 <= v < 1.0:
+            return max(0.05, 1.0 - float(v))
+    return None
+
+
+def _synth_product_meta(
+    scenario: Optional[str], evidence: dict
+) -> tuple[Optional[ProductMetadata], Optional[ProductMetadata]]:
+    """`(target_meta, support_meta)` reconstructed from the finding evidence so
+    the mass-order / orientation terms of the shared engine fire the way the
+    recorded finding says they should. `(None, None)` when not applicable."""
+    if scenario == "heavy_on_light_stacking":
+        mr = evidence.get("mass_ratio")
+        if isinstance(mr, (int, float)) and mr > 1.3:
+            support_class = MassClass.LIGHT if mr >= 2.0 else MassClass.MEDIUM
+            return (
+                ProductMetadata(
+                    product_id=_SYNTH_TARGET_PID,
+                    class_name="carton",
+                    mass_class=MassClass.HEAVY,
+                    fragility=Fragility.LOW,
+                ),
+                ProductMetadata(
+                    product_id=_SYNTH_SUPPORT_PID,
+                    class_name="carton",
+                    mass_class=support_class,
+                    fragility=Fragility.LOW,
+                ),
+            )
+    if scenario == "wrong_product_orientation":
+        req = evidence.get("required_orientation")
+        if isinstance(req, str) and req:
+            return (
+                ProductMetadata(
+                    product_id=_SYNTH_TARGET_PID,
+                    class_name="carton",
+                    mass_class=MassClass.MEDIUM,
+                    fragility=Fragility.LOW,
+                    required_orientation=req,
+                ),
+                None,
+            )
+    return (None, None)
+
+
+def _synth_support_box(target_fp: BoundingBox, support_ratio: float) -> BoundingBox:
+    """A support footprint directly beneath `target_fp` whose horizontal overlap
+    with the target equals `support_ratio` (same width as the target, shifted so
+    that `(1 - ratio)` of the base cantilevers past one edge). Feeding this to
+    `compute_stability_score` reproduces the recorded overhang geometry."""
+    tw = target_fp.x2 - target_fp.x1
+    shift = max(0.0, (1.0 - support_ratio)) * tw
+    return BoundingBox(
+        x1=min(0.98, target_fp.x1 + shift),
+        y1=max(0.0, target_fp.y2 - 0.02),
+        x2=min(0.999, target_fp.x2 + shift),
+        y2=min(0.999, target_fp.y2 + 0.06),
+    )
+
+
+def _reshape_to_aspect(fp: BoundingBox, aspect: float) -> BoundingBox:
+    """Same centre and area as `fp`, resized to width/height == `aspect`. Used
+    to restore the recorded footprint aspect ratio for a wrong-orientation
+    finding so the shared engine's orientation term reflects it."""
+    cx = (fp.x1 + fp.x2) / 2.0
+    cy = (fp.y1 + fp.y2) / 2.0
+    area = max(1e-6, (fp.x2 - fp.x1) * (fp.y2 - fp.y1))
+    h = max(1e-3, (area / aspect) ** 0.5)
+    w = max(1e-3, aspect * h)
+    return BoundingBox(
+        x1=max(0.0, cx - w / 2.0),
+        y1=max(0.0, cy - h / 2.0),
+        x2=min(1.0, cx + w / 2.0),
+        y2=min(1.0, cy + h / 2.0),
+    )
+
+
+def _score_to_point(
+    timestamp: float,
+    stab,
+    *,
+    is_placement_moment: bool,
+    scenario: Optional[str],
+) -> TrajectoryPoint:
+    """Wrap a `StabilityScore` from the shared engine as a `TrajectoryPoint`,
+    using the same stability→risk→band mapping as `evaluate_trajectory_point`."""
+    stability = stab.score
+    risk_score = round(max(0.0, min(100.0, 100.0 - stability)), 2)
+    band = risk_band_from_stability(stability)
+    is_alert = band in (RiskBand.HIGH, RiskBand.CRITICAL)
+    return TrajectoryPoint(
+        timestamp=round(timestamp, 3),
+        stability_score=round(stability, 2),
+        risk_score=risk_score,
+        band=band,
+        is_alert=is_alert,
+        is_placement_moment=is_placement_moment,
+        active_scenarios=[scenario] if (scenario and is_alert) else [],
+        breakdown=stab.breakdown,
+        evidence="observed",
+    )
 
 
 def _refusal_result(
@@ -254,9 +396,24 @@ def run_what_if_trajectory(
         target_entity_id=entity_id,
     )
     if refusal is not None:
+        notice = refusal.notice
+        limitations = list(refusal.limitations)
+        # Manual timestamp mode (no event, no scenario) gets a specific,
+        # actionable message instead of the generic "unspecified scenario is an
+        # operational hazard" — the issue is a missing incident context, not the
+        # incident's nature. Worker / personnel / behaviour refusals still win
+        # because the gate matches those first.
+        if event_id is None and not scenario and refusal.reason == "non_placement_scenario":
+            notice = (
+                "Manual timestamp mode needs a structural or conformance incident "
+                "context. Select a recorded structural incident (overhang, unsupported "
+                "placement, heavy-on-light, wrong orientation) to run a placement "
+                "counterfactual."
+            )
+            limitations = ["manual_mode_requires_incident_context"]
         return _refusal_result(
-            reason_notice=refusal.notice,
-            limitations=refusal.limitations,
+            reason_notice=notice,
+            limitations=limitations,
             event_id=event_id,
             video_id=video_id,
             timestamp=timestamp if timestamp is not None else 0.0,
@@ -402,31 +559,98 @@ def run_what_if_trajectory(
     k -= lo
     intervention_snapshot = original_snapshots[k]
     usable_frames = len(original_snapshots)
-    confidence = "low" if usable_frames < 3 else "normal"
+    # Low confidence when the usable same-track run is short OR there is no
+    # pre-intervention context (k == 0 → the "before" side of the transition is
+    # empty and the shape of the curve leading into the placement is unknown).
+    confidence = "low" if (usable_frames < 3 or k < 1) else "normal"
 
-    supporting_node = _find_supporting_node(target_node, intervention_snapshot)
+    # 5b. Evidence anchor. Reconstruct the geometry / SKU metadata the recorded
+    #     finding was based on so the observed baseline is scored — by the SAME
+    #     stability engine (CLAUDE.md §12) — against the configuration the
+    #     detector actually flagged, not a fresh "fully supported" re-derivation
+    #     from the perception cache. Only frames at/after the intervention are
+    #     anchored; earlier frames stay live perception.
+    event_evidence = _parse_event_evidence(db_conn, event_id)
+    anchor_target_meta, anchor_support_meta = _synth_product_meta(scenario, event_evidence)
+    anchor_ratio = _evidence_support_ratio(event_evidence)
+    anchored = anchor_ratio is not None or anchor_target_meta is not None
+    anchor_as_pallet = scenario == "pallet_overhang"
+    if anchor_target_meta is not None:
+        product_metadata_by_id[_SYNTH_TARGET_PID] = anchor_target_meta
+    if anchor_support_meta is not None:
+        product_metadata_by_id[_SYNTH_SUPPORT_PID] = anchor_support_meta
+    # A finding anchored only by SKU metadata (heavy-on-light) still needs a
+    # mostly-overlapping deck so the tier scores as a stacked tier, not base.
+    effective_ratio = anchor_ratio if anchor_ratio is not None else (0.9 if anchored else None)
 
-    # 6. Real observed baseline at the intervention frame — candidate deltas are
-    #    computed against this, not a hardcoded constant.
-    baseline = compute_stability_score(
-        target_footprint=target_node.footprint,
-        support_footprint=supporting_node.footprint if supporting_node else None,
-        target_product=(
-            product_metadata_by_id.get(target_node.product_id) if target_node.product_id else None
-        ),
-        support_product=(
-            product_metadata_by_id.get(supporting_node.product_id)
-            if (supporting_node and supporting_node.product_id)
-            else None
-        ),
-        is_base_tier=supporting_node is None,
+    # Reconstructed geometry, fixed for the whole post-intervention window: a
+    # support deck sized/placed so the shared engine reproduces the recorded
+    # overhang, and (for a wrong-orientation finding) the target footprint
+    # reshaped to the recorded aspect ratio so the orientation term fires.
+    reshaped = False
+    anchored_target_fp = target_node.footprint
+    if scenario == "wrong_product_orientation":
+        ar = event_evidence.get("aspect_ratio")
+        if isinstance(ar, (int, float)) and ar > 0:
+            anchored_target_fp = _reshape_to_aspect(target_node.footprint, float(ar))
+            reshaped = True
+
+    synth_deck_fp = (
+        _synth_support_box(anchored_target_fp, effective_ratio)
+        if effective_ratio is not None
+        else None
     )
+    synth_target_meta = product_metadata_by_id.get(_SYNTH_TARGET_PID)
+    synth_support_meta = product_metadata_by_id.get(_SYNTH_SUPPORT_PID)
 
-    # 7. Generate + select the alternative placement candidate.
-    #    `scenario` is guaranteed non-None and on the allowlist by the gate above;
-    #    the `or` is only type narrowing, not a silent behavioural default.
+    if anchored and synth_deck_fp is not None:
+        _c = ((synth_deck_fp.x1 + synth_deck_fp.x2) / 2.0, (synth_deck_fp.y1 + synth_deck_fp.y2) / 2.0)
+        supporting_node = SceneGraphNode(
+            entity_id=_SYNTH_SUPPORT_EID,
+            entity_class=EntityClass.PALLET if anchor_as_pallet else EntityClass.BOX,
+            position=_c,
+            footprint=synth_deck_fp,
+            product_id=_SYNTH_SUPPORT_PID if synth_support_meta is not None else None,
+        )
+    else:
+        supporting_node = _find_supporting_node(target_node, intervention_snapshot)
+
+    # 6. Observed baseline at the intervention frame via the shared engine —
+    #    candidate deltas are computed against this, not a hardcoded constant.
+    if anchored:
+        baseline = compute_stability_score(
+            target_footprint=anchored_target_fp,
+            support_footprint=synth_deck_fp,
+            target_product=synth_target_meta,
+            support_product=synth_support_meta,
+            is_base_tier=synth_deck_fp is None,
+        )
+    else:
+        baseline = compute_stability_score(
+            target_footprint=target_node.footprint,
+            support_footprint=supporting_node.footprint if supporting_node else None,
+            target_product=(
+                product_metadata_by_id.get(target_node.product_id) if target_node.product_id else None
+            ),
+            support_product=(
+                product_metadata_by_id.get(supporting_node.product_id)
+                if (supporting_node and supporting_node.product_id)
+                else None
+            ),
+            is_base_tier=supporting_node is None,
+        )
+
+    # 7. Generate + select the alternative placement candidate. When anchored,
+    #    candidates are generated against the reconstructed deck / reshaped
+    #    footprint so they address the geometry the finding recorded.
+    #    `scenario` is guaranteed non-None and on the allowlist by the gate above.
+    gen_target = (
+        target_node.model_copy(update={"footprint": anchored_target_fp})
+        if reshaped
+        else target_node
+    )
     candidates = generate_placement_candidates(
-        target_node=target_node,
+        target_node=gen_target,
         supporting_node=supporting_node,
         snapshot=intervention_snapshot,
         scenario_key=scenario or "box_overhang",
@@ -436,14 +660,37 @@ def run_what_if_trajectory(
 
     if not candidates:
         return _refusal_result(
-            reason_notice="No feasible alternative placement coordinates survived physical and boundary constraints.",
-            limitations=["no_feasible_candidates"],
+            reason_notice="No alternative placement coordinates could be generated for this frame.",
+            limitations=["no_candidates_generated"],
             event_id=event_id,
             video_id=video_id,
             timestamp=used_timestamp,
             instruction="No feasible placement alternatives",
         )
 
+    # A candidate is only a recommendation if it actually passes the generator's
+    # physical + boundary feasibility checks. If none do, refuse rather than
+    # headline an improvement computed from a placement the operator cannot make.
+    feasible_candidates = [
+        c for c in candidates if c.feasibility and c.hard_constraints_passed
+    ]
+    if not feasible_candidates:
+        return _refusal_result(
+            reason_notice=(
+                f"{len(candidates)} alternative placement(s) were generated but none satisfy "
+                "the physical and boundary constraints (for example the item's footprint "
+                "exceeds the available supporting surface, or the placement would collide "
+                "with another entity). No safe alternative can be recommended for this frame."
+            ),
+            limitations=["no_feasible_candidate"],
+            event_id=event_id,
+            video_id=video_id,
+            timestamp=used_timestamp,
+            instruction="No feasible placement alternative for this frame.",
+        )
+
+    # Honour an explicit candidate selection (the operator asked to see that
+    # one), otherwise auto-select the best *feasible* candidate.
     selected_candidate: Optional[PlacementCandidate] = None
     if alternative_candidate:
         for c in candidates:
@@ -452,10 +699,8 @@ def run_what_if_trajectory(
             ):
                 selected_candidate = c
                 break
-
     if selected_candidate is None:
-        feasible = [c for c in candidates if c.feasibility and c.hard_constraints_passed]
-        selected_candidate = feasible[0] if feasible else candidates[0]
+        selected_candidate = feasible_candidates[0]
 
     cand_label = selected_candidate.description or selected_candidate.id or "Alternative Candidate"
     instruction = selected_candidate.description or "Shift position to improve geometric support"
@@ -470,61 +715,80 @@ def run_what_if_trajectory(
             instruction="No feasible placement alternatives",
         )
 
-    # 8. Clone the sequence and apply the counterfactual intervention.
+    # 8. Clone the sequence. The counterfactual holds the repositioned item
+    #    STATIC at the candidate footprint from the intervention frame onward —
+    #    it is NOT translated along the observed motion path (doing so used to
+    #    slide the box into other stacks and manufacture spurious instability).
     cloned_snapshots = [copy.deepcopy(s) for s in original_snapshots]
-
-    tgt_fp = target_node.footprint
-    orig_center_x = (tgt_fp.x1 + tgt_fp.x2) / 2.0
-    orig_center_y = (tgt_fp.y1 + tgt_fp.y2) / 2.0
-    cand_center_x = (cand_fp.x1 + cand_fp.x2) / 2.0
-    cand_center_y = (cand_fp.y1 + cand_fp.y2) / 2.0
-    dx = cand_center_x - orig_center_x
-    dy = cand_center_y - orig_center_y
-    cand_w = cand_fp.x2 - cand_fp.x1
-    cand_h = cand_fp.y2 - cand_fp.y1
-
     for j in range(k, len(cloned_snapshots)):
         for n in cloned_snapshots[j].nodes:
-            fp = n.footprint
-            if n.entity_id != target_id or fp is None:
-                continue
-            if j == k:
-                # Exact candidate footprint at the placement frame (copied so the
-                # candidate object is never aliased into scene state).
+            if n.entity_id == target_id and n.footprint is not None:
                 n.footprint = copy.deepcopy(cand_fp)
-            else:
-                new_cx = (fp.x1 + fp.x2) / 2.0 + dx
-                new_cy = (fp.y1 + fp.y2) / 2.0 + dy
-                n.footprint = BoundingBox(
-                    x1=max(0.01, min(0.99 - cand_w, new_cx - cand_w / 2.0)),
-                    y1=max(0.01, min(0.99 - cand_h, new_cy - cand_h / 2.0)),
-                    x2=min(0.99, new_cx + cand_w / 2.0),
-                    y2=min(0.99, new_cy + cand_h / 2.0),
-                )
 
     # 9. Score both trajectories across the (same-track) timeline.
+    #    - Pre-intervention frames: live perception, identical on both curves.
+    #    - From the intervention frame onward (when anchored): both curves are a
+    #      forward projection from fixed geometry held static — the recorded
+    #      finding (observed) versus the candidate placement (counterfactual),
+    #      each scored once against the reconstructed deck by the shared engine.
+    _TIERED_RELATIONSHIPS = {
+        "centered_tier",
+        "centered_support",
+        "aligned_flush_support",
+        "rotated_support",
+        "centered_upright_support",
+    }
+    cand_is_tiered = (selected_candidate.support_relationship or "") in _TIERED_RELATIONSHIPS
+
+    obs_hold: Optional[object] = None
+    sim_hold: Optional[object] = None
+    if anchored:
+        obs_hold = compute_stability_score(
+            target_footprint=anchored_target_fp,
+            support_footprint=synth_deck_fp,
+            target_product=synth_target_meta,
+            support_product=synth_support_meta,
+            is_base_tier=synth_deck_fp is None,
+        )
+        sim_hold = compute_stability_score(
+            target_footprint=cand_fp,
+            support_footprint=synth_deck_fp if cand_is_tiered else None,
+            target_product=synth_target_meta,
+            support_product=synth_support_meta if cand_is_tiered else None,
+            is_base_tier=not cand_is_tiered,
+        )
+
     orig_trajectory: list[TrajectoryPoint] = []
     sim_trajectory: list[TrajectoryPoint] = []
     for idx in range(len(original_snapshots)):
         is_moment = idx == k
-        orig_trajectory.append(
-            evaluate_trajectory_point(
-                original_snapshots[idx],
-                target_id,
-                product_metadata_by_id=product_metadata_by_id,
-                is_placement_moment=is_moment,
-                scenario=scenario,
+        ts = original_snapshots[idx].timestamp
+        if anchored and idx >= k:
+            orig_trajectory.append(
+                _score_to_point(ts, obs_hold, is_placement_moment=is_moment, scenario=scenario)
             )
-        )
-        sim_trajectory.append(
-            evaluate_trajectory_point(
-                cloned_snapshots[idx],
-                target_id,
-                product_metadata_by_id=product_metadata_by_id,
-                is_placement_moment=is_moment,
-                scenario=scenario,
+            sim_trajectory.append(
+                _score_to_point(ts, sim_hold, is_placement_moment=is_moment, scenario=scenario)
             )
-        )
+        else:
+            orig_trajectory.append(
+                evaluate_trajectory_point(
+                    original_snapshots[idx],
+                    target_id,
+                    product_metadata_by_id=product_metadata_by_id,
+                    is_placement_moment=is_moment,
+                    scenario=scenario,
+                )
+            )
+            sim_trajectory.append(
+                evaluate_trajectory_point(
+                    cloned_snapshots[idx],
+                    target_id,
+                    product_metadata_by_id=product_metadata_by_id,
+                    is_placement_moment=is_moment,
+                    scenario=scenario,
+                )
+            )
 
     # 10. Comparative metrics.
     orig_point_k = orig_trajectory[k]
@@ -561,8 +825,21 @@ def run_what_if_trajectory(
         "The counterfactual holds the repositioned cargo static from the intervention "
         "frame onward without subsequent human disturbance.",
     ]
-    if confidence == "low":
+    if anchored:
+        bits = []
+        if anchor_ratio is not None:
+            bits.append(f"support ratio {anchor_ratio:.2f}")
+        if anchor_target_meta is not None:
+            bits.append("recorded SKU mass / orientation metadata")
+        limitations.append(
+            "Observed stability at and after the intervention frame is reconstructed "
+            f"from the recorded finding evidence ({', '.join(bits)}) via the shared "
+            "stability engine; frames before the intervention remain live perception."
+        )
+    if usable_frames < 3:
         limitations.append("sparse_or_discontinuous_track")
+    if k < 1:
+        limitations.append("no_pre_intervention_frames")
     if adjusted_intervention:
         limitations.append("intervention_frame_substituted")
 
