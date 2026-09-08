@@ -1,8 +1,10 @@
 """Responsible-AI governance surface (ARCHITECTURE.md Screen 8 / §15, CLAUDE.md §22).
 
 Read-only status snapshot + a real, operator-controlled retention policy with an
-honest purge (dry-run by default, only ever touches records that carry a real
-wall-clock timestamp — seeded demo rows have ts=0 and are always retained).
+honest purge (dry-run by default). The purge targets only transient runtime
+records — false-positive flags, session ratings, and *resolved* intervention
+alerts — that carry a real wall-clock timestamp. Events and verified prevention
+outcomes are never purged, so the demo's headline numbers cannot be erased.
 
 Human review (confirmed-damage / false-positive) and the one-click FP flag are
 already served by ``POST /api/events/{id}/review`` and ``GET /api/events`` — this
@@ -17,6 +19,7 @@ import time
 from fastapi import APIRouter, Depends, Query
 
 from backend.assistant.llm import DEFAULT_MODEL, is_available as llm_available
+from backend.contracts.models import RetentionPolicyUpdate
 from backend.db.app_settings import get_setting, set_setting
 from backend.db.db import get_db
 from backend.perception.config import DEFAULT_CONFIG
@@ -28,13 +31,14 @@ _RETENTION_KEY = "retention_policy"
 _LAST_PURGE_KEY = "retention_last_purge"
 _DEFAULT_RETENTION = {"window_days": 30, "auto_purge": False}
 
-# Tables whose rows carry a real wall-clock timestamp and may be aged out.
-# (event rows have no ingest time and are the demo backbone — never purged here.)
+# Transient runtime records that may be aged out: (table, timestamp column,
+# optional extra predicate). Events and outcome_measurements are deliberately
+# absent — they are the demo backbone and carry the headline metrics.
+# Interventions are only purged once terminal (resolved / dismissed).
 _PURGE_TARGETS = [
-    ("interventions", "created_at"),
-    ("outcome_measurements", "evaluated_at"),
-    ("feedback", "created_at"),
-    ("session_ratings", "created_at"),
+    ("feedback", "created_at", None),
+    ("session_ratings", "created_at", None),
+    ("interventions", "created_at", "state IN ('RESOLVED', 'FALSE_POSITIVE')"),
 ]
 
 TRANSPARENCY_NOTICE = (
@@ -64,23 +68,23 @@ def _retention(conn: sqlite3.Connection) -> dict:
 
 
 def run_purge(conn: sqlite3.Connection, window_days: int, *, dry_run: bool = True) -> dict:
-    """Count (and, unless dry_run, delete) rows older than the retention window.
+    """Count (and, unless dry_run, delete) transient rows older than the window.
 
     Only rows whose timestamp is a real positive epoch value are eligible, so
-    seeded demo data (timestamp 0) is never removed.
+    seeded demo data (timestamp 0) is never removed; events and prevention
+    outcomes are not targeted at all.
     """
     cutoff = time.time() - max(1, int(window_days)) * 86400.0
     by_table: dict[str, int] = {}
-    for table, col in _PURGE_TARGETS:
+    for table, col, extra in _PURGE_TARGETS:
+        where = f"{col} > 0 AND {col} < ?" + (f" AND ({extra})" if extra else "")
         try:
-            n = conn.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE {col} > 0 AND {col} < ?", (cutoff,)
-            ).fetchone()[0]
+            n = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}", (cutoff,)).fetchone()[0]
         except sqlite3.OperationalError:
             continue  # table not present in this database
         by_table[table] = n
         if not dry_run and n:
-            conn.execute(f"DELETE FROM {table} WHERE {col} > 0 AND {col} < ?", (cutoff,))
+            conn.execute(f"DELETE FROM {table} WHERE {where}", (cutoff,))
     total = sum(by_table.values())
     result = {
         "dry_run": dry_run,
@@ -127,9 +131,12 @@ def status(db: sqlite3.Connection = Depends(get_db)) -> dict:
             "enabled": red.enabled,
             "method": red.method,
             "applies_to": "still-frame endpoint (server-side) + live-view / replay overlay",
-            "response_header": "X-TRACE-Redaction",
-            "note": "The streamed MP4 is not yet transcoded; the live view redacts at the "
-                    "presentation layer. Disabling is a supervisor action (no auth layer yet).",
+            "response_header": "X-TRACE-Redaction: faces-blurred | no-faces-detected | disabled",
+            "note": "The still-frame endpoint blurs server-side and fails closed if perception "
+                    "is unavailable. The streamed MP4 is not transcoded; the live view and "
+                    "incident replay redact at the presentation layer and fall back to a "
+                    "full-frame blur when person detections are unavailable. Disabling is a "
+                    "supervisor action (no auth layer yet).",
         },
         "human_review": {
             "confirmed_damage": confirmed,
@@ -164,13 +171,13 @@ def get_retention(db: sqlite3.Connection = Depends(get_db)) -> dict:
 
 @router.put("/retention")
 def put_retention(
-    payload: dict,
+    payload: RetentionPolicyUpdate,
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
     current = _retention(db)
-    window = int(payload.get("window_days", current["window_days"]))
+    window = current["window_days"] if payload.window_days is None else int(payload.window_days)
     window = max(1, min(window, 3650))
-    auto = bool(payload.get("auto_purge", current["auto_purge"]))
+    auto = current["auto_purge"] if payload.auto_purge is None else bool(payload.auto_purge)
     set_setting(db, _RETENTION_KEY, {"window_days": window, "auto_purge": auto})
     return _retention(db)
 

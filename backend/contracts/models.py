@@ -837,6 +837,13 @@ class AssistantGrounding(BaseModel):
     event_ids: list[int] = Field(default_factory=list)
 
 
+class RetentionPolicyUpdate(BaseModel):
+    """Partial update for the Responsible-AI data-retention policy."""
+
+    window_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    auto_purge: Optional[bool] = None
+
+
 class AssistantAnswer(BaseModel):
     question: str
     answer: str

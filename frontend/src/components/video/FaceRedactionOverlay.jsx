@@ -6,8 +6,11 @@
 // Head region is derived geometrically from the person bounding box the
 // pipeline already produces — the top slice, centred — mirroring
 // backend/perception/redaction.py::head_region. No face model, no identity.
-// `backdrop-filter: blur` genuinely obscures the pixels beneath in the
-// browser; a pixelated fallback layer covers engines without backdrop-filter.
+// `backdrop-filter: blur` genuinely obscures the pixels beneath in the browser.
+//
+// Fails CLOSED: while person detections are unavailable (`degraded` — no data
+// yet, or the perception fetch errored), the whole frame is blurred rather
+// than leaving faces visible.
 const HEAD_FRACTION = 0.35
 const HEAD_WIDTH_FRACTION = 0.85
 const PAD = 0.12
@@ -20,11 +23,32 @@ export default function FaceRedactionOverlay({
   displayWidth,
   displayHeight,
   enabled = true,
+  degraded = false,
 }) {
+  if (!enabled) return null
+
   const resolved = entities || frame?.entities || (Array.isArray(frame) ? frame : [])
   const people = resolved?.filter((e) => e.entity_class === 'person' && e.bbox) || []
 
-  if (!enabled || !people.length || !sourceWidth || !sourceHeight || !displayWidth || !displayHeight) {
+  // Detections unavailable -> blur the entire frame (fail closed).
+  if (degraded) {
+    return (
+      <div
+        className="pointer-events-none absolute inset-0 flex items-start justify-end p-2"
+        style={{
+          backgroundColor: 'rgba(20,18,14,0.25)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+        }}
+      >
+        <span className="bg-ink/70 px-1.5 py-0.5 font-mono text-[10px] text-paper">
+          faces obscured — person detection unavailable
+        </span>
+      </div>
+    )
+  }
+
+  if (!people.length || !sourceWidth || !sourceHeight || !displayWidth || !displayHeight) {
     return null
   }
 

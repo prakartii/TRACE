@@ -94,19 +94,20 @@ def get_frame(
         pipelines = get_pipeline_registry()
         pipeline = pipelines.get(model) or pipelines["stock"]
         try:
-            image = pipeline.redact_frame_image(frame.image)
-            redaction_state = "faces-blurred"
-        except FileNotFoundError:
-            # Perception weights unavailable — fail closed on privacy: refuse
-            # to hand back an un-redacted frame rather than silently leaking one.
+            image, region_count = pipeline.redact_frame_image(frame.image)
+            redaction_state = "faces-blurred" if region_count else "no-faces-detected"
+        except (FileNotFoundError, ImportError, OSError) as exc:
+            # Perception unavailable (weights missing, or torch/ultralytics not
+            # installed) — fail closed on privacy: refuse to hand back an
+            # un-redacted frame rather than silently leaking one.
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "Face redaction is enabled but perception weights are unavailable; "
-                    "refusing to serve an un-redacted frame. Retry with redact=false "
-                    "only if you are authorised to view raw footage."
+                    "Face redaction is enabled but the perception pipeline is unavailable "
+                    f"({type(exc).__name__}); refusing to serve an un-redacted frame. Retry "
+                    "with redact=false only if you are authorised to view raw footage."
                 ),
-            )
+            ) from exc
 
     ok, buffer = cv2.imencode(".jpg", image)
     if not ok:

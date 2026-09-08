@@ -14,6 +14,7 @@ import Dashboard from './screens/Dashboard.jsx'
 import ScenarioCoverage from './screens/ScenarioCoverage.jsx'
 import AiAssistant from './screens/AiAssistant.jsx'
 import ResponsibleAI from './screens/ResponsibleAI.jsx'
+import { OPERATOR_SCREENS } from './lib/roles.js'
 import { InterventionProvider, useIntervention } from './context/InterventionContext.jsx'
 import InterventionBanner from './components/intervention/InterventionBanner.jsx'
 import InterventionModal from './components/intervention/InterventionModal.jsx'
@@ -30,9 +31,6 @@ const SCREENS = [
 ]
 
 const SECONDARY_SCREENS = ['Responsible AI', 'Settings']
-
-// Operator view (ARCHITECTURE.md §15) — a presentation filter, not enforced access.
-const OPERATOR_SCREENS = ['Live View', 'Action Center', 'Incidents', 'Incident Replay']
 
 function useBackendStatus() {
   const [status, setStatus] = useState('checking')

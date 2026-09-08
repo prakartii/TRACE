@@ -15,6 +15,8 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Optional
 
+from backend.video.labels import source_label as _source_label
+
 
 @dataclass
 class QueryResult:
@@ -32,28 +34,6 @@ class QueryResult:
 
 def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
     return list(conn.execute(sql, params).fetchall())
-
-
-_SOURCE_LABELS: dict[str, str] = {}
-
-
-def _source_label(video_id: Optional[str]) -> str:
-    """Human label for a camera/bay source, best-effort via the video registry
-    (memoised — the registry scans the media directory on construction)."""
-    if not video_id:
-        return "unknown source"
-    if video_id not in _SOURCE_LABELS:
-        label = video_id
-        try:
-            from backend.api.videos import get_registry
-
-            rec = get_registry().get(video_id)
-            if rec is not None:
-                label = rec.filename
-        except Exception:
-            pass
-        _SOURCE_LABELS[video_id] = label
-    return _SOURCE_LABELS[video_id]
 
 
 def _evidence(factor_breakdown_json: Optional[str]) -> dict:

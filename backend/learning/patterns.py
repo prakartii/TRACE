@@ -12,7 +12,8 @@ process only; there are no individual worker rankings (CLAUDE.md §22).
 from __future__ import annotations
 
 import sqlite3
-from typing import Optional
+
+from backend.video.labels import source_label as _source_label
 
 _BEHAVIOUR_LENS = "behaviour"
 _ENV_LENS = "environmental"
@@ -35,26 +36,6 @@ _COACHING = {
     "entity_in_dock_edge_zone": "Stay clear of the dock edge until the bay door is secured.",
     "entity_in_wet_floor_zone": "Relocate the operation to a dry floor area.",
 }
-
-_source_labels: dict[str, str] = {}
-
-
-def _source_label(video_id: Optional[str]) -> str:
-    if not video_id:
-        return "unknown source"
-    if video_id not in _source_labels:
-        label = video_id
-        try:
-            from backend.api.videos import get_registry
-
-            rec = get_registry().get(video_id)
-            if rec is not None:
-                label = rec.filename
-        except Exception:
-            pass
-        _source_labels[video_id] = label
-    return _source_labels[video_id]
-
 
 def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
     return list(conn.execute(sql, params).fetchall())

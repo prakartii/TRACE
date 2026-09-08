@@ -3,8 +3,7 @@ import { ShieldCheck, EyeOff, Scale, Trash2, UserCog } from 'lucide-react'
 import { getGovernanceStatus, getRetention, putRetention, runPurge } from '../api/responsibleAi.js'
 import { listEvents, submitReview } from '../api/events.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-
-const OPERATOR_SCREENS = ['Live View', 'Action Center', 'Incidents', 'Incident Replay']
+import { OPERATOR_SCREENS } from '../lib/roles.js'
 
 export default function ResponsibleAI() {
   const { role, setRole } = useLiveViewContext()
@@ -268,8 +267,9 @@ export default function ResponsibleAI() {
               )}
 
               <p className="mt-2 text-caption text-ink-faint">
-                Purge removes aged intervention, outcome, feedback and rating records that carry a real
-                timestamp. Seeded demo records have no ingest time and are always retained.
+                Purge removes aged false-positive flags, session ratings, and resolved intervention
+                alerts that carry a real timestamp. Events and verified prevention outcomes are never
+                targeted, so the headline metrics cannot be erased.
                 {retention.last_purge?.at && (
                   <>
                     {' '}

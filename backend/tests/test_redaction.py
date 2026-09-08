@@ -121,9 +121,9 @@ def test_frame_endpoint_redacts_by_default(monkeypatch):
 
     calls = {"n": 0}
 
-    def spy(image):
+    def spy(image):  # returns (image, region_count) like the real method
         calls["n"] += 1
-        return image  # geometry is covered by the unit tests above
+        return image, 2
 
     monkeypatch.setattr(
         type(perception.get_pipeline_registry()["stock"]),
@@ -137,6 +137,20 @@ def test_frame_endpoint_redacts_by_default(monkeypatch):
     assert calls["n"] == 1
 
 
+def test_frame_endpoint_header_says_no_faces_when_none_detected(monkeypatch):
+    client, vid = _client_with_video()
+    from backend.api import perception
+
+    monkeypatch.setattr(
+        type(perception.get_pipeline_registry()["stock"]),
+        "redact_frame_image",
+        staticmethod(lambda image: (image, 0)),
+    )
+    r = client.get(f"/api/videos/{vid}/frame", params={"timestamp": 1.0})
+    assert r.status_code == 200
+    assert r.headers.get("X-TRACE-Redaction") == "no-faces-detected"
+
+
 def test_frame_endpoint_can_be_told_not_to_redact():
     client, vid = _client_with_video()
     r = client.get(f"/api/videos/{vid}/frame", params={"timestamp": 1.0, "redact": "false"})
@@ -144,12 +158,13 @@ def test_frame_endpoint_can_be_told_not_to_redact():
     assert r.headers.get("X-TRACE-Redaction") == "disabled"
 
 
-def test_frame_endpoint_fails_closed_when_weights_missing(monkeypatch):
+@pytest.mark.parametrize("exc", [FileNotFoundError("weights"), ImportError("no torch"), OSError("io")])
+def test_frame_endpoint_fails_closed_when_perception_unavailable(monkeypatch, exc):
     client, vid = _client_with_video()
     from backend.api import perception
 
     def boom(_image):
-        raise FileNotFoundError("weights not found")
+        raise exc
 
     monkeypatch.setattr(type(perception.get_pipeline_registry()["stock"]), "redact_frame_image", staticmethod(boom))
 

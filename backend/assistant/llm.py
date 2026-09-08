@@ -62,7 +62,11 @@ def narrate(question: str, results: list[dict], *, model: str = DEFAULT_MODEL) -
         )
         resp = client.messages.create(
             model=model,
-            max_tokens=1024,
+            # Headroom so adaptive thinking tokens don't starve the text block
+            # (a short rephrase is cheap); keep effort low — this is not a
+            # reasoning task, just fluent phrasing of retrieved rows.
+            max_tokens=4096,
+            output_config={"effort": "low"},
             system=_SYSTEM,
             thinking={"type": "adaptive"},
             messages=[{"role": "user", "content": user}],

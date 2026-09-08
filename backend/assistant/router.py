@@ -72,8 +72,6 @@ def route(question: str) -> Route:
 
     # near-miss (+ which bay/zone/source) ----------------------------------
     if _kw(t, "near miss", "near-miss", "nearmiss"):
-        if _kw(t, "bay", "zone", "camera", "source", "area", "which", "where"):
-            return Route("near_misses_by_source", [q.near_misses_by_source])
         return Route("near_misses_by_source", [q.near_misses_by_source])
 
     # most common risks / scenarios --------------------------------------

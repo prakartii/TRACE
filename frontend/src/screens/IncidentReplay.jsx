@@ -847,10 +847,12 @@ export default function IncidentReplay() {
                 onEnded={() => setPlaying(false)}
               >
                 {/* Responsible AI: personnel faces obscured by default,
-                    independent of the detection-box debug toggle. */}
+                    independent of the detection-box debug toggle. Fails closed
+                    to a full-frame blur while detections are unavailable. */}
                 <FaceRedactionOverlay
                   entities={perception.data?.entities}
                   frame={perception.data}
+                  degraded={!perception.data || !!perception.error}
                   sourceWidth={selectedVideo?.metadata?.width || 1280}
                   sourceHeight={selectedVideo?.metadata?.height || 720}
                   displayWidth={videoBoxSize.width}
@@ -890,6 +892,11 @@ export default function IncidentReplay() {
                 </span>
                 <span>tracked: {perception.data?.entities?.length || 0} entities · {scene.data?.edges?.length || 0} relations</span>
               </div>
+              <p className="border border-line border-t-0 bg-surface px-3 py-1 font-mono text-[10px] text-ink-faint">
+                Responsible AI: faces obscured — server-side on the exported still frame (fails
+                closed), presentation-layer here with a full-frame fallback when detections are
+                unavailable.
+              </p>
             </div>
           ) : (
             <div className="border border-line bg-surface p-8 text-center">

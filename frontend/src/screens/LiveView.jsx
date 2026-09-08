@@ -194,9 +194,11 @@ export default function LiveView() {
             onEnded={() => setPlaying(false)}
           >
             {/* Responsible AI: personnel faces obscured by default, independent
-                of the detection-box debug toggle. */}
+                of the detection-box debug toggle. Fails closed to a full-frame
+                blur while detections are unavailable. */}
             <FaceRedactionOverlay
               entities={entities}
+              degraded={!perception.data || !!perception.error}
               sourceWidth={selectedVideo.metadata.width}
               sourceHeight={selectedVideo.metadata.height}
               displayWidth={videoBoxSize.width}
@@ -234,6 +236,14 @@ export default function LiveView() {
           <div className="flex h-64 items-center justify-center border border-line bg-surface text-small text-ink-soft">
             {loading ? 'Loading…' : 'No video selected.'}
           </div>
+        )}
+
+        {selectedVideo && (
+          <p className="border border-line border-t-0 bg-surface px-3 py-1.5 font-mono text-[10px] text-ink-faint">
+            Responsible AI: personnel faces are obscured. The exported still frame is redacted
+            server-side (fails closed); this streamed view redacts at the presentation layer and
+            falls back to a full-frame blur when detections are unavailable.
+          </p>
         )}
 
         {/* controls */}
