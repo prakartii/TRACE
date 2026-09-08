@@ -1,12 +1,13 @@
+import { ArrowRight } from 'lucide-react'
 import { formatBytes, formatDuration } from '../../lib/format.js'
 import { getVideoScenarioInfo } from '../../lib/scenarios.js'
 import { useLiveViewContext } from '../../LiveViewContext.jsx'
 
 const RISK_BADGES = {
-  Critical: 'border-red-400 bg-red-50 text-red-800',
-  High: 'border-orange-300 bg-orange-50 text-orange-800',
-  Medium: 'border-amber-300 bg-amber-50 text-amber-800',
-  Low: 'border-neutral-300 bg-neutral-50 text-neutral-700',
+  Critical: 'border-danger/40 bg-danger/10 text-danger',
+  High: 'border-signal/40 bg-signal/10 text-[#8a5f00]',
+  Medium: 'border-steel/40 bg-steel/10 text-steel',
+  Low: 'border-line-strong bg-paper text-ink-soft',
 }
 
 export default function VideoLibrary({ videos = [], selectedId, onSelect, loading, error }) {
@@ -14,39 +15,34 @@ export default function VideoLibrary({ videos = [], selectedId, onSelect, loadin
 
   if (loading) {
     return (
-      <div className="border border-line bg-white p-4 text-center">
-        <p className="text-xs text-neutral-500 font-mono">Loading 7 canonical video sources…</p>
+      <div className="border border-line bg-surface p-4 font-mono text-caption text-ink-soft">
+        loading video sources…
       </div>
     )
   }
 
   if (error) {
-    return (
-      <div className="border border-red-300 bg-red-50 p-3 text-xs text-red-700">
-        {error}
-      </div>
-    )
+    return <div className="border border-danger bg-danger/5 p-3 text-small text-danger">{error}</div>
   }
 
-  // Defensively ensure exactly canonical distinct videos are displayed
   const canonicalVideos = videos.filter((v) => !v.duplicate_of)
 
   if (canonicalVideos.length === 0) {
     return (
-      <p className="text-sm text-neutral-500">
-        No videos found in <code className="text-xs">data/challenge_videos/</code>.
+      <p className="text-small text-ink-soft">
+        No videos found in <code className="text-caption">data/challenge_videos/</code>.
       </p>
     )
   }
 
   return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex items-center justify-between px-1 text-[11px] text-neutral-500">
-        <span>7 Monitored Camera Feeds</span>
-        <span className="font-mono">{canonicalVideos.length} distinct scenarios</span>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between px-1 text-label text-ink-faint">
+        <span>monitored camera feeds</span>
+        <span className="font-mono">{canonicalVideos.length} scenarios</span>
       </div>
 
-      <ul className="space-y-2">
+      <ul className="flex flex-col gap-2">
         {canonicalVideos.map((video) => {
           const active = video.id === selectedId
           const info = getVideoScenarioInfo(video.id || video.filename)
@@ -56,34 +52,25 @@ export default function VideoLibrary({ videos = [], selectedId, onSelect, loadin
           return (
             <li key={video.id}>
               <div
-                className={`border p-3 text-left text-xs transition-all flex flex-col gap-2 ${
-                  active
-                    ? 'border-neutral-900 bg-neutral-50/80 shadow-xs ring-1 ring-neutral-900'
-                    : 'border-line bg-white hover:border-neutral-400'
+                className={`flex flex-col gap-2 border p-3 text-left transition-colors ${
+                  active ? 'border-ink bg-surface' : 'border-line bg-surface hover:border-line-strong'
                 }`}
               >
-                {/* Header: Scenario Title & Severity */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-bold text-neutral-950 text-xs leading-snug">
+                  <div>
+                    <span className="block text-small font-semibold leading-snug text-ink">
                       {info.scenarioTitle}
                     </span>
-                    <span className="text-[10px] text-neutral-500 font-medium">
-                      {info.cameraName}
-                    </span>
+                    <span className="text-caption text-ink-soft">{info.cameraName}</span>
                   </div>
-                  <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase border shrink-0 ${badgeStyle}`}>
-                    {info.riskBand || 'High'} Risk
+                  <span className={`shrink-0 border px-1.5 py-0.5 text-label font-medium ${badgeStyle}`}>
+                    {info.riskBand || 'High'} risk
                   </span>
                 </div>
 
-                {/* Primary Risk Description */}
-                <p className="text-[11px] text-neutral-600 leading-snug line-clamp-2">
-                  {info.primaryRisk}
-                </p>
+                <p className="line-clamp-2 text-caption text-ink-soft">{info.primaryRisk}</p>
 
-                {/* Metadata details */}
-                <div className="flex items-center gap-1.5 text-[10px] text-neutral-400 font-mono pt-1 border-t border-line/60">
+                <div className="flex items-center gap-1.5 border-t border-line pt-2 font-mono text-label text-ink-faint">
                   <span>{formatDuration(video.metadata.duration)}</span>
                   <span aria-hidden="true">·</span>
                   <span>{frameCount} frames</span>
@@ -93,27 +80,26 @@ export default function VideoLibrary({ videos = [], selectedId, onSelect, loadin
                   <span>{formatBytes(video.file_size)}</span>
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex items-center justify-between gap-2 pt-1">
+                <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
                     onClick={() => onSelect(video.id)}
-                    className={`px-2.5 py-1 text-[11px] font-bold border transition-colors cursor-pointer ${
+                    className={`border px-2.5 py-1 text-caption font-medium transition-colors ${
                       active
-                        ? 'border-neutral-900 bg-neutral-900 text-white'
-                        : 'border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-100'
+                        ? 'border-ink bg-ink text-paper'
+                        : 'border-line bg-paper text-ink-soft hover:text-ink'
                     }`}
                   >
-                    {active ? '● Selected Feed' : 'Inspect Feed'}
+                    {active ? 'selected feed' : 'inspect feed'}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => navigateTo('Incident Replay', { videoId: video.id })}
-                    className="text-[11px] font-bold text-neutral-700 hover:text-black flex items-center gap-1 underline cursor-pointer"
+                    className="inline-flex items-center gap-1 text-caption font-medium text-ink-soft hover:text-ink hover:underline"
                   >
-                    <span>Replay Incidents</span>
-                    <span>→</span>
+                    replay incidents
+                    <ArrowRight size={12} />
                   </button>
                 </div>
               </div>

@@ -22,7 +22,7 @@ const EDGE_STYLE = {
 // signal; edge styling above (support/contact/proximity) is unrelated.
 const NODE_COLOR = {
   person: '#18181b',
-  box: '#b45309',
+  box: '#C28208',
   pallet: '#4d7c0f',
 }
 const DEFAULT_NODE_COLOR = '#71717a'

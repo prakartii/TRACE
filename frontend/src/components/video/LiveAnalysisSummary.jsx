@@ -14,168 +14,87 @@ function formatTime(sec) {
 }
 
 export default function LiveAnalysisSummary({ video, findings, loading, findingsEnabled, currentTime }) {
-  // 1. No video selected
+  const header = (statusNode) => (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
+      <div>
+        <h3 className="font-display text-display-md font-semibold text-ink">live analysis</h3>
+        <p className="mt-0.5 text-caption text-ink-soft">
+          {video ? (
+            <>
+              source: <span className="font-medium text-ink">{video.filename}</span>
+              {currentTime !== undefined && (
+                <> · frame: <span className="font-mono tabular-nums">{formatTime(currentTime)}</span></>
+              )}
+            </>
+          ) : (
+            'continuous monitoring for unsafe handling, structural instability, and conformance.'
+          )}
+        </p>
+      </div>
+      {statusNode}
+    </div>
+  )
+
   if (!video) {
     return (
-      <div className="border border-line bg-white p-4 mb-4 text-xs">
-        <div className="flex items-center justify-between border-b border-line pb-2 mb-3">
-          <div>
-            <h3 className="font-bold text-sm text-ink tracking-tight">TRACE Live Analysis</h3>
-            <p className="text-[11px] text-neutral-500 mt-0.5">
-              Continuous monitoring for unsafe handling, structural instability, worker proximity, and process conformance.
-            </p>
-          </div>
-          <span className="border border-neutral-300 bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-600 uppercase">
-            Standby
-          </span>
-        </div>
-        <p className="text-neutral-500">
-          Select a warehouse video source from the library on the right to begin live operational evaluation.
+      <div className="mb-4 border border-line bg-surface p-4">
+        {header(<span className="border border-line bg-paper px-2 py-0.5 text-label text-ink-soft">standby</span>)}
+        <p className="mt-3 text-small text-ink-soft">
+          Select a warehouse video source from the library to begin live operational evaluation.
         </p>
       </div>
     )
   }
 
-  // 2. Findings toggle disabled
   if (!findingsEnabled) {
     return (
-      <div className="border border-line bg-white p-4 mb-4 text-xs">
-        <div className="flex items-center justify-between border-b border-line pb-2 mb-3">
+      <div className="mb-4 border border-line bg-surface p-4">
+        {header(<span className="border border-signal/40 bg-signal/10 px-2 py-0.5 text-label text-[#8a5f00]">findings paused</span>)}
+        <div className="mt-3 grid grid-cols-1 gap-4 text-small md:grid-cols-2">
           <div>
-            <h3 className="font-bold text-sm text-ink tracking-tight">TRACE Live Analysis</h3>
-            <p className="text-[11px] text-neutral-500 mt-0.5">
-              Source: <strong className="text-ink">{video.filename}</strong>
-            </p>
-          </div>
-          <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 uppercase">
-            Findings Paused
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-4 text-neutral-600">
-          <div>
-            <span className="font-bold uppercase tracking-wider text-[10px] text-neutral-400 block mb-0.5">
-              Current Status
-            </span>
-            <p className="text-ink font-medium">Video loaded, risk lenses in standby.</p>
+            <span className="block text-label font-medium text-ink-faint">current status</span>
+            <p className="mt-1 font-medium text-ink">Video loaded, risk lenses in standby.</p>
           </div>
           <div>
-            <span className="font-bold uppercase tracking-wider text-[10px] text-neutral-400 block mb-0.5">
-              Operator Action
-            </span>
-            <p className="text-ink font-medium">Enable the "Multi-Lens Risk Evaluation" toggle below to resume real-time analysis.</p>
+            <span className="block text-label font-medium text-ink-faint">operator action</span>
+            <p className="mt-1 font-medium text-ink">Enable multi-lens risk evaluation below to resume.</p>
           </div>
         </div>
       </div>
     )
   }
 
-  // 3. Loading findings
   if (loading) {
     return (
-      <div className="border border-line bg-white p-4 mb-4 text-xs">
-        <div className="flex items-center justify-between border-b border-line pb-2 mb-3">
-          <div>
-            <h3 className="font-bold text-sm text-ink tracking-tight">TRACE Live Analysis</h3>
-            <p className="text-[11px] text-neutral-500 mt-0.5">
-              Source: <strong className="text-ink">{video.filename}</strong> · Frame: {formatTime(currentTime)}
-            </p>
-          </div>
-          <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 uppercase flex items-center gap-1.5">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-            Evaluating…
+      <div className="mb-4 border border-line bg-surface p-4">
+        {header(
+          <span className="flex items-center gap-1.5 border border-signal/40 bg-signal/10 px-2 py-0.5 text-label text-[#8a5f00]">
+            <span className="h-1.5 w-1.5 animate-pulse motion-reduce:animate-none bg-signal" />
+            evaluating…
           </span>
-        </div>
-        <p className="text-neutral-500">
-          Running spatial relationship graph and kinematic trajectory evaluation for the current frame…
+        )}
+        <p className="mt-3 text-small text-ink-soft">
+          Running the spatial relationship graph and kinematic trajectory evaluation for the
+          current frame…
         </p>
       </div>
     )
   }
 
-  // 4. Normal Operation (no findings at current frame)
   if (!findings || findings.length === 0) {
     return (
-      <div className="border border-emerald-300 bg-emerald-50/30 p-4 mb-4 text-xs">
-        <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2 mb-3">
-          <div>
-            <h3 className="font-bold text-sm text-ink tracking-tight">TRACE Live Analysis</h3>
-            <p className="text-[11px] text-neutral-600 mt-0.5">
-              Source: <strong className="text-ink">{video.filename}</strong> · Frame: <span className="font-mono tabular-nums">{formatTime(currentTime)} ({currentTime.toFixed(1)}s)</span>
-            </p>
-          </div>
-          <span className="border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 uppercase">
-            ✓ Normal Operation
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="border border-emerald-200/70 bg-white p-2.5 flex flex-col justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                1. What Is Happening?
-              </span>
-              <p className="text-ink font-semibold leading-snug">
-                Normal warehouse handling detected.
-              </p>
-              <p className="text-[11px] text-neutral-500 mt-1 leading-snug">
-                No structural, behavioural, or conformance hazards in this frame.
-              </p>
-            </div>
-            <span className="text-[9px] uppercase text-emerald-700 mt-2 block font-semibold">
-              Clear Operation
-            </span>
-          </div>
-
-          <div className="border border-emerald-200/70 bg-white p-2.5 flex flex-col justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                2. Why It Matters
-              </span>
-              <p className="text-neutral-700 font-medium leading-snug">
-                All tracked items remain within calibrated safety thresholds.
-              </p>
-            </div>
-            <span className="text-[9px] uppercase text-neutral-400 mt-2 block">
-              Low Risk Baseline
-            </span>
-          </div>
-
-          <div className="border border-emerald-200/70 bg-white p-2.5 flex flex-col justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                3. What To Do Now
-              </span>
-              <p className="text-ink font-semibold leading-snug">
-                Continue standard workflow.
-              </p>
-              <p className="text-[11px] text-neutral-500 mt-0.5">
-                Maintain standard aisle and staging clearances.
-              </p>
-            </div>
-            <span className="text-[9px] uppercase text-neutral-400 mt-2 block">
-              Standard Handling
-            </span>
-          </div>
-
-          <div className="border border-emerald-200/70 bg-white p-2.5 flex flex-col justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block mb-1">
-                4. How TRACE Knows
-              </span>
-              <p className="text-neutral-600 text-[11px] leading-snug">
-                Spatial scene graph, velocity metrics, and proximity edges nominal.
-              </p>
-            </div>
-            <span className="text-[9px] text-emerald-700 font-bold uppercase mt-2 block">
-              Multi-Lens Verified
-            </span>
-          </div>
+      <div className="mb-4 border border-ok/40 bg-ok/5 p-4">
+        {header(<span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label text-ok">normal operation</span>)}
+        <div className="mt-3 grid grid-cols-1 gap-px border border-line bg-line md:grid-cols-4">
+          <Cell label="what is happening" value="Normal warehouse handling detected." note="No structural, behavioural, or conformance hazards." />
+          <Cell label="why it matters" value="All tracked items remain within calibrated safety thresholds." />
+          <Cell label="what to do now" value="Continue standard workflow." note="Maintain standard aisle and staging clearances." />
+          <Cell label="how TRACE knows" value="Spatial graph, velocity metrics, and proximity edges nominal." />
         </div>
       </div>
     )
   }
 
-  // 5. Active Risk Finding Detected
   const sorted = [...findings].sort((a, b) => getFindingPriorityScore(b) - getFindingPriorityScore(a))
   const primary = sorted[0]
   const plan = primary.planner_recommendation
@@ -185,128 +104,95 @@ export default function LiveAnalysisSummary({ video, findings, loading, findings
   const bandStyle = RISK_BAND_STYLES[band] || RISK_BAND_STYLES.Medium
   const epistemicMeta = EPISTEMIC_LEVELS[primary.epistemic_level] || EPISTEMIC_LEVELS.INFERRED
 
-  const displayTitle = plan?.risk_title || config.title || primary.scenario?.replace(/_/g, ' ') || 'Observed Condition'
+  const displayTitle = plan?.risk_title || config.title || primary.scenario?.replace(/_/g, ' ') || 'Observed condition'
   const displayWhy = plan?.rationale || config.whyItMatters
   const displayAction = plan?.action || primary.recommended_action || config.recommendedAction
 
   return (
-    <div className="border border-line bg-white p-4 mb-4 text-xs shadow-sm">
-      {/* Header bar */}
-      <div className="flex items-center justify-between border-b border-line pb-2 mb-3 flex-wrap gap-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-bold text-sm text-ink tracking-tight">TRACE Live Analysis</h3>
-            <span className="text-[10px] text-neutral-500">
-              Frame: <span className="font-mono tabular-nums">{formatTime(currentTime)} ({currentTime.toFixed(1)}s)</span>
-            </span>
-          </div>
-          <p className="text-[11px] text-neutral-500 mt-0.5">
-            Source: <strong className="text-ink">{video.filename}</strong> · {findings.length} finding{findings.length === 1 ? '' : 's'} evaluated
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide border ${bandStyle.subtle}`}>
+    <div className="mb-4 border border-line bg-surface p-4">
+      {header(
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`border px-2 py-0.5 text-label font-medium ${bandStyle.subtle}`}>
             {bandStyle.label}
           </span>
-          <span className={`border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide flex items-center gap-1.5 ${statusMeta.style}`}>
-            <span className={`inline-block h-1.5 w-1.5 rounded-full ${statusMeta.dot}`} />
+          <span className={`border px-2 py-0.5 text-label font-medium ${statusMeta.style}`}>
             {statusMeta.label}
           </span>
         </div>
-      </div>
+      )}
 
-      {/* 4-Step Judge-First Mental Model Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        {/* 1. WHAT IS HAPPENING? */}
-        <div className="border border-line bg-neutral-50 p-2.5 flex flex-col justify-between">
+      <div className="mt-3 grid grid-cols-1 gap-px border border-line bg-line md:grid-cols-4">
+        <div className="flex flex-col justify-between bg-paper p-3">
           <div>
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                1. What Is Happening?
-              </span>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-label font-medium text-ink-faint">1. what is happening</span>
               {findings.length > 1 && (
-                <span
-                  className="text-[9px] font-semibold bg-neutral-200 text-neutral-700 px-1.5 py-0.5"
-                  title={`${findings.length - 1} additional observations detected at this frame`}
-                >
-                  +{findings.length - 1} more
-                </span>
+                <span className="bg-line px-1.5 py-0.5 text-label text-ink-soft">+{findings.length - 1} more</span>
               )}
             </div>
-            <p className="font-bold text-ink text-xs leading-snug">
-              {displayTitle}
-            </p>
+            <p className="text-small font-semibold leading-snug text-ink">{displayTitle}</p>
             {primary.explanation && (
-              <p className="text-[11px] text-neutral-600 mt-1 leading-snug line-clamp-3" title={primary.explanation}>
+              <p className="mt-1 line-clamp-3 text-caption text-ink-soft" title={primary.explanation}>
                 {primary.explanation}
               </p>
             )}
           </div>
-          <span className="text-[9px] uppercase text-neutral-400 mt-2 block">
-            Lens: {primary.lens} {findings.length > 1 ? '· Primary Risk' : ''}
-          </span>
+          <span className="mt-2 block text-label text-ink-faint">lens: {primary.lens}</span>
         </div>
 
-        {/* 2. WHY IT MATTERS */}
-        <div className="border border-line bg-neutral-50 p-2.5 flex flex-col justify-between">
+        <div className="flex flex-col justify-between bg-paper p-3">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 block mb-1">
-              2. Why It Matters
-            </span>
-            <p className="text-[11px] text-neutral-700 leading-snug">
-              {displayWhy}
-            </p>
+            <span className="block text-label font-medium text-ink-faint">2. why it matters</span>
+            <p className="mt-1 text-caption text-ink-soft">{displayWhy}</p>
           </div>
-          <span className="text-[9px] uppercase text-neutral-400 mt-2 block">
-            Operational Consequence
-          </span>
+          <span className="mt-2 block text-label text-ink-faint">operational consequence</span>
         </div>
 
-        {/* 3. WHAT TO DO NOW */}
-        <div className={`border p-2.5 flex flex-col justify-between ${
-          primary.status === 'supported' ? 'border-emerald-400 bg-emerald-50/70' :
-          primary.status === 'probable' ? 'border-amber-400 bg-amber-50/70' : 'border-line bg-neutral-50'
-        }`}>
+        <div
+          className={`flex flex-col justify-between p-3 ${
+            primary.status === 'supported'
+              ? 'bg-ok/10'
+              : primary.status === 'probable'
+                ? 'bg-signal/10'
+                : 'bg-paper'
+          }`}
+        >
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-ink block mb-1">
-              3. What To Do Now
-            </span>
-            <p className="font-bold text-ink text-xs leading-snug">
-              "{displayAction}"
-            </p>
+            <span className="block text-label font-medium text-ink-faint">3. what to do now</span>
+            <p className="mt-1 text-small font-semibold leading-snug text-ink">"{displayAction}"</p>
           </div>
           {plan?.what_if_eligible && (
-            <span className="text-[9px] font-bold text-emerald-800 uppercase tracking-wide mt-2 block">
-              ✓ What-If Simulation Available
-            </span>
+            <span className="mt-2 block text-label font-medium text-ok">what-if simulation available</span>
           )}
         </div>
 
-        {/* 4. HOW TRACE KNOWS */}
-        <div className="border border-line bg-neutral-50 p-2.5 flex flex-col justify-between">
+        <div className="flex flex-col justify-between bg-paper p-3">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-1">
-              4. How TRACE Knows
-            </span>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className={`border px-1.5 py-0.5 text-[9px] font-bold uppercase ${statusMeta.style}`}>
+            <span className="block text-label font-medium text-ink-faint">4. how TRACE knows</span>
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className={`border px-1.5 py-0.5 text-label font-medium ${statusMeta.style}`}>
                 {primary.status.replace(/_/g, ' ')}
               </span>
               {primary.confidence && (
-                <span className="text-[10px] font-mono tabular-nums text-neutral-600">
-                  {primary.confidence}
-                </span>
+                <span className="font-mono text-caption text-ink-soft">{primary.confidence}</span>
               )}
             </div>
-            <p className="text-[11px] text-neutral-600 mt-1 leading-snug">
-              {epistemicMeta.desc}
-            </p>
+            <p className="mt-1 text-caption text-ink-soft">{epistemicMeta.desc}</p>
           </div>
-          <span className="text-[9px] text-neutral-400 mt-2 block">
-            Zero Hallucination Guardrail
-          </span>
+          <span className="mt-2 block text-label text-ink-faint">no-hallucination guardrail</span>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function Cell({ label, value, note }) {
+  return (
+    <div className="flex flex-col justify-between bg-paper p-3">
+      <div>
+        <span className="block text-label font-medium text-ink-faint">{label}</span>
+        <p className="mt-1 text-small font-semibold leading-snug text-ink">{value}</p>
+        {note && <p className="mt-1 text-caption text-ink-soft">{note}</p>}
       </div>
     </div>
   )

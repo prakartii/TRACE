@@ -12,7 +12,7 @@
 // primaries to stay within the existing industrial/professional palette.
 const CLASS_COLOR = {
   person: '#18181b', // ink — personnel
-  box: '#b45309', // muted amber — carton / cargo
+  box: '#C28208', // signal amber — carton / cargo
   pallet: '#4d7c0f', // muted olive — wood pallet base
   trolley: '#0369a1', // blue — cart / trolley
   vehicle_bed: '#475569', // slate — vehicle bed
@@ -98,7 +98,7 @@ export default function PerceptionOverlay({
             style={{ left, top, width, height, borderColor: color }}
           >
             <span
-              className="absolute left-0 top-0 -translate-y-full inline-flex items-center gap-1.5 whitespace-nowrap px-1.5 py-0.5 text-[10px] leading-tight text-white shadow-sm font-sans"
+              className="absolute left-0 top-0 -translate-y-full inline-flex items-center gap-1.5 whitespace-nowrap px-1.5 py-0.5 text-caption leading-tight text-white font-sans"
               style={{ backgroundColor: color }}
             >
               <span className="font-bold">{opLabel}</span>
@@ -108,9 +108,9 @@ export default function PerceptionOverlay({
               <span className="font-mono text-[9px] opacity-80">{Math.round(entity.confidence * 100)}%</span>
               {entity.tracking_status && entity.tracking_status !== 'TRACKED' && (
                 <span
-                  className={`px-1 py-[1px] text-[8.5px] font-bold uppercase tracking-wider rounded-sm ${
+                  className={`px-1 py-[1px] text-[8.5px] font-bold tracking-wide ${
                     entity.tracking_status === 'REACQUIRED'
-                      ? 'bg-emerald-500 text-white shadow-sm ring-1 ring-white'
+                      ? 'bg-emerald-500 text-white ring-1 ring-white'
                       : entity.tracking_status === 'TEMPORARILY_LOST'
                         ? 'bg-amber-400 text-neutral-950 font-semibold'
                         : 'bg-white/20 text-neutral-100'

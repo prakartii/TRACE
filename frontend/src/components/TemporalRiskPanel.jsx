@@ -3,30 +3,21 @@ import { getTemporalPatterns, getPredictiveRisk } from '../api/temporal.js'
 import { getScenarioConfig } from '../lib/scenarios.js'
 
 const SEVERITY_BADGE = {
-  Critical: 'border-red-500 bg-red-50 text-red-900',
-  High: 'border-orange-400 bg-orange-50 text-orange-900',
-  Medium: 'border-amber-400 bg-amber-50 text-amber-900',
-  Low: 'border-neutral-300 bg-neutral-100 text-neutral-700',
+  Critical: 'border-danger/40 bg-danger/10 text-danger',
+  High: 'border-signal/40 bg-signal/10 text-[#8a5f00]',
+  Medium: 'border-steel/40 bg-steel/10 text-steel',
+  Low: 'border-line-strong bg-paper text-ink-soft',
 }
 
-/**
- * Humanizes prediction findings into the 5 core operational questions:
- * 1. What did TRACE see?
- * 2. What is happening?
- * 3. Why does it matter?
- * 4. What could happen next?
- * 5. What should the supervisor do?
- */
 function getHumanPredictionStory(pred) {
   const scenario = pred.predicted_scenario || ''
   const chainKey = pred.supporting_pattern?.scenario || ''
   const band = pred.predicted_band || 'Medium'
 
-  // Specific high-frequency warehouse precursor chains
   if (scenario === 'precursor_consequence_materialisation') {
     if (chainKey.includes('straps') && chainKey.includes('drop')) {
       return {
-        title: 'Packaging Strap Failure Leading to Package Drop',
+        title: 'Packaging strap failure leading to package drop',
         whatWeSaw: 'Worker was observed lifting cargo by plastic packaging straps, followed by sudden downward drop motion.',
         whyItMatters: 'Packaging straps are designed for carton bundling, not as handles. Tensile stress can snap straps suddenly during carry.',
         whatMayHappen: 'Strap breakage leading to high-impact floor drop, destroyed merchandise, and hand lacerations.',
@@ -41,7 +32,7 @@ function getHumanPredictionStory(pred) {
     }
     if (chainKey.includes('rolling') && chainKey.includes('dock')) {
       return {
-        title: 'Rolling Cargo Nearing Unprotected Dock Edge',
+        title: 'Rolling cargo nearing unprotected dock edge',
         whatWeSaw: 'Carton was rolled along the floor toward the open dock ledge boundary.',
         whyItMatters: 'Rolling momentum makes heavy cartons difficult to arrest before reaching the unbarricaded dock gap.',
         whatMayHappen: 'Carton rolls off the dock edge into the truck gap or onto the driveway below.',
@@ -56,7 +47,7 @@ function getHumanPredictionStory(pred) {
     }
     if (chainKey.includes('drag') && chainKey.includes('orientation')) {
       return {
-        title: 'Floor Dragging Resulting in Wrong Package Orientation',
+        title: 'Floor dragging resulting in wrong package orientation',
         whatWeSaw: 'Carton was dragged along the floor, leaving it in an inverted or non-compliant orientation.',
         whyItMatters: 'Floor friction catches carton edges, flipping boxes off-axis and violating this-side-up requirements.',
         whatMayHappen: 'Liquid product leakage, internal component shifting, or crush failure under top load.',
@@ -71,7 +62,7 @@ function getHumanPredictionStory(pred) {
     }
     if (chainKey.includes('solo') && chainKey.includes('drop')) {
       return {
-        title: 'Fatigue Drop Risk from Solo Heavy Lift',
+        title: 'Fatigue drop risk from solo heavy lift',
         whatWeSaw: 'Single worker carried heavy cargo without assistance, followed by unstable slip or drop motion.',
         whyItMatters: 'Solo carry of heavy items causes rapid muscle fatigue and sudden grip failure.',
         whatMayHappen: 'Package dropped onto floor or worker foot; potential lumbar strain injury.',
@@ -86,7 +77,7 @@ function getHumanPredictionStory(pred) {
     }
 
     return {
-      title: 'Warning Sign Leading to Secondary Hazard',
+      title: 'Warning sign leading to secondary hazard',
       whatWeSaw: 'A known high-risk handling practice was detected immediately prior to a secondary hazard condition.',
       whyItMatters: 'The initial unsafe action directly elevates the likelihood of the follow-on incident occurring.',
       whatMayHappen: 'Compounding damage or handling failure if the initial practice is not corrected.',
@@ -102,7 +93,7 @@ function getHumanPredictionStory(pred) {
 
   if (scenario === 'confirmed_drop_incident') {
     return {
-      title: 'Potential Carton Impact & Drop Damage',
+      title: 'Potential carton impact & drop damage',
       whatWeSaw: 'Repeated downward acceleration spikes and impact vibrations were detected during cargo transfer.',
       whyItMatters: 'Frequent drop shocks weaken internal packaging, shatter contents, and rupture tape seals.',
       whatMayHappen: 'Severe internal product breakage or carton tearing upon delivery.',
@@ -118,7 +109,7 @@ function getHumanPredictionStory(pred) {
 
   if (scenario === 'musculoskeletal_injury_risk') {
     return {
-      title: 'Worker Ergonomic Strain & Injury Risk',
+      title: 'Worker ergonomic strain & injury risk',
       whatWeSaw: 'Heavy packages are repeatedly being lifted and carried by an individual worker without assistance.',
       whyItMatters: 'Continuous solo lifting of heavy SKUs exceeds ergonomic thresholds and leads to severe back injuries.',
       whatMayHappen: 'Worker lumbar strain injury, loss of grip, or sudden dropped load.',
@@ -134,7 +125,7 @@ function getHumanPredictionStory(pred) {
 
   if (scenario === 'surface_damage_or_packaging_failure') {
     return {
-      title: 'Packaging Abrasion & Floor Drag Damage',
+      title: 'Packaging abrasion & floor drag damage',
       whatWeSaw: 'Packages are repeatedly being dragged along the floor surface instead of being carried or wheeled.',
       whyItMatters: 'Abrasive floor friction wears through bottom corrugated layers, breaks tape seals, and snags on joints.',
       whatMayHappen: 'Bottom panel burst when lifted, resulting in spilled and damaged inventory.',
@@ -150,7 +141,7 @@ function getHumanPredictionStory(pred) {
 
   if (scenario === 'unresolved_escalation') {
     return {
-      title: 'Escalating Load Instability Hazard',
+      title: 'Escalating load instability hazard',
       whatWeSaw: 'Risk severity scores have steadily increased across consecutive handling actions without stabilizing.',
       whyItMatters: 'An escalating risk trend indicates that cargo balance or handling conditions are progressively deteriorating.',
       whatMayHappen: 'Sudden stack collapse, toppling cargo, or major handling failure.',
@@ -164,7 +155,6 @@ function getHumanPredictionStory(pred) {
     }
   }
 
-  // Generic clean fallback
   const cleanTitle = scenario.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   return {
     title: cleanTitle,
@@ -181,9 +171,6 @@ function getHumanPredictionStory(pred) {
   }
 }
 
-/**
- * Humanizes temporal sequence patterns into supervisor-understandable stories.
- */
 function getHumanPatternStory(pat) {
   const patternType = pat.pattern_type
   const scenarioKey = pat.scenario || ''
@@ -194,21 +181,21 @@ function getHumanPatternStory(pat) {
   if (patternType === 'repeated_behaviour') {
     let title = config.title
     if (scenarioKey === 'entity_in_dock_edge_zone') {
-      title = 'Workers Repeatedly In Unsafe Dock-Edge Area'
+      title = 'Workers repeatedly in unsafe dock-edge area'
     } else if (scenarioKey === 'entity_in_wet_floor_zone') {
-      title = 'Cargo Handled Repeatedly In Marked Wet Floor Zone'
+      title = 'Cargo handled repeatedly in marked wet floor zone'
     } else if (scenarioKey === 'dragging_precursor') {
-      title = 'Packages Dragged Across Floor Multiple Times'
+      title = 'Packages dragged across floor multiple times'
     } else if (scenarioKey === 'stepping_on_carton') {
-      title = 'Worker Stepping Directly Onto Cartons'
+      title = 'Worker stepping directly onto cartons'
     } else if (scenarioKey === 'straps_as_handles') {
-      title = 'Workers Frequently Using Straps as Handles'
+      title = 'Workers frequently using straps as handles'
     }
 
     return {
       title,
-      badgeLabel: 'UNSAFE BEHAVIOUR REPEATED',
-      badgeStyle: 'border-amber-400 bg-amber-50 text-amber-900',
+      badgeLabel: 'unsafe behaviour repeated',
+      badgeStyle: 'border-signal/40 bg-signal/10 text-[#8a5f00]',
       whatWeSaw: `This unsafe action was detected ${count} times within ${durationSec > 0 ? `${durationSec} seconds` : 'the observation window'}.`,
       whyItMatters: `${config.whyItMatters} Because this happened repeatedly rather than as an isolated slip, it suggests a recurring habit that requires supervisor intervention.`,
       recommendedResponse: config.recommendedAction,
@@ -218,9 +205,9 @@ function getHumanPatternStory(pat) {
 
   if (patternType === 'escalating_risk') {
     return {
-      title: 'Handling Risk Severity Steadily Increasing',
-      badgeLabel: 'RISK IS INCREASING',
-      badgeStyle: 'border-red-400 bg-red-50 text-red-900',
+      title: 'Handling risk severity steadily increasing',
+      badgeLabel: 'risk is increasing',
+      badgeStyle: 'border-danger/40 bg-danger/10 text-danger',
       whatWeSaw: `Risk score steadily increased across ${count} consecutive actions over ${durationSec} seconds (peaked at ${Math.round(pat.peak_score || 75)}/100).`,
       whyItMatters: 'A continuous upward severity curve indicates that physical cargo stability or handling posture is deteriorating over time.',
       recommendedResponse: 'Pause the current task immediately to inspect stability and reset the stack footprint.',
@@ -237,8 +224,8 @@ function getHumanPatternStory(pat) {
 
     return {
       title: `${preConfig.title} → ${conConfig.title}`,
-      badgeLabel: 'WARNING SIGN SEQUENCE',
-      badgeStyle: 'border-purple-400 bg-purple-50 text-purple-900',
+      badgeLabel: 'warning sign sequence',
+      badgeStyle: 'border-steel/40 bg-steel/10 text-steel',
       whatWeSaw: `A warning sign (${preConfig.title.toLowerCase()}) occurred, followed by a secondary hazard within ${durationSec} seconds.`,
       whyItMatters: 'The first unsafe handling practice directly created the mechanical conditions for the second hazard to occur.',
       recommendedResponse: `Correct the initial practice: ${preConfig.recommendedAction}`,
@@ -247,9 +234,9 @@ function getHumanPatternStory(pat) {
   }
 
   return {
-    title: config.title || 'Operational Sequence Pattern',
-    badgeLabel: 'PATTERN DETECTED',
-    badgeStyle: 'border-neutral-300 bg-neutral-100 text-neutral-800',
+    title: config.title || 'Operational sequence pattern',
+    badgeLabel: 'pattern detected',
+    badgeStyle: 'border-line bg-paper text-ink-soft',
     whatWeSaw: `Identified ${count} related observations over ${durationSec} seconds.`,
     whyItMatters: 'Correlated operational events indicate an ongoing workflow pattern.',
     recommendedResponse: config.recommendedAction || 'Review handling practice.',
@@ -263,22 +250,17 @@ export default function TemporalRiskPanel({
   scenario = null,
   onSelectEvent = null,
 }) {
-  const [activeTab, setActiveTab] = useState('predictions') // 'predictions' | 'patterns'
+  const [activeTab, setActiveTab] = useState('predictions')
   const [windowSec, setWindowSec] = useState(300)
   const [patternsData, setPatternsData] = useState(null)
   const [predictiveData, setPredictiveData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [collapsed, setCollapsed] = useState(false)
-
-  // Track which cards have their technical evidence & derivation details expanded
   const [expandedEvidence, setExpandedEvidence] = useState({})
 
   const toggleEvidence = (id) => {
-    setExpandedEvidence((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }))
+    setExpandedEvidence((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
   const fetchData = async () => {
@@ -310,7 +292,6 @@ export default function TemporalRiskPanel({
     fetchData()
   }, [videoId, lens, scenario, windowSec])
 
-  // Consolidate redundant predictions by scenario/chain to present compact, non-duplicated intelligence
   const consolidatedPredictions = useMemo(() => {
     if (!predictiveData?.predictions?.length) return []
     const groups = new Map()
@@ -331,7 +312,6 @@ export default function TemporalRiskPanel({
         for (const id of pred.supporting_event_ids || []) {
           existing.allEventIds.add(id)
         }
-        // Retain highest severity band
         const rank = { Critical: 3, High: 2, Medium: 1, Low: 0 }
         if ((rank[pred.predicted_band] || 0) > (rank[existing.predicted_band] || 0)) {
           existing.predicted_band = pred.predicted_band
@@ -340,7 +320,6 @@ export default function TemporalRiskPanel({
       }
     }
 
-    // Sort by severity (Critical > High > Medium > Low)
     const rank = { Critical: 3, High: 2, Medium: 1, Low: 0 }
     return Array.from(groups.values())
       .map((g) => ({
@@ -351,7 +330,6 @@ export default function TemporalRiskPanel({
       .sort((a, b) => (rank[b.predicted_band] || 0) - (rank[a.predicted_band] || 0))
   }, [predictiveData])
 
-  // Consolidate redundant temporal patterns by pattern_type and scenario
   const consolidatedPatterns = useMemo(() => {
     if (!patternsData?.patterns?.length) return []
     const groups = new Map()
@@ -397,274 +375,169 @@ export default function TemporalRiskPanel({
   const predictionCount = consolidatedPredictions.length
 
   return (
-    <div className="border border-line bg-white shadow-sm flex flex-col transition-all">
-      {/* 1. Panel Header: Supervisor-friendly branding */}
-      <div className="border-b border-line p-4 bg-neutral-900 text-white flex items-center justify-between flex-wrap gap-3">
+    <div className="flex flex-col border border-line bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-ink p-4">
         <div className="flex items-center gap-3">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold tracking-wide text-white uppercase">
-                Early Warning &amp; Operational Patterns
-              </h3>
-              <span className="text-[10px] font-bold bg-neutral-800 text-emerald-400 border border-neutral-700 px-2 py-0.5">
-                ACTIVE MONITORING
-              </span>
-            </div>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              TRACE watches sequences of actions across the shift to spot repeating unsafe habits and forecast potential damage before it happens.
+          <span className="h-2 w-2 animate-pulse motion-reduce:animate-none bg-signal" />
+          <div>
+            <h3 className="font-display text-display-md font-semibold text-paper">
+              early warning & operational patterns
+            </h3>
+            <p className="mt-0.5 text-caption text-paper/60">
+              TRACE watches sequences of actions across the shift to spot repeating unsafe habits
+              and forecast potential damage before it happens.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Time Scope Selector */}
-          <div className="flex items-center gap-1.5 text-xs text-neutral-300 bg-neutral-800 border border-neutral-700 px-2 py-1">
-            <span className="text-neutral-400">Time Scope:</span>
+          <div className="flex items-center gap-1.5 border border-paper/20 bg-ink px-2 py-1">
+            <span className="text-caption text-paper/60">time scope</span>
             <select
               value={windowSec}
               onChange={(e) => setWindowSec(Number(e.target.value))}
-              className="bg-neutral-900 border-none text-white text-xs font-semibold focus:outline-none cursor-pointer"
+              className="bg-transparent text-caption font-medium text-paper focus:outline-none"
             >
-              <option value={60}>Last 1 min (60s)</option>
-              <option value={120}>Last 2 mins (120s)</option>
-              <option value={300}>Last 5 mins (300s)</option>
-              <option value={900}>Last 15 mins</option>
-              <option value={3600}>Entire Shift (1 hr)</option>
+              <option value={60}>last 1 min</option>
+              <option value={120}>last 2 mins</option>
+              <option value={300}>last 5 mins</option>
+              <option value={900}>last 15 mins</option>
+              <option value={3600}>entire shift</option>
             </select>
           </div>
 
           <button
             type="button"
             onClick={() => setCollapsed(!collapsed)}
-            className="text-neutral-300 hover:text-white px-2 py-1 text-xs border border-neutral-700 hover:border-neutral-500 transition-colors cursor-pointer"
-            title={collapsed ? 'Expand section' : 'Collapse section'}
+            className="border border-paper/20 px-2 py-1 text-caption text-paper/80 transition-colors hover:text-paper"
           >
-            {collapsed ? '▼ Show Early Warnings' : '▲ Minimize'}
+            {collapsed ? 'show' : 'minimize'}
           </button>
         </div>
       </div>
 
       {!collapsed && (
         <>
-          {/* 2. Subheader / Tabs & Human Story Pipeline */}
-          <div className="flex items-center justify-between border-b border-line bg-neutral-50 px-4 py-2.5 text-xs flex-wrap gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-paper px-4 py-2.5">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setActiveTab('predictions')}
-                className={`px-3 py-1.5 font-bold text-xs border transition-colors cursor-pointer flex items-center gap-2 ${
+                className={`flex items-center gap-2 border px-3 py-1.5 text-caption font-medium transition-colors ${
                   activeTab === 'predictions'
-                    ? 'border-neutral-900 bg-neutral-900 text-white shadow-xs'
-                    : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100'
+                    ? 'border-ink bg-ink text-paper'
+                    : 'border-line bg-surface text-ink-soft hover:text-ink'
                 }`}
               >
-                <span>What May Happen (Forecasts)</span>
-                <span className={`px-1.5 py-0.2 text-[10px] font-bold font-mono ${
-                  activeTab === 'predictions' ? 'bg-purple-600 text-white' : 'bg-purple-100 text-purple-900'
-                }`}>
-                  {predictionCount}
-                </span>
+                what may happen
+                <span className="font-mono text-label">{predictionCount}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab('patterns')}
-                className={`px-3 py-1.5 font-bold text-xs border transition-colors cursor-pointer flex items-center gap-2 ${
+                className={`flex items-center gap-2 border px-3 py-1.5 text-caption font-medium transition-colors ${
                   activeTab === 'patterns'
-                    ? 'border-neutral-900 bg-neutral-900 text-white shadow-xs'
-                    : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100'
+                    ? 'border-ink bg-ink text-paper'
+                    : 'border-line bg-surface text-ink-soft hover:text-ink'
                 }`}
               >
-                <span>Repeated Actions (Patterns)</span>
-                <span className={`px-1.5 py-0.2 text-[10px] font-bold font-mono ${
-                  activeTab === 'patterns' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-900'
-                }`}>
-                  {patternCount}
-                </span>
+                repeated actions
+                <span className="font-mono text-label">{patternCount}</span>
               </button>
-            </div>
-
-            {/* Visual Derivation Story Flow */}
-            <div className="flex items-center gap-2 text-[11px] text-neutral-600 font-medium">
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-neutral-700" />
-                <span>WHAT WE SAW</span>
-              </span>
-              <span className="text-neutral-400">➔</span>
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                <span>PATTERN FOUND</span>
-              </span>
-              <span className="text-neutral-400">➔</span>
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-600" />
-                <span>WHAT MAY HAPPEN</span>
-              </span>
             </div>
           </div>
 
-          {/* 3. Main Content Surface */}
-          <div className="p-4 bg-white">
+          <div className="p-4">
             {loading && (
-              <div className="p-8 text-center text-xs text-neutral-600 flex items-center justify-center gap-2.5">
-                <div className="w-4 h-4 border-2 border-neutral-900 border-t-transparent animate-spin" />
-                <span>Analyzing video sequences and checking for repeating safety patterns...</span>
+              <div className="flex items-center justify-center gap-2.5 p-8 text-small text-ink-soft">
+                <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
+                analyzing sequences and checking for repeating safety patterns…
               </div>
             )}
 
             {!loading && error && (
-              <div className="p-3 text-xs bg-red-50 border border-red-200 text-red-800 flex items-center gap-2">
-                <span className="font-bold">Notice:</span> {error}
+              <div className="flex items-center gap-2 border border-danger bg-danger/5 p-3 text-small text-danger">
+                <span className="font-medium">notice:</span> {error}
               </div>
             )}
 
-            {/* TAB 1: PREDICTIVE RISK FORECASTS */}
             {!loading && !error && activeTab === 'predictions' && (
               <div className="flex flex-col gap-4">
                 {predictionCount === 0 ? (
-                  <div className="border border-dashed border-line p-6 text-center text-xs text-neutral-600 bg-neutral-50/50">
-                    <p className="font-bold text-neutral-800 text-sm mb-1">
-                      No Compounding Safety Risks Detected
-                    </p>
-                    <p className="text-xs text-neutral-600 max-w-lg mx-auto leading-relaxed">
-                      Current video observations show isolated events without multi-step escalation or repeating warning signs in this time scope.
-                    </p>
-                    <p className="text-[11px] text-neutral-500 mt-2 italic">
-                      TRACE only generates early warnings when genuine repeating patterns or warning signs are observed.
-                    </p>
-                  </div>
+                  <EmptyState title="No compounding safety risks detected">
+                    Current observations show isolated events without multi-step escalation or
+                    repeating warning signs in this time scope. TRACE only generates early warnings
+                    when genuine repeating patterns are observed.
+                  </EmptyState>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {consolidatedPredictions.map((pred) => {
                       const story = getHumanPredictionStory(pred)
                       const isExpanded = Boolean(expandedEvidence[pred.prediction_id])
                       const eventCount = pred.supporting_event_ids?.length || 1
 
                       return (
-                        <div
-                          key={pred.prediction_id}
-                          className="border border-purple-200 bg-white p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-purple-300 transition-colors"
-                        >
-                          {/* Top Badges */}
-                          <div className="flex items-center justify-between gap-2 border-b border-purple-100 pb-2 flex-wrap">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-900 border border-purple-300">
-                                LIKELY RISK
+                        <div key={pred.prediction_id} className="flex flex-col justify-between gap-3 border border-line bg-surface p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="border border-steel/40 bg-steel/10 px-2 py-0.5 text-label font-medium text-steel">
+                                likely risk
                               </span>
-                              <span className={`px-2 py-0.5 text-[10px] font-bold uppercase border ${SEVERITY_BADGE[pred.predicted_band] || SEVERITY_BADGE.Medium}`}>
-                                {pred.predicted_band} Risk
+                              <span className={`border px-2 py-0.5 text-label font-medium ${SEVERITY_BADGE[pred.predicted_band] || SEVERITY_BADGE.Medium}`}>
+                                {pred.predicted_band} risk
                               </span>
-                              <span className="text-[11px] text-neutral-500 font-medium">
-                                Certainty: <strong className="text-neutral-800">{pred.confidence}</strong>
+                              <span className="text-caption text-ink-soft">
+                                certainty: <span className="font-medium text-ink">{pred.confidence}</span>
                               </span>
                             </div>
-
-                            <span className="text-[11px] font-mono text-neutral-500">
+                            <span className="font-mono text-caption text-ink-faint">
                               {eventCount} {eventCount === 1 ? 'observation' : 'observations'}
                             </span>
                           </div>
 
-                          {/* Card Title */}
-                          <div>
-                            <h4 className="text-sm font-bold text-neutral-900 leading-snug">
-                              {story.title}
-                            </h4>
+                          <h4 className="text-title font-semibold leading-snug text-ink">{story.title}</h4>
+
+                          <div className="flex flex-col gap-2">
+                            <StoryBlock label="what we saw" tone="neutral" text={story.whatWeSaw} />
+                            <StoryBlock label="why it matters" tone="signal" text={story.whyItMatters} />
+                            <StoryBlock label="what may happen" tone="steel" text={story.whatMayHappen} footer={`when: ${story.when}`} />
+                            <StoryBlock label="recommended response" tone="ok" text={story.recommendedResponse} strong />
                           </div>
 
-                          {/* 5-Question Story Body */}
-                          <div className="flex flex-col gap-2 text-xs">
-                            {/* What we saw */}
-                            <div className="bg-neutral-50 p-2.5 border border-line">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-0.5">
-                                What we saw:
-                              </span>
-                              <p className="text-neutral-800 leading-relaxed font-sans">
-                                {story.whatWeSaw}
-                              </p>
-                            </div>
-
-                            {/* Why it matters */}
-                            <div className="bg-amber-50/50 p-2.5 border border-amber-200/80">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 block mb-0.5">
-                                Why it matters:
-                              </span>
-                              <p className="text-amber-950 leading-relaxed font-sans">
-                                {story.whyItMatters}
-                              </p>
-                            </div>
-
-                            {/* What may happen */}
-                            <div className="bg-purple-50/50 p-2.5 border border-purple-200/80">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-900 block mb-0.5">
-                                What may happen:
-                              </span>
-                              <p className="text-purple-950 font-medium leading-relaxed font-sans">
-                                {story.whatMayHappen}
-                              </p>
-                              <div className="mt-1.5 pt-1.5 border-t border-purple-200/50 text-[11px] text-neutral-600 flex items-center justify-between">
-                                <span>When this could happen:</span>
-                                <span className="font-semibold text-purple-900">{story.when}</span>
-                              </div>
-                            </div>
-
-                            {/* What should the supervisor do */}
-                            <div className="bg-emerald-50/60 p-2.5 border border-emerald-300">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900 block mb-0.5">
-                                Recommended response:
-                              </span>
-                              <p className="text-emerald-950 font-bold leading-relaxed font-sans">
-                                {story.recommendedResponse}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Expandable Evidence & Technical Proof Bar */}
-                          <div className="pt-2 border-t border-line/60">
+                          <div className="border-t border-line pt-2">
                             <button
                               type="button"
                               onClick={() => toggleEvidence(pred.prediction_id)}
-                              className="text-xs text-neutral-700 hover:text-neutral-950 font-semibold flex items-center justify-between w-full py-1 cursor-pointer"
+                              className="flex w-full items-center justify-between py-1 text-caption text-ink-soft hover:text-ink"
                             >
-                              <span className="flex items-center gap-1.5">
-                                <span className="font-bold text-neutral-900">Evidence &amp; Derivation Details</span>
-                                <span className="text-neutral-500 font-mono text-[11px]">({eventCount} events)</span>
-                              </span>
-                              <span className="text-[11px] font-mono text-neutral-500">
-                                {isExpanded ? '▲ Hide Details' : '▼ View Evidence'}
-                              </span>
+                              <span className="font-medium">evidence & derivation ({eventCount} events)</span>
+                              <span className="font-mono">{isExpanded ? '−' : '+'}</span>
                             </button>
 
                             {isExpanded && (
-                              <div className="mt-2 p-3 bg-neutral-50 border border-line flex flex-col gap-2.5 text-xs">
-                                {/* Derivation Steps */}
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                                    How TRACE reached this conclusion:
-                                  </span>
-                                  {story.derivationChain.map((step, idx) => (
-                                    <div key={idx} className="flex items-start gap-1.5 text-[11px] leading-relaxed">
-                                      <span className="font-bold text-neutral-500 font-mono">{idx + 1}.</span>
-                                      <span className={idx === 2 ? 'text-purple-950 font-semibold' : 'text-neutral-800'}>
-                                        {step}
-                                      </span>
-                                    </div>
-                                  ))}
+                              <div className="mt-2 flex flex-col gap-2.5 border border-line bg-paper p-3">
+                                <div>
+                                  <span className="text-label font-medium text-ink-soft">how TRACE reached this conclusion</span>
+                                  <div className="mt-1 flex flex-col gap-1">
+                                    {story.derivationChain.map((step, idx) => (
+                                      <div key={idx} className="flex items-start gap-1.5 text-caption leading-relaxed">
+                                        <span className="font-mono font-medium text-ink-faint">{idx + 1}.</span>
+                                        <span className={idx === 2 ? 'font-medium text-steel' : 'text-ink-soft'}>{step}</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
 
-                                {/* Supporting Event Buttons */}
-                                <div className="pt-2 border-t border-line/60 flex flex-col gap-1">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                                    Click any event to inspect video replay &amp; recorded evidence:
-                                  </span>
-                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                <div className="flex flex-col gap-1 border-t border-line pt-2">
+                                  <span className="text-label font-medium text-ink-soft">supporting events</span>
+                                  <div className="flex flex-wrap items-center gap-1.5">
                                     {pred.supporting_event_ids.map((eid) => (
                                       <button
                                         key={eid}
                                         type="button"
                                         onClick={() => onSelectEvent && onSelectEvent(eid)}
-                                        className="px-2 py-0.5 bg-white border border-neutral-300 text-neutral-900 hover:border-neutral-900 font-mono text-[11px] font-semibold transition-colors cursor-pointer shadow-2xs"
-                                        title={`Jump to Event #${eid} in recorded incident list`}
+                                        className="border border-line bg-surface px-2 py-0.5 font-mono text-caption font-medium text-ink transition-colors hover:border-ink"
                                       >
                                         #{eid}
                                       </button>
@@ -672,8 +545,9 @@ export default function TemporalRiskPanel({
                                   </div>
                                 </div>
 
-                                <div className="text-[10px] text-neutral-500 italic pt-1 border-t border-line/40">
-                                  Early warning signal grounded in real video detections. This hazard has not yet resulted in physical damage.
+                                <div className="border-t border-line pt-1 text-caption italic text-ink-faint">
+                                  Early warning signal grounded in real video detections. This hazard
+                                  has not yet resulted in physical damage.
                                 </div>
                               </div>
                             )}
@@ -686,20 +560,15 @@ export default function TemporalRiskPanel({
               </div>
             )}
 
-            {/* TAB 2: TEMPORAL PATTERNS (REPEATED BEHAVIOURS) */}
             {!loading && !error && activeTab === 'patterns' && (
               <div className="flex flex-col gap-4">
                 {patternCount === 0 ? (
-                  <div className="border border-dashed border-line p-6 text-center text-xs text-neutral-600 bg-neutral-50/50">
-                    <p className="font-bold text-neutral-800 text-sm mb-1">
-                      No Repeating Behaviour Patterns Detected
-                    </p>
-                    <p className="text-xs text-neutral-600 max-w-lg mx-auto leading-relaxed">
-                      TRACE requires at least two correlating handling actions within the time scope to identify a recurring behavioural pattern.
-                    </p>
-                  </div>
+                  <EmptyState title="No repeating behaviour patterns detected">
+                    TRACE requires at least two correlating handling actions within the time scope
+                    to identify a recurring behavioural pattern.
+                  </EmptyState>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {consolidatedPatterns.map((pat, idx) => {
                       const story = getHumanPatternStory(pat)
                       const cardId = `pattern_${idx}_${pat.scenario}`
@@ -707,110 +576,62 @@ export default function TemporalRiskPanel({
                       const eventCount = pat.supporting_event_ids?.length || 1
 
                       return (
-                        <div
-                          key={cardId}
-                          className="border border-amber-200 bg-white p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-amber-300 transition-colors"
-                        >
-                          {/* Top Badges */}
-                          <div className="flex items-center justify-between gap-2 border-b border-amber-100 pb-2 flex-wrap">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${story.badgeStyle}`}>
+                        <div key={cardId} className="flex flex-col justify-between gap-3 border border-line bg-surface p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`border px-2 py-0.5 text-label font-medium ${story.badgeStyle}`}>
                                 {story.badgeLabel}
                               </span>
-                              <span className="text-[11px] text-neutral-700 font-medium bg-neutral-100 px-2 py-0.5 border border-line">
+                              <span className="border border-line bg-paper px-2 py-0.5 text-label text-ink-soft">
                                 {story.trendText}
                               </span>
                               {pat.peak_score != null && (
-                                <span className="text-[11px] text-neutral-600 font-mono">
-                                  Peak: <strong className="text-neutral-900">{Math.round(pat.peak_score)}/100</strong>
+                                <span className="font-mono text-caption text-ink-soft">
+                                  peak: <span className="font-medium text-ink">{Math.round(pat.peak_score)}/100</span>
                                 </span>
                               )}
                             </div>
-
-                            <span className="text-[11px] font-mono text-neutral-500">
+                            <span className="font-mono text-caption text-ink-faint">
                               {eventCount} {eventCount === 1 ? 'event' : 'events'}
                             </span>
                           </div>
 
-                          {/* Card Title */}
-                          <div>
-                            <h4 className="text-sm font-bold text-neutral-900 leading-snug">
-                              {story.title}
-                            </h4>
+                          <h4 className="text-title font-semibold leading-snug text-ink">{story.title}</h4>
+
+                          <div className="flex flex-col gap-2">
+                            <StoryBlock label="what we saw" tone="neutral" text={story.whatWeSaw} />
+                            <StoryBlock label="why this matters" tone="signal" text={story.whyItMatters} />
+                            <StoryBlock label="recommended response" tone="ok" text={story.recommendedResponse} strong />
                           </div>
 
-                          {/* Story Details */}
-                          <div className="flex flex-col gap-2 text-xs">
-                            {/* What we saw */}
-                            <div className="bg-neutral-50 p-2.5 border border-line">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 block mb-0.5">
-                                What we saw:
-                              </span>
-                              <p className="text-neutral-800 leading-relaxed font-sans">
-                                {story.whatWeSaw}
-                              </p>
-                            </div>
-
-                            {/* Why it matters */}
-                            <div className="bg-amber-50/50 p-2.5 border border-amber-200/80">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 block mb-0.5">
-                                Why this matters:
-                              </span>
-                              <p className="text-amber-950 leading-relaxed font-sans">
-                                {story.whyItMatters}
-                              </p>
-                            </div>
-
-                            {/* Recommended response */}
-                            <div className="bg-emerald-50/60 p-2.5 border border-emerald-300">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-900 block mb-0.5">
-                                Recommended response:
-                              </span>
-                              <p className="text-emerald-950 font-bold leading-relaxed font-sans">
-                                {story.recommendedResponse}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Expandable Evidence Bar */}
-                          <div className="pt-2 border-t border-line/60">
+                          <div className="border-t border-line pt-2">
                             <button
                               type="button"
                               onClick={() => toggleEvidence(cardId)}
-                              className="text-xs text-neutral-700 hover:text-neutral-950 font-semibold flex items-center justify-between w-full py-1 cursor-pointer"
+                              className="flex w-full items-center justify-between py-1 text-caption text-ink-soft hover:text-ink"
                             >
-                              <span className="flex items-center gap-1.5">
-                                <span className="font-bold text-neutral-900">Evidence Details</span>
-                                <span className="text-neutral-500 font-mono text-[11px]">({eventCount} events recorded)</span>
-                              </span>
-                              <span className="text-[11px] font-mono text-neutral-500">
-                                {isExpanded ? '▲ Hide Details' : '▼ View Evidence'}
-                              </span>
+                              <span className="font-medium">evidence details ({eventCount} events)</span>
+                              <span className="font-mono">{isExpanded ? '−' : '+'}</span>
                             </button>
 
                             {isExpanded && (
-                              <div className="mt-2 p-3 bg-neutral-50 border border-line flex flex-col gap-2 text-xs">
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
-                                    Click any event to inspect video replay &amp; recorded evidence:
-                                  </span>
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    {pat.supporting_event_ids.map((eid) => (
-                                      <button
-                                        key={eid}
-                                        type="button"
-                                        onClick={() => onSelectEvent && onSelectEvent(eid)}
-                                        className="px-2 py-0.5 bg-white border border-neutral-300 text-neutral-900 hover:border-neutral-900 font-mono text-[11px] font-semibold transition-colors cursor-pointer shadow-2xs"
-                                        title={`Jump to Event #${eid} in recorded incident list`}
-                                      >
-                                        #{eid}
-                                      </button>
-                                    ))}
-                                  </div>
+                              <div className="mt-2 flex flex-col gap-2 border border-line bg-paper p-3">
+                                <span className="text-label font-medium text-ink-soft">supporting events</span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {pat.supporting_event_ids.map((eid) => (
+                                    <button
+                                      key={eid}
+                                      type="button"
+                                      onClick={() => onSelectEvent && onSelectEvent(eid)}
+                                      className="border border-line bg-surface px-2 py-0.5 font-mono text-caption font-medium text-ink transition-colors hover:border-ink"
+                                    >
+                                      #{eid}
+                                    </button>
+                                  ))}
                                 </div>
-
-                                <div className="text-[10px] text-neutral-500 italic pt-1 border-t border-line/40">
-                                  Derived deterministically from consecutive video analysis detections across the specified time scope.
+                                <div className="border-t border-line pt-1 text-caption italic text-ink-faint">
+                                  Derived deterministically from consecutive video analysis detections
+                                  across the specified time scope.
                                 </div>
                               </div>
                             )}
@@ -824,6 +645,43 @@ export default function TemporalRiskPanel({
             )}
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+function EmptyState({ title, children }) {
+  return (
+    <div className="border border-dashed border-line-strong p-6 text-center">
+      <p className="text-title font-semibold text-ink">{title}</p>
+      <p className="mx-auto mt-1 max-w-lg text-small text-ink-soft">{children}</p>
+    </div>
+  )
+}
+
+function StoryBlock({ label, tone, text, footer, strong }) {
+  const toneCls = {
+    neutral: 'border-line bg-paper',
+    signal: 'border-signal/40 bg-signal/5',
+    steel: 'border-steel/40 bg-steel/5',
+    ok: 'border-ok/40 bg-ok/5',
+  }[tone]
+  const labelCls = {
+    neutral: 'text-ink-faint',
+    signal: 'text-[#8a5f00]',
+    steel: 'text-steel',
+    ok: 'text-ok',
+  }[tone]
+  return (
+    <div className={`border p-2.5 ${toneCls}`}>
+      <span className={`block text-label font-medium ${labelCls}`}>{label}</span>
+      <p className={`mt-0.5 text-caption leading-relaxed ${tone === 'neutral' ? 'text-ink-soft' : 'text-ink'} ${strong ? 'font-medium' : ''}`}>
+        {text}
+      </p>
+      {footer && (
+        <div className="mt-1.5 flex items-center justify-between border-t border-line pt-1.5 text-caption text-ink-faint">
+          <span>{footer}</span>
+        </div>
       )}
     </div>
   )
