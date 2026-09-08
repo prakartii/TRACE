@@ -8,6 +8,7 @@ import {
   listProducts,
   listZones,
 } from '../api/videos.js'
+import CustomRuleBuilder from './CustomRuleBuilder.jsx'
 
 export default function SupervisorSettings() {
   const [products, setProducts] = useState([])
@@ -15,7 +16,7 @@ export default function SupervisorSettings() {
   const [manifests, setManifests] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [activeTab, setActiveTab] = useState('products') // 'products' | 'zones' | 'manifests'
+  const [activeTab, setActiveTab] = useState('rules') // 'rules' | 'products' | 'zones' | 'manifests'
 
   // Form states for creating a new product
   const [newSku, setNewSku] = useState({
@@ -173,6 +174,16 @@ export default function SupervisorSettings() {
       {/* Tabs */}
       <div className="flex border-b border-line gap-2">
         <button
+          onClick={() => setActiveTab('rules')}
+          className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+            activeTab === 'rules'
+              ? 'border-ink text-ink font-semibold'
+              : 'border-transparent text-neutral-500 hover:text-ink'
+          }`}
+        >
+          Custom Rules
+        </button>
+        <button
           onClick={() => setActiveTab('products')}
           className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
             activeTab === 'products'
@@ -203,6 +214,11 @@ export default function SupervisorSettings() {
           Operational Manifests ({manifests.length})
         </button>
       </div>
+
+      {/* Tab: Custom Rules */}
+      {activeTab === 'rules' && (
+        <CustomRuleBuilder />
+      )}
 
       {/* Tab: Products */}
       {activeTab === 'products' && (

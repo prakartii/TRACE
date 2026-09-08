@@ -11,9 +11,11 @@ import PlannerView from './screens/PlannerView.jsx'
 import SupervisorSettings from './screens/SupervisorSettings.jsx'
 import WhatIfReplay from './screens/WhatIfReplay.jsx'
 import Dashboard from './screens/Dashboard.jsx'
+import ScenarioCoverage from './screens/ScenarioCoverage.jsx'
 
 const SCREENS = [
   'Dashboard',
+  'Scenario Coverage',
   'Incidents',
   'Incident Replay',
   'Action Center',
@@ -59,6 +61,8 @@ function AppContent() {
         <main className="flex-1 border-l border-line px-8 py-6">
           {activeScreen === 'Dashboard' ? (
             <Dashboard />
+          ) : activeScreen === 'Scenario Coverage' || activeScreen === 'Operational Intelligence' ? (
+            <ScenarioCoverage />
           ) : activeScreen === 'Incidents' || activeScreen === 'Event Feed' ? (
             <EventFeed />
           ) : activeScreen === 'Incident Replay' ? (

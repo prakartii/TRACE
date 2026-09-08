@@ -838,7 +838,15 @@ def recognize_all_behaviours(
                     "box_detection_confidence_is_weak_pilot_class",
                 ])
                 epistemic_level = detected_action.get("epistemic_level", EpistemicLevel.INFERRED)
+                action_status = detected_action.get("status") or (
+                    FindingStatus.PROBABLE if status == FindingStatus.INSUFFICIENT_EVIDENCE else status
+                )
+                action_conf = detected_action.get("confidence") or (
+                    ConfidenceLevel.MEDIUM if confidence == ConfidenceLevel.LOW else confidence
+                )
             else:
+                action_status = status
+                action_conf = confidence
                 scenario = "box_displacement_near_person" if moving else "person_box_sustained_proximity"
                 band = RiskBand.LOW
                 custom_evidence = {}
@@ -878,14 +886,14 @@ def recognize_all_behaviours(
                     event_type=EventType.BEHAVIOUR,
                     lens=RiskLens.BEHAVIOUR,
                     entity_id=person.entity_id,
-                    confidence=confidence,
-                    status=status,
+                    confidence=action_conf,
+                    status=action_status,
                     band=band,
                     scenario=scenario,
                     entities=[person.entity_id, box.entity_id],
                     evidence=ev_dict,
                     explanation=explanation,
-                    recommended_action=recommended_action(scenario, status),
+                    recommended_action=recommended_action(scenario, action_status),
                     limitations=limitations,
                     epistemic_level=epistemic_level,
                 )

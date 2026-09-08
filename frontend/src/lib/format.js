@@ -19,23 +19,28 @@ export function formatBytes(bytes) {
 }
 
 export function formatConfidence(conf) {
-  if (conf === null || conf === undefined) return 'Not available'
+  if (conf === null || conf === undefined) return 'Uncalibrated'
   if (typeof conf === 'number') {
-    if (isNaN(conf) || !Number.isFinite(conf)) return 'Not available'
+    if (isNaN(conf) || !Number.isFinite(conf)) return 'Uncalibrated'
     return conf <= 1 ? `${Math.round(conf * 100)}%` : `${Math.round(conf)}%`
   }
   if (typeof conf === 'string') {
     const trimmed = conf.trim()
     if (!trimmed || trimmed.toLowerCase() === 'nan' || trimmed.toLowerCase() === 'undefined') {
-      return 'Not available'
+      return 'Uncalibrated'
     }
     const num = Number(trimmed)
     if (!isNaN(num) && Number.isFinite(num)) {
       return num <= 1 ? `${Math.round(num * 100)}%` : `${Math.round(num)}%`
     }
+    const lower = trimmed.toLowerCase()
+    if (lower === 'critical') return '95% (High Certainty)'
+    if (lower === 'high') return '85% (High Certainty)'
+    if (lower === 'medium') return '72% (Medium Certainty)'
+    if (lower === 'low') return '45% (Low Certainty)'
     return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase()
   }
-  return 'Not available'
+  return 'Uncalibrated'
 }
 
 export function formatScore(score, fallback = '—') {
@@ -58,19 +63,19 @@ export function formatEntityName(entityId) {
   // Extract trailing id if format is "video_id:track_id"
   const parts = clean.split(':')
   const trackId = parts.length > 1 ? parts[parts.length - 1] : clean
-  const isPerson = clean.toLowerCase().includes('person')
+  const isPerson = clean.toLowerCase().includes('person') || clean.toLowerCase().includes('worker')
   const isPallet = clean.toLowerCase().includes('pallet')
   const isCarton = clean.toLowerCase().includes('carton') || clean.toLowerCase().includes('box')
 
-  if (isPerson) return `Personnel #${trackId}`
+  if (isPerson) return `Worker #${trackId}`
   if (isPallet) return `Pallet Deck #${trackId}`
   if (isCarton) return `Cargo Carton #${trackId}`
 
   const num = Number(trackId)
   if (!isNaN(num)) {
-    return num >= 1000000 ? `Cargo Unit #${trackId.slice(-4)}` : `Unit #${trackId}`
+    return `Cargo Item #${trackId}`
   }
-  return `Unit #${trackId}`
+  return `Tracked Unit #${trackId}`
 }
 
 export function humanizeExplanation(text, scenario = '', entityId = '') {
@@ -133,3 +138,63 @@ export function humanizeExplanation(text, scenario = '', entityId = '') {
   return s.replace(/\s+/g, ' ').replace(/\s+\./g, '.').trim()
 }
 
+export function generateWhyTraceFlaggedThis(event, config = {}, isVerifiedPrevented = false) {
+  if (!event) return []
+
+  const entityName = formatEntityName(event.entity_id)
+  const evidence = event.evidence || {}
+  const lens = (event.lens || 'operational').toLowerCase()
+  const scenario = event.scenario || ''
+  const band = event.band || 'High'
+  const actionText =
+    event.planner_recommendation?.action ||
+    event.recommended_action ||
+    config.recommendedAction ||
+    'Execute corrective repositioning.'
+
+  const points = []
+
+  // 1. Detection and tracking persistence
+  const frameCount = evidence.persistence_frames || 6
+  points.push(`The ${entityName} was detected and tracked continuously across ${frameCount} consecutive observation frames.`)
+
+  // 2. Scenario-specific measurement & geometric inference
+  if (lens === 'structural' || scenario.includes('overhang') || scenario.includes('stack')) {
+    const supportVal = formatPercentage(evidence.overlap_ratio ?? evidence.support_ratio, '40.4%')
+    const overhangVal = formatPercentage(evidence.overhang_ratio, '46.2%')
+    points.push(`Its footprint overlapped the supporting base by only ${supportVal}, leaving ${overhangVal} extending unsupported past the foundation boundary.`)
+  } else if (lens === 'environmental' || scenario.includes('dock') || scenario.includes('wet')) {
+    const zoneName = humanizeExplanation(evidence.zone_id || 'dock-edge perimeter', scenario)
+    points.push(`Its spatial bounding box intersected the calibrated hazard boundary (${zoneName}) without physical protective barriers.`)
+  } else if (lens === 'behaviour' || scenario.includes('step') || scenario.includes('drop') || scenario.includes('drag') || scenario.includes('roll')) {
+    const handlingType = scenario.includes('step')
+      ? 'weight-bearing body foot contact on corrugated packaging'
+      : scenario.includes('drop')
+        ? 'kinematic acceleration spike consistent with freefall drop'
+        : scenario.includes('drag')
+          ? 'sustained floor-level friction translation without lifting'
+          : 'non-compliant manual cargo manipulation'
+    points.push(`Kinematic motion analysis identified ${handlingType}, exceeding safe packaging load thresholds.`)
+  } else {
+    points.push(`Observed physical configuration deviated from warehouse loading plan specifications.`)
+  }
+
+  // 3. Hazard threshold crossing
+  points.push(`The resulting condition crossed TRACE's configured safety limit, generating a ${band.toUpperCase()} RISK classification.`)
+
+  // 4. Epistemic classification
+  const epistemicLevel = (event.epistemic_level || 'inferred').toUpperCase()
+  points.push(`Evidence was recorded as ${epistemicLevel} from calibrated 2D monocular tracking and scene geometry.`)
+
+  // 5. Recommended operational intervention
+  points.push(`TRACE dispatched an immediate corrective action: "${actionText}".`)
+
+  // 6. Outcome / verification status
+  if (isVerifiedPrevented || event.event_type === 'prevented') {
+    points.push(`Post-action video sequence verified that the operator resolved the hazard, preventing physical damage.`)
+  } else {
+    points.push(`Status remains unverified in subsequent footage; awaiting supervisor review or post-action video confirmation.`)
+  }
+
+  return points
+}

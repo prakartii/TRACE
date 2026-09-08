@@ -391,7 +391,7 @@ def plan_action(
         what_if_eligible = scen in WHAT_IF_ELIGIBLE_SCENARIOS and not is_person_support
     elif status == FindingStatus.INSUFFICIENT_EVIDENCE:
         action_text = "Additional evidence is required before recommending a corrective placement."
-        rationale = "Available sensor evidence does not meet confidence or sample thresholds to justify physical intervention."
+        rationale = f"Preliminary observation flagged for review ({basis_text}). Additional sample persistence or manifest linkage required before automated physical intervention."
         what_if_eligible = False
     else:  # UNSUPPORTED
         action_text = "TRACE cannot safely determine this condition from available evidence."

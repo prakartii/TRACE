@@ -10,6 +10,7 @@ layer are added in their own phase (see CLAUDE.md §4).
 """
 
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,9 +22,11 @@ from backend.api.perception import router as perception_router
 from backend.api.measurement import router as measurement_router
 from backend.api.planner_whatif import canonical_router as canonical_whatif_router
 from backend.api.planner_whatif import router as planner_whatif_router
+from backend.api.rules import router as rules_router
 from backend.api.scene import router as scene_router
 from backend.api.simulation import router as simulation_router
 from backend.api.supervisor import router as supervisor_router
+from backend.api.temporal import router as temporal_router
 from backend.api.videos import router as videos_router
 from backend.db.db import create_database
 
@@ -34,7 +37,14 @@ BUILD_PHASE = "Phase 12 - Behaviour Recognition"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    create_database()
+    conn = create_database()
+    try:
+        from backend.rules.db import seed_default_rule
+        seed_default_rule(conn)
+    except Exception as exc:
+        logging.getLogger("trace.rules").warning("Rules seed skipped: %s", exc)
+    finally:
+        conn.close()
     yield
 
 
@@ -58,6 +68,8 @@ app.include_router(canonical_whatif_router)
 app.include_router(supervisor_router)
 app.include_router(measurement_router)
 app.include_router(behaviour_router)
+app.include_router(rules_router)
+app.include_router(temporal_router)
 
 
 @app.get("/health")

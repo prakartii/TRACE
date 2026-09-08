@@ -10,6 +10,7 @@ import {
   formatEntityName,
   humanizeExplanation,
 } from '../lib/format.js'
+import TemporalRiskPanel from '../components/TemporalRiskPanel.jsx'
 
 const STATUS_STYLE = {
   supported: 'border-emerald-300 bg-emerald-50 text-emerald-800',
@@ -228,10 +229,12 @@ export default function EventFeed() {
       const data = await listEvents(filters)
       setEvents(data)
 
-      // Auto-select first event if none selected and results exist
-      if (data.length > 0 && !selectedEventId) {
-        setSelectedEventId(data[0].event_id)
-      } else if (data.length === 0) {
+      // Auto-select first event if none selected, or if current selectedEvent is not in the filtered list
+      if (data.length > 0) {
+        if (!selectedEventId || !data.some((ev) => ev.event_id === selectedEventId)) {
+          setSelectedEventId(data[0].event_id)
+        }
+      } else {
         setSelectedEvent(null)
         setSelectedEventId(null)
       }
@@ -431,7 +434,7 @@ export default function EventFeed() {
           <span className="text-xs font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
             <span>Filters</span>
             {activeFilterCount > 0 && (
-              <span className="bg-neutral-900 text-white text-[10px] font-mono tabular-nums px-1.5 py-0.2 rounded-full">
+              <span className="bg-neutral-900 text-white text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded-full">
                 {activeFilterCount}
               </span>
             )}
@@ -563,7 +566,7 @@ export default function EventFeed() {
         </div>
       </div>
 
-      {/* 3. Main Workspace: Feed List & Event Detail Surface */}
+      {/* 2. Main Workspace: Feed List & Event Detail Surface */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Events Feed (7 cols) */}
         <div className="lg:col-span-7 flex flex-col gap-3">
@@ -702,23 +705,23 @@ export default function EventFeed() {
                           {formatTimestamp(ev.timestamp)}
                         </span>
                         {ev._clusterCount > 1 && (
-                          <span className="border border-blue-300 bg-blue-50 text-blue-800 text-[10px] font-bold uppercase px-1.5 py-0.2">
+                          <span className="border border-blue-300 bg-blue-50 text-blue-800 text-[10px] font-bold uppercase px-1.5 py-0.5">
                             {ev._clusterCount} Detections ({formatTimestamp(ev._minTimestamp)} – {formatTimestamp(ev._maxTimestamp)})
                           </span>
                         )}
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        <span className={`border px-1.5 py-0.2 text-[10px] font-bold tracking-wide ${statusCls}`}>
+                        <span className={`border px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${statusCls}`}>
                           {STATUS_LABEL[ev.status] || ev.status?.toUpperCase()}
                         </span>
                         {ev.event_type === 'prevented' && (
-                          <span className="border border-emerald-500 bg-emerald-50 text-emerald-800 px-1.5 py-0.2 text-[9px] uppercase tracking-wider font-bold">
+                          <span className="border border-emerald-500 bg-emerald-50 text-emerald-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-bold">
                             PREVENTED
                           </span>
                         )}
                         {ev.event_type === 'near_miss' && (
-                          <span className="border border-amber-500 bg-amber-50 text-amber-800 px-1.5 py-0.2 text-[9px] uppercase tracking-wider font-bold">
+                          <span className="border border-amber-500 bg-amber-50 text-amber-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-bold">
                             NEAR-MISS
                           </span>
                         )}
@@ -909,7 +912,7 @@ export default function EventFeed() {
                     <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 flex items-center justify-between">
                       <span>2. Recommended Safe Action</span>
                       {selectedEvent.planner_recommendation.what_if_eligible && (
-                        <span className="border border-emerald-300 bg-emerald-50 text-emerald-800 text-[9px] px-1.5 py-0.2 font-semibold">
+                        <span className="border border-emerald-300 bg-emerald-50 text-emerald-800 text-[9px] px-1.5 py-0.5 font-semibold">
                           WHAT-IF ELIGIBLE
                         </span>
                       )}
@@ -943,7 +946,7 @@ export default function EventFeed() {
                       3. Responsible AI Operator Review
                     </span>
                     {selectedEvent.reviewed && selectedEvent.review_status ? (
-                      <span className={`border px-1.5 py-0.2 text-[9px] font-bold ${REVIEW_BADGES[selectedEvent.review_status]?.style}`}>
+                      <span className={`border px-1.5 py-0.5 text-[9px] font-bold ${REVIEW_BADGES[selectedEvent.review_status]?.style}`}>
                         {REVIEW_BADGES[selectedEvent.review_status]?.label}
                       </span>
                     ) : (
@@ -1066,6 +1069,16 @@ export default function EventFeed() {
           </div>
         </div>
       </div>
+
+      {/* 3. Secondary Intelligence Layer: Temporal Reasoning & Predictive Risk Engine */}
+      <TemporalRiskPanel
+        videoId={filterVideo || null}
+        lens={filterLens || null}
+        scenario={null}
+        onSelectEvent={(eid) => {
+          setSelectedEventId(eid)
+        }}
+      />
     </div>
   )
 }

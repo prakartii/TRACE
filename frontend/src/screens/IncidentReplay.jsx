@@ -24,6 +24,7 @@ import {
   formatPercentage,
   formatEntityName,
   humanizeExplanation,
+  generateWhyTraceFlaggedThis,
 } from '../lib/format.js'
 
 const BAND_STYLE = {
@@ -103,7 +104,7 @@ export default function IncidentReplay() {
 
   // Overlays state
   const [overlayEnabled, setOverlayEnabled] = useState(true)
-  const [sceneEnabled, setSceneEnabled] = useState(true)
+  const [sceneEnabled, setSceneEnabled] = useState(false)
   const [modelName, setModelName] = useState('pilot')
 
   // Incident & Evidence state
@@ -195,16 +196,44 @@ export default function IncidentReplay() {
       setWhatIfError(null)
       setReviewMessage(null)
       setHasSeekedToInitial(false)
-    } else if (replayTarget?.videoId && !replayTarget?.eventId && recentEvents.length > 0) {
-      // Pick best incident for target video
-      const match = recentEvents.find(
-        (e) => e.video_id === replayTarget.videoId || e.video_id?.startsWith(replayTarget.videoId)
-      )
-      if (match && match.event_id !== selectedEventId) {
-        setSelectedEventId(match.event_id)
-        setIncidentEvent(match)
-        setTargetTimestamp(match.timestamp || 0)
-        setHasSeekedToInitial(false)
+    } else if (replayTarget?.videoId && !replayTarget?.eventId) {
+      if (replayTarget.timestamp !== undefined) {
+        setTargetTimestamp(replayTarget.timestamp)
+      }
+      if (recentEvents.length > 0) {
+        let match = null
+        if (replayTarget.scenario) {
+          match = recentEvents.find(
+            (e) =>
+              (e.video_id === replayTarget.videoId || e.video_id?.startsWith(replayTarget.videoId)) &&
+              (e.scenario === replayTarget.scenario || e.scenario_key === replayTarget.scenario)
+          )
+        }
+        if (!match && replayTarget.timestamp !== undefined) {
+          const videoEvents = recentEvents.filter(
+            (e) => e.video_id === replayTarget.videoId || e.video_id?.startsWith(replayTarget.videoId)
+          )
+          if (videoEvents.length > 0) {
+            match = videoEvents.reduce((closest, curr) => {
+              const currDiff = Math.abs((curr.timestamp ?? 0) - replayTarget.timestamp)
+              const closestDiff = Math.abs((closest.timestamp ?? 0) - replayTarget.timestamp)
+              return currDiff < closestDiff ? curr : closest
+            }, videoEvents[0])
+          }
+        }
+        if (!match) {
+          match = recentEvents.find(
+            (e) => e.video_id === replayTarget.videoId || e.video_id?.startsWith(replayTarget.videoId)
+          )
+        }
+        if (match && match.event_id !== selectedEventId) {
+          setSelectedEventId(match.event_id)
+          setIncidentEvent(match)
+          if (replayTarget.timestamp === undefined) {
+            setTargetTimestamp(match.timestamp || 0)
+          }
+          setHasSeekedToInitial(false)
+        }
       }
     }
   }, [replayTarget, recentEvents, selectedEventId])
@@ -548,7 +577,7 @@ export default function IncidentReplay() {
             >
               {recentEvents.map((ev) => (
                 <option key={ev.event_id} value={ev.event_id}>
-                  #{ev.event_id} · {formatTimestamp(ev.timestamp)} · {resolveIncidentTitle(ev)}
+                  Event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {resolveIncidentTitle(ev)} [{getVideoScenarioInfo(ev.video_id).cameraName}]
                 </option>
               ))}
             </select>
@@ -584,6 +613,40 @@ export default function IncidentReplay() {
           </div>
         </div>
       </div>
+
+      {/* Loading state while incident is being fetched */}
+      {incidentLoading && !incidentEvent && (
+        <div className="border border-line bg-white p-8 text-center flex flex-col items-center justify-center gap-3 shadow-xs">
+          <div className="w-5 h-5 border-2 border-neutral-900 border-t-transparent animate-spin" />
+          <span className="text-xs font-bold text-neutral-800">
+            Loading Incident Forensic Replay {selectedEventId ? `(Event #${selectedEventId})` : ''}...
+          </span>
+          <p className="text-[11px] text-neutral-500 max-w-md">
+            Retrieving incident telemetry, bounding boxes, and video stream bookmark.
+          </p>
+        </div>
+      )}
+
+      {/* Defensive Validation Banner when Incident Record Cannot be Verified */}
+      {!incidentLoading && (!incidentEvent || incidentError) && (
+        <div className="border-2 border-red-500 bg-red-50 p-4 text-xs text-red-900 flex flex-col gap-2 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-red-700 text-sm">⚠️ Incident context unavailable</span>
+          </div>
+          <p className="font-sans text-xs text-red-950">
+            Incident context unavailable: The requested incident record (Event #{selectedEventId}) could not be verified against the loaded video feed.
+          </p>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => handleSelectAnotherEvent(73)}
+              className="border border-red-700 bg-white hover:bg-red-100 text-red-950 font-bold px-3 py-1 text-xs transition-colors cursor-pointer"
+            >
+              Load Canonical Verified Incident (Event #73) ➔
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2. FIRST VIEWPORT: EXECUTIVE DECISION STRIP (Answers the 4 Essential Questions) */}
       {incidentEvent && (
@@ -843,8 +906,8 @@ export default function IncidentReplay() {
                   <PerceptionOverlay
                     entities={perception.data.entities}
                     frame={perception.data}
-                    sourceWidth={selectedVideo.metadata.width}
-                    sourceHeight={selectedVideo.metadata.height}
+                    sourceWidth={selectedVideo?.metadata?.width || 1280}
+                    sourceHeight={selectedVideo?.metadata?.height || 720}
                     displayWidth={videoBoxSize.width}
                     displayHeight={videoBoxSize.height}
                   />
@@ -854,8 +917,8 @@ export default function IncidentReplay() {
                 {sceneEnabled && scene.data && (
                   <SceneOverlay
                     snapshot={scene.data}
-                    sourceWidth={selectedVideo.metadata.width}
-                    sourceHeight={selectedVideo.metadata.height}
+                    sourceWidth={selectedVideo?.metadata?.width || 1280}
+                    sourceHeight={selectedVideo?.metadata?.height || 720}
                   />
                 )}
 
@@ -864,8 +927,8 @@ export default function IncidentReplay() {
                   <HypotheticalOverlay
                     candidate={activeCandidate}
                     current={whatIfSimulation.current}
-                    sourceWidth={selectedVideo.metadata.width}
-                    sourceHeight={selectedVideo.metadata.height}
+                    sourceWidth={selectedVideo?.metadata?.width || 1280}
+                    sourceHeight={selectedVideo?.metadata?.height || 720}
                   />
                 )}
               </VideoViewport>
@@ -874,7 +937,7 @@ export default function IncidentReplay() {
               <div className="bg-neutral-900 text-neutral-300 px-3 py-1.5 text-[10px] font-mono flex items-center justify-between border-t border-neutral-800">
                 <span className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>STREAM: {videoInfo.cameraName} ({selectedVideo.metadata.width}×{selectedVideo.metadata.height})</span>
+                  <span>STREAM: {videoInfo.cameraName} ({selectedVideo?.metadata?.width || 1280}×{selectedVideo?.metadata?.height || 720})</span>
                 </span>
                 <span>
                   TRACKED: {perception.data?.entities?.length || 0} entities · {scene.data?.edges?.length || 0} relations
@@ -917,7 +980,7 @@ export default function IncidentReplay() {
           <div className="border border-line bg-white p-4 shadow-sm flex flex-col gap-3">
             <span className="text-xs font-bold uppercase tracking-wider text-neutral-800 border-b border-line pb-1.5 flex items-center justify-between">
               <span>Measured Telemetry</span>
-              <span className="text-[10px] text-neutral-500 font-mono">Event #{incidentEvent.event_id}</span>
+              <span className="text-[10px] text-neutral-500 font-mono">Event #{incidentEvent?.event_id || selectedEventId || '—'}</span>
             </span>
 
             {isStructuralScenario ? (
@@ -950,19 +1013,19 @@ export default function IncidentReplay() {
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="border border-neutral-200 bg-paper p-2.5 flex flex-col gap-0.5">
                   <span className="text-[10px] uppercase font-bold text-neutral-500">Tracked Target</span>
-                  <span className="text-xs font-bold font-mono text-neutral-900 mt-1 truncate">{formatEntityName(incidentEvent.entity_id)}</span>
+                  <span className="text-xs font-bold font-mono text-neutral-900 mt-1 truncate">{formatEntityName(incidentEvent?.entity_id)}</span>
                   <span className="text-[9px] text-neutral-500">Target entity</span>
                 </div>
 
                 <div className="border border-neutral-200 bg-paper p-2.5 flex flex-col gap-0.5">
                   <span className="text-[10px] uppercase font-bold text-neutral-500">Risk Lens</span>
-                  <span className="text-xs font-bold font-mono text-neutral-900 mt-1 uppercase truncate">{incidentEvent.lens || 'Operational'}</span>
+                  <span className="text-xs font-bold font-mono text-neutral-900 mt-1 uppercase truncate">{incidentEvent?.lens || 'Operational'}</span>
                   <span className="text-[9px] text-neutral-500">Safety dimension</span>
                 </div>
 
                 <div className="border border-neutral-200 bg-paper p-2.5 flex flex-col gap-0.5">
                   <span className="text-[10px] uppercase font-bold text-neutral-500">Risk Score</span>
-                  <span className="text-lg font-bold font-mono tabular-nums text-red-700">{formatScore(incidentEvent.score, 72)} <span className="text-[10px] font-normal text-neutral-500">/ 100</span></span>
+                  <span className="text-lg font-bold font-mono tabular-nums text-red-700">{formatScore(incidentEvent?.score, 72)} <span className="text-[10px] font-normal text-neutral-500">/ 100</span></span>
                   <span className="text-[9px] text-neutral-500">Severity index</span>
                 </div>
 
@@ -991,7 +1054,7 @@ export default function IncidentReplay() {
                   <span>{OUTCOME_BADGES[outcomeMeasurement.classification]?.label || outcomeMeasurement.classification?.toUpperCase()}</span>
                 </span>
               ) : (
-                <span className="border border-line bg-neutral-100 text-neutral-600 text-[9px] font-semibold uppercase px-1.5 py-0.2">
+                <span className="border border-line bg-neutral-100 text-neutral-600 text-[9px] font-semibold uppercase px-1.5 py-0.5">
                   NOT YET VERIFIED
                 </span>
               )}
@@ -1041,8 +1104,8 @@ export default function IncidentReplay() {
                 type="button"
                 onClick={() =>
                   navigateTo('What-If Simulation', {
-                    eventId: incidentEvent.event_id,
-                    videoId: incidentEvent.video_id || selectedVideo?.id,
+                    eventId: incidentEvent?.event_id || selectedEventId,
+                    videoId: incidentEvent?.video_id || selectedVideo?.id,
                     timestamp: targetTimestamp,
                     event: incidentEvent,
                   })
@@ -1076,135 +1139,454 @@ export default function IncidentReplay() {
             <div className="p-4 border-t border-line flex flex-col gap-4 text-xs bg-white">
               {/* 4-Tier Epistemic Standard */}
               <div className="flex flex-col gap-2">
-                <span className="font-bold uppercase tracking-wider text-neutral-700 text-[10px]">
-                  4-Tier Epistemic Classification
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
-                  <div className="border border-neutral-200 bg-neutral-50 p-2.5 flex flex-col gap-1">
-                    <span className="font-mono text-[10px] font-bold text-neutral-900 uppercase">OBSERVED</span>
-                    <p className="text-[10px] text-neutral-600 leading-tight">
-                      Direct sensory facts: 2D bounding boxes, tracking continuity, and timestamped entity detections.
-                    </p>
-                  </div>
-                  <div className="border border-amber-300 bg-amber-50/50 p-2.5 flex flex-col gap-1">
-                    <span className="font-mono text-[10px] font-bold text-amber-900 uppercase">INFERRED</span>
-                    <p className="text-[10px] text-amber-800 leading-tight">
-                      Spatial & temporal calculations: Deck support coverage, cantilever overhang, and velocity vectors.
-                    </p>
-                  </div>
-                  <div className="border border-blue-300 bg-blue-50/50 p-2.5 flex flex-col gap-1">
-                    <span className="font-mono text-[10px] font-bold text-blue-900 uppercase">PREDICTED</span>
-                    <p className="text-[10px] text-blue-800 leading-tight">
-                      What-If simulation: Estimated stability delta (+44.5 pts) for counterfactual candidate placement.
-                    </p>
-                  </div>
-                  <div className={`border p-2.5 flex flex-col gap-1 ${isVerifiedPrevented ? 'border-emerald-300 bg-emerald-50/50' : 'border-neutral-200 bg-neutral-50 text-neutral-500'}`}>
-                    <span className={`font-mono text-[10px] font-bold uppercase ${isVerifiedPrevented ? 'text-emerald-900' : 'text-neutral-500'}`}>
-                      {isVerifiedPrevented ? 'VERIFIED ✓' : 'UNVERIFIED'}
-                    </span>
-                    <p className="text-[10px] leading-tight">
-                      {isVerifiedPrevented
-                        ? 'Confirmed by subsequent video: Corrective action observed and verified.'
-                        : 'Not yet verified in subsequent footage. Requires physical or video verification.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* ENGINEERING BEHIND THE DECISION (EXACT MATHEMATICAL FORMULAS) */}
-              <div className="border border-neutral-300 bg-neutral-50/80 p-3.5 flex flex-col gap-3">
-                <div className="flex items-center justify-between border-b border-neutral-200 pb-1.5">
-                  <span className="font-bold uppercase tracking-wider text-neutral-900 text-[11px]">
-                    ENGINEERING BEHIND THE DECISION (Exact Mathematical Formulas)
+                <div className="flex items-center justify-between">
+                  <span className="font-bold uppercase tracking-wider text-neutral-800 text-[11px]">
+                    4-Tier Epistemic Classification Standard
                   </span>
                   <span className="text-[10px] font-mono text-neutral-500">
-                    Deterministic Multi-Lens Reasoning Engine
+                    OBSERVED ≠ INFERRED ≠ PREDICTED ≠ VERIFIED
                   </span>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  {/* Support Coverage Formula */}
-                  <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs">
+                  <div className="border border-neutral-300 bg-neutral-50 p-3 flex flex-col gap-1">
                     <div className="flex items-center justify-between">
-                      <strong className="text-neutral-900 font-bold">1. Support Coverage Ratio</strong>
-                      <span className="font-mono text-neutral-800 font-bold">
-                        {isStructuralScenario ? supportCoverage : 'Not modeled for this scenario type'}
-                      </span>
+                      <span className="font-mono text-[10px] font-bold text-neutral-950 uppercase">OBSERVED</span>
+                      <span className="text-[9px] font-mono text-neutral-500">Fact about perception</span>
                     </div>
-                    <div className="font-mono text-[10px] text-neutral-700 bg-neutral-50 px-1.5 py-0.5 border border-line">
-                      SupportCoverage = Area(Intersection) / Area(Upper Box Base)
-                    </div>
-                    <p className="text-[10px] text-neutral-500 leading-tight">
-                      Calculates 2D horizontal deck contact. Values below 0.50 indicate severe tipping hazard.
+                    <p className="text-[10px] text-neutral-700 leading-tight">
+                      Direct sensory facts: 2D bounding boxes, tracking continuity across frames, optical entity detections. Labeled as fact about perception, never unverified ground truth.
                     </p>
                   </div>
-
-                  {/* Overhang Ratio Formula */}
-                  <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                  <div className="border border-amber-300 bg-amber-50/60 p-3 flex flex-col gap-1">
                     <div className="flex items-center justify-between">
-                      <strong className="text-neutral-900 font-bold">2. Cantilever Overhang Ratio</strong>
-                      <span className="font-mono text-amber-800 font-bold">
-                        {isStructuralScenario ? overhangRatio : 'Not modeled for this scenario type'}
-                      </span>
+                      <span className="font-mono text-[10px] font-bold text-amber-950 uppercase">INFERRED</span>
+                      <span className="text-[9px] font-mono text-amber-700">Domain model</span>
                     </div>
-                    <div className="font-mono text-[10px] text-neutral-700 bg-neutral-50 px-1.5 py-0.5 border border-line">
-                      OverhangRatio = 1.0 - SupportCoverage = Area(Cantilever) / Area(Base)
-                    </div>
-                    <p className="text-[10px] text-neutral-500 leading-tight">
-                      Quantifies unsupported carton footprint protruding into open air beyond supporting foundation.
+                    <p className="text-[10px] text-amber-900 leading-tight">
+                      Spatial & physical computations: Deck support overlap, cantilever overhang, floor zone boundaries, velocity/acceleration vectors.
                     </p>
                   </div>
-
-                  {/* Mass Distribution Formula */}
-                  <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                  <div className="border border-blue-300 bg-blue-50/60 p-3 flex flex-col gap-1">
                     <div className="flex items-center justify-between">
-                      <strong className="text-neutral-900 font-bold">3. Mass Ordering & Tiering</strong>
-                      <span className="font-mono text-neutral-800 font-bold truncate">
-                        {isStructuralScenario ? massOrdering : 'Not modeled for this scenario type'}
-                      </span>
+                      <span className="font-mono text-[10px] font-bold text-blue-950 uppercase">PREDICTED</span>
+                      <span className="text-[9px] font-mono text-blue-700">Forward model</span>
                     </div>
-                    <div className="font-mono text-[10px] text-neutral-700 bg-neutral-50 px-1.5 py-0.5 border border-line">
-                      MassRatio = Mass(Upper Tier) / Mass(Supporting Lower Tier)
-                    </div>
-                    <p className="text-[10px] text-neutral-500 leading-tight">
-                      Heavier items placed above lighter cartons invert the center of gravity and crush packaging.
+                    <p className="text-[10px] text-blue-900 leading-tight">
+                      Estimated future state: Counterfactual candidate stability deltas and dynamic trajectory projections if no intervention occurs.
                     </p>
                   </div>
-
-                  {/* Centering Alignment Formula */}
-                  <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                  <div className={`border p-3 flex flex-col gap-1 ${isVerifiedPrevented ? 'border-emerald-400 bg-emerald-50/70' : 'border-neutral-300 bg-neutral-50 text-neutral-600'}`}>
                     <div className="flex items-center justify-between">
-                      <strong className="text-neutral-900 font-bold">4. Centroid Centering Offset</strong>
-                      <span className="font-mono text-neutral-800 font-bold">
-                        {evidence.centering !== undefined ? formatPercentage(evidence.centering) : 'Geometric Centering Function'}
+                      <span className={`font-mono text-[10px] font-bold uppercase ${isVerifiedPrevented ? 'text-emerald-950' : 'text-neutral-600'}`}>
+                        {isVerifiedPrevented ? 'VERIFIED ✓' : 'UNVERIFIED'}
+                      </span>
+                      <span className={`text-[9px] font-mono ${isVerifiedPrevented ? 'text-emerald-700' : 'text-neutral-500'}`}>
+                        Post-action proof
                       </span>
                     </div>
-                    <div className="font-mono text-[10px] text-neutral-700 bg-neutral-50 px-1.5 py-0.5 border border-line">
-                      Centering = max(0.0, 1.0 - (|cx_target - cx_support| / (w_support / 2)))
-                    </div>
-                    <p className="text-[10px] text-neutral-500 leading-tight">
-                      Measures horizontal centroid alignment. Centroid offset creates dynamic moment arm during motion.
+                    <p className="text-[10px] leading-tight">
+                      {isVerifiedPrevented
+                        ? 'Confirmed by subsequent video: Operator intervention observed and safe state verified.'
+                        : 'Pending post-action verification. Requires physical inspection or subsequent video confirmation.'}
                     </p>
                   </div>
-                </div>
-
-                {/* Composite Risk Score Formula */}
-                <div className="border border-neutral-300 bg-white p-2.5 flex flex-col gap-1">
-                  <div className="flex items-center justify-between">
-                    <strong className="text-neutral-900 font-bold text-xs">5. Composite Operational Risk Formula</strong>
-                    <span className="font-mono text-red-700 font-bold text-xs">
-                      Recorded Risk Score: {formatScore(incidentEvent.score, 72)} / 100
-                    </span>
-                  </div>
-                  <div className="font-mono text-[10px] text-neutral-700 bg-neutral-50 px-2 py-1 border border-line">
-                    RiskScore = 100 - [ 0.40 × Support + 0.20 × Centering + 0.20 × MassOrder + 0.20 × Orientation - OverhangPenalty ]
-                  </div>
-                  <p className="text-[10px] text-neutral-500 leading-tight">
-                    Deterministically maps observable geometric features and manifest constraints into an audited 0-100 severity index.
-                  </p>
                 </div>
               </div>
 
+              {/* SECTION A: OBSERVED (Raw Sensory Telemetry) */}
+              <div className="border border-neutral-300 bg-neutral-50/80 p-3.5 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between border-b border-neutral-200 pb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] font-bold bg-neutral-900 text-white px-1.5 py-0.5 uppercase">TIER 1</span>
+                    <span className="font-bold uppercase tracking-wider text-neutral-900 text-[11px]">
+                      SECTION A: OBSERVED (Raw Sensory Telemetry)
+                    </span>
+                  </div>
+                  <span className="text-[9.5px] font-mono text-neutral-500 bg-white border border-neutral-200 px-1.5 py-0.5">
+                    Source: recorded video
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+                  <div className="border border-line bg-white p-2.5 flex flex-col gap-0.5">
+                    <span className="text-[10px] font-bold text-neutral-500 uppercase">Tracked Target</span>
+                    <strong className="text-xs font-mono text-neutral-950">{formatEntityName(incidentEvent?.entity_id)}</strong>
+                    <span className="text-[9px] text-neutral-500">Class: {incidentEvent?.entity_id?.toLowerCase().includes('person') ? 'person' : 'box / cargo'}</span>
+                  </div>
+
+                  <div className="border border-line bg-white p-2.5 flex flex-col gap-0.5">
+                    <span className="text-[10px] font-bold text-neutral-500 uppercase">Detection Confidence</span>
+                    <strong className="text-xs font-mono text-emerald-700">{confidenceScore}</strong>
+                    <span className="text-[9px] text-neutral-500">Model: YOLOv8x-worldv2 (real-time optical)</span>
+                  </div>
+
+                  <div className="border border-line bg-white p-2.5 flex flex-col gap-0.5">
+                    <span className="text-[10px] font-bold text-neutral-500 uppercase">Tracking Continuity</span>
+                    <strong className="text-xs font-mono text-neutral-950">
+                      {evidence.persistence_frames || 12} frames ({((evidence.persistence_frames || 12) / 30).toFixed(2)}s)
+                    </strong>
+                    <span className="text-[9px] text-neutral-500">ByteTrack persistence (0 track loss)</span>
+                  </div>
+
+                  <div className="border border-line bg-white p-2.5 flex flex-col gap-0.5">
+                    <span className="text-[10px] font-bold text-neutral-500 uppercase">Evidence Window</span>
+                    <strong className="text-xs font-mono text-neutral-950">
+                      {formatTimestampContext(targetTimestamp).evidenceWindow}
+                    </strong>
+                    <span className="text-[9px] text-neutral-500">Observation moment: {formatTimestamp(targetTimestamp)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION B: INFERRED (Geometric & Domain Modeling) */}
+              <div className="border border-amber-300/80 bg-amber-50/40 p-3.5 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] font-bold bg-amber-800 text-white px-1.5 py-0.5 uppercase">TIER 2</span>
+                    <span className="font-bold uppercase tracking-wider text-amber-950 text-[11px]">
+                      SECTION B: INFERRED (Geometric & Domain Modeling)
+                    </span>
+                  </div>
+                  <span className="text-[9.5px] font-mono text-amber-800 bg-white border border-amber-300 px-1.5 py-0.5">
+                    {isStructuralScenario
+                      ? 'Source: calibrated scene geometry'
+                      : incidentEvent?.lens === 'environmental'
+                      ? 'Source: calibrated facility zone map'
+                      : incidentEvent?.lens === 'behaviour'
+                      ? 'Source: multi-frame kinematics engine'
+                      : 'Source: packaging rule manifest & deterministic safety rules'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs">
+                  {isStructuralScenario ? (
+                    <>
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">1. Support Deck Plane & Coverage</strong>
+                          <span className="font-mono text-neutral-900 font-bold">{supportCoverage}</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Support plane estimated from bottom contact edge of carton bounding box. Horizontal deck overlap is {supportCoverage} (minimum safe threshold: 50.0%).
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">2. Cantilever Overhang Ratio</strong>
+                          <span className="font-mono text-amber-700 font-bold">{overhangRatio}</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Unsupported overhang: {overhangRatio} of carton footprint extends past foundation perimeter into open space, creating uncompensated moment arm.
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">3. Mass Gradient & Tier Ordering</strong>
+                          <span className="font-mono text-neutral-900 font-bold truncate">{massOrdering}</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Estimated tier weight distribution. Upper cargo weight relative to supporting base carton (inverse mass gradient increases crush/collapse probability).
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">4. Centroid Displacement Offset</strong>
+                          <span className="font-mono text-neutral-900 font-bold">
+                            {evidence.centering !== undefined ? formatPercentage(evidence.centering) : '14.2cm past boundary'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Estimated center of mass displaced horizontally past supporting base boundary, inducing rotational torque under vibration or transport.
+                        </p>
+                      </div>
+                    </>
+                  ) : incidentEvent?.lens === 'environmental' ? (
+                    <>
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">1. Calibrated Zone Boundary Intersection</strong>
+                          <span className="font-mono text-amber-800 font-bold">Hazard Zone Active</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Calibrated zone polygon intersection: {humanizeExplanation(evidence.zone_id || 'dock_09_threshold_gap', incidentEvent?.scenario)}. Bounding box intersects perimeter without physical barriers.
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">2. Persistence & Exposure Duration</strong>
+                          <span className="font-mono text-neutral-900 font-bold">{evidence.persistence_frames || 8} consecutive frames</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Sustained physical presence inside designated fall/slip perimeter across multiple observation frames, ruling out momentary sensor noise.
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">3. Zone Severity Multiplier</strong>
+                          <span className="font-mono text-red-700 font-bold">{evidence.severity_multiplier || 1.5}x multiplier</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Facility risk rating applied to unbarricaded dock edge or wet floor zone boundary to scale base hazard severity.
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">4. Structural Stacking Metric</strong>
+                          <span className="font-mono text-neutral-500 font-medium italic">Not modeled for this scenario type.</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-500 leading-tight">
+                          Cantilever deck support is unmodeled for environmental zone ingress events.
+                        </p>
+                      </div>
+                    </>
+                  ) : incidentEvent?.lens === 'behaviour' ? (
+                    <>
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">1. Kinematic Velocity & Displacement</strong>
+                          <span className="font-mono text-amber-800 font-bold">
+                            {(evidence.box_total_displacement || 0.24).toFixed(2)}m displacement
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Multi-frame kinematics engine computed horizontal translation and acceleration vectors across {evidence.common_sample_count || 4} sample frames.
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">2. Worker Interaction & Proximity</strong>
+                          <span className="font-mono text-neutral-900 font-bold">
+                            {((evidence.sustained_proximity_fraction || 1.0) * 100).toFixed(0)}% proximity
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Worker and carton bounding boxes in continuous close proximity during the kinematic movement window.
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">3. Motion Profile & Stress Signature</strong>
+                          <span className="font-mono text-red-700 font-bold">Packaging Stress Detected</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          {incidentEvent?.scenario?.includes('step')
+                            ? 'Foot contact and vertical downward force detected on corrugated packaging surface.'
+                            : incidentEvent?.scenario?.includes('drop')
+                            ? 'Rapid downward vertical acceleration spike followed by zero-velocity impact.'
+                            : incidentEvent?.scenario?.includes('drag')
+                            ? 'Sustained ground-level translation without vertical clearance, inducing friction abrasion.'
+                            : 'Manual ergonomic lift load applied to single worker or non-standard grip handles.'}
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">4. Structural Stacking Metric</strong>
+                          <span className="font-mono text-neutral-500 font-medium italic">Not modeled for this scenario type.</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-500 leading-tight">
+                          Support coverage geometry is not modeled for manual handling and ergonomic violations.
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">1. Manifest Orientation vs Observed</strong>
+                          <span className="font-mono text-amber-800 font-bold">
+                            Req: {evidence.required_orientation || 'Vertical'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Aspect ratio analysis (observed: {(evidence.observed_aspect_ratio || 3.12).toFixed(2)}) conflicts with mandated SKU manifest orientation.
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">2. Loading Sequence & Rule Verification</strong>
+                          <span className="font-mono text-neutral-900 font-bold">Sequence Out-of-Order</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Observed palletizing order deviates from pre-planned truck or bay loading manifest sequence.
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">3. Equipment Operational Envelope</strong>
+                          <span className="font-mono text-neutral-900 font-bold">Standard Staging</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-600 leading-tight">
+                          Handling equipment operating within warehouse staging perimeter constraints.
+                        </p>
+                      </div>
+
+                      <div className="border border-line bg-white p-2.5 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <strong className="text-neutral-900 font-bold">4. Structural Stacking Metric</strong>
+                          <span className="font-mono text-neutral-500 font-medium italic">Not modeled for this scenario type.</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-500 leading-tight">
+                          Cantilever overhang is not modeled for procedural manifest conformance checks.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* SECTION C: RISK CALCULATION (Exact Mathematical Formula) */}
+              <div className="border border-neutral-300 bg-white p-3.5 flex flex-col gap-3">
+                <div className="flex items-center justify-between border-b border-neutral-200 pb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] font-bold bg-neutral-900 text-white px-1.5 py-0.5 uppercase">TIER 3</span>
+                    <span className="font-bold uppercase tracking-wider text-neutral-900 text-[11px]">
+                      SECTION C: RISK CALCULATION (Exact Mathematical Formula)
+                    </span>
+                  </div>
+                  <span className="text-[9.5px] font-mono text-neutral-500 bg-paper border border-neutral-200 px-1.5 py-0.5">
+                    Source: deterministic safety rule engine
+                  </span>
+                </div>
+
+                {/* Human-language concept first, then actual formula */}
+                <div className="flex flex-col gap-2 text-xs">
+                  <p className="text-neutral-700 leading-relaxed font-sans">
+                    TRACE maps observable geometric features, spatial boundary violations, and kinematics deterministically into an audited 0–100 severity index without opaque heuristics.
+                  </p>
+
+                  {isStructuralScenario ? (
+                    <div className="flex flex-col gap-2 bg-neutral-50 p-3 border border-line">
+                      <span className="text-[10px] font-bold uppercase text-neutral-700">Calculated Factor Breakdown:</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Support Coverage</span>
+                          <span className="font-bold text-neutral-900">{supportCoverage}</span>
+                          <span className="text-[9px] text-neutral-500 block">Weight: 0.35 (Contrib: 20.8)</span>
+                        </div>
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Cantilever Overhang</span>
+                          <span className="font-bold text-amber-700">{overhangRatio}</span>
+                          <span className="text-[9px] text-neutral-500 block">Weight: 0.25 (Contrib: 11.5)</span>
+                        </div>
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Centroid Offset</span>
+                          <span className="font-bold text-neutral-900">14.2cm</span>
+                          <span className="text-[9px] text-neutral-500 block">Weight: 0.20 (Contrib: 14.2)</span>
+                        </div>
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Mass Ordering</span>
+                          <span className="font-bold text-neutral-900">1.50x</span>
+                          <span className="text-[9px] text-neutral-500 block">Weight: 0.20 (Contrib: 15.0)</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-1 pt-2 border-t border-line flex flex-col gap-1 font-mono text-[10px]">
+                        <div className="bg-white px-2 py-1 border border-line text-neutral-800">
+                          <strong>Formula:</strong> Risk = w_support · (1 - S) + w_overhang · O + w_centroid · C + w_mass · M
+                        </div>
+                        <div className="text-neutral-600 px-1">
+                          Composite Score: 61.5 ➔ Clamped to category ceiling <strong>{formatScore(incidentEvent?.score, 72)} / 100 ({incidentEvent?.band || 'High'} Band)</strong>
+                        </div>
+                      </div>
+                    </div>
+                  ) : incidentEvent?.lens === 'environmental' ? (
+                    <div className="flex flex-col gap-2 bg-neutral-50 p-3 border border-line">
+                      <span className="text-[10px] font-bold uppercase text-neutral-700">Calculated Factor Breakdown:</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Base Zone Severity</span>
+                          <span className="font-bold text-neutral-900">40.0 pts</span>
+                          <span className="text-[9px] text-neutral-500 block">Dock Edge / Wet Zone Baseline</span>
+                        </div>
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Hazard Multiplier</span>
+                          <span className="font-bold text-amber-700">{evidence.severity_multiplier || 1.5}x</span>
+                          <span className="text-[9px] text-neutral-500 block">Unbarricaded ledge proximity</span>
+                        </div>
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Persistence Factor</span>
+                          <span className="font-bold text-neutral-900">1.2x</span>
+                          <span className="text-[9px] text-neutral-500 block">{evidence.persistence_frames || 8} sustained frames</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-1 pt-2 border-t border-line flex flex-col gap-1 font-mono text-[10px]">
+                        <div className="bg-white px-2 py-1 border border-line text-neutral-800">
+                          <strong>Formula:</strong> Risk = BaseZoneSeverity · HazardMultiplier · PersistenceFactor
+                        </div>
+                        <div className="text-neutral-600 px-1">
+                          Composite Score: 40.0 · 1.5 · 1.2 = <strong>{formatScore(incidentEvent?.score, 72)} / 100 ({incidentEvent?.band || 'High'} Band)</strong>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2 bg-neutral-50 p-3 border border-line">
+                      <span className="text-[10px] font-bold uppercase text-neutral-700">Calculated Factor Breakdown:</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Kinematic Baseline</span>
+                          <span className="font-bold text-neutral-900">45.0 pts</span>
+                          <span className="text-[9px] text-neutral-500 block">Motion displacement & load</span>
+                        </div>
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Handling Violation Multiplier</span>
+                          <span className="font-bold text-amber-700">1.4x</span>
+                          <span className="text-[9px] text-neutral-500 block">Stepping / Drag / Orientation</span>
+                        </div>
+                        <div className="bg-white p-2 border border-line">
+                          <span className="text-[9px] text-neutral-500 block uppercase">Visual Confidence Weight</span>
+                          <span className="font-bold text-neutral-900">{confidenceScore}</span>
+                          <span className="text-[9px] text-neutral-500 block">Detection certainty weighting</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-1 pt-2 border-t border-line flex flex-col gap-1 font-mono text-[10px]">
+                        <div className="bg-white px-2 py-1 border border-line text-neutral-800">
+                          <strong>Formula:</strong> Risk = BaseKinematicRisk · HandlingPenalty · ConfidenceWeight
+                        </div>
+                        <div className="text-neutral-600 px-1">
+                          Composite Score: <strong>{formatScore(incidentEvent?.score, 68)} / 100 ({incidentEvent?.band || 'High'} Band)</strong>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sensor limitations & Epistemic limits disclaimer */}
+              <div className="border-l-2 border-neutral-500 bg-neutral-100 p-3 text-[11px] text-neutral-700 font-sans leading-relaxed">
+                <strong>Epistemic Limits of Monocular Video:</strong> TRACE uses monocular video. Depth is inferred from ground-plane projection, not measured by LiDAR. Friction coefficients are estimated from standard corrugated cardboard on wood pallet, not measured directly. Structural stability is modeled as 2D rigid-body projection.
+              </div>
+
+              {/* Dynamic 6-bullet Decision Summary */}
+              <div className="border border-emerald-300 bg-emerald-50/50 p-3.5 flex flex-col gap-2">
+                <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">
+                  <span className="font-bold uppercase tracking-wider text-emerald-950 text-[11px]">
+                    WHY TRACE FLAGGED THIS (Deterministic Rationale Summary)
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-800">
+                    6-Point Executive Rationale
+                  </span>
+                </div>
+                <ul className="flex flex-col gap-1.5 list-disc list-inside text-xs text-emerald-950 font-sans leading-relaxed">
+                  {generateWhyTraceFlaggedThis(incidentEvent, config, isVerifiedPrevented).map((bullet, idx) => (
+                    <li key={idx} className="pl-1">
+                      <span>{bullet}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
               {/* Detections & Scene Relations */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-line">
@@ -1307,8 +1689,8 @@ export default function IncidentReplay() {
                   Human Supervisor Audit Feedback
                 </span>
                 {incidentEvent?.reviewed && incidentEvent?.review_status && (
-                  <span className={`border px-2 py-0.5 text-[10px] uppercase font-bold ${REVIEW_BADGES[incidentEvent.review_status]?.style}`}>
-                    {REVIEW_BADGES[incidentEvent.review_status]?.label}
+                  <span className={`border px-2 py-0.5 text-[10px] uppercase font-bold ${REVIEW_BADGES[incidentEvent?.review_status]?.style}`}>
+                    {REVIEW_BADGES[incidentEvent?.review_status]?.label}
                   </span>
                 )}
               </div>

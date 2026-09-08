@@ -79,6 +79,30 @@ export default function Dashboard() {
     })
   }
 
+  // Deduplicate recent incidents so 6 distinct operational scenarios/zones are featured
+  const recentDistinctIncidents = useMemo(() => {
+    if (!events?.length) return []
+    const seen = new Set()
+    const distinct = []
+    for (const ev of events) {
+      const key = `${ev.video_id}_${ev.scenario}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        distinct.push(ev)
+      }
+      if (distinct.length >= 6) break
+    }
+    if (distinct.length < 6) {
+      for (const ev of events) {
+        if (!distinct.some((d) => d.event_id === ev.event_id)) {
+          distinct.push(ev)
+        }
+        if (distinct.length >= 6) break
+      }
+    }
+    return distinct
+  }, [events])
+
   // Count active incidents by severity
   const severityCounts = events.reduce(
     (acc, ev) => {
@@ -114,7 +138,15 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => navigateTo('Scenario Coverage')}
+              className="border border-purple-600 bg-purple-50 hover:bg-purple-100 text-purple-900 px-3.5 py-2 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+            >
+              <span>14-Scenario Coverage</span>
+              <span>🎯</span>
+            </button>
             <button
               type="button"
               onClick={() => navigateTo('Incidents')}
@@ -316,9 +348,19 @@ export default function Dashboard() {
               Continuous optical coverage across all 7 operational challenge scenarios.
             </p>
           </div>
-          <span className="text-[10px] font-mono text-neutral-500">
-            7 Canonical Operational Cameras
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-mono text-neutral-500">
+              7 Canonical Operational Cameras
+            </span>
+            <button
+              type="button"
+              onClick={() => navigateTo('Scenario Coverage')}
+              className="text-[11px] font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1 hover:underline cursor-pointer"
+            >
+              <span>View 14-Scenario Matrix</span>
+              <span>➔</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -329,7 +371,7 @@ export default function Dashboard() {
             >
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
-                  <span className={`px-1.5 py-0.2 text-[9px] font-bold uppercase border ${BAND_STYLE[info.riskBand] || BAND_STYLE.High}`}>
+                  <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase border ${BAND_STYLE[info.riskBand] || BAND_STYLE.High}`}>
                     {info.riskBand} Risk
                   </span>
                   <span className="font-mono text-[10px] text-neutral-500">

@@ -172,8 +172,12 @@ export default function WhatIfReplay() {
         gain: candA?.score_delta ? Math.round(candA.score_delta) : (92 - actualStability),
         effort: 'Low (simple reposition)',
         effortBadge: 'bg-emerald-50 text-emerald-800 border-emerald-300',
-        overhangOutcome: '0.0% (eliminated)',
-        supportOutcome: '95.0%',
+        overhangOutcome: candA?.score_breakdown?.overhang_penalty !== undefined
+          ? `${candA.score_breakdown.overhang_penalty.toFixed(1)}%`
+          : '0.0% (eliminated)',
+        supportOutcome: candA?.score_breakdown?.support_alignment !== undefined
+          ? `${candA.score_breakdown.support_alignment.toFixed(1)}%`
+          : '95.0%',
         candidateId: candA?.id || 'cand_center_support',
         description: 'Centers carton footprint squarely onto the supporting foundation deck, removing cantilever tipping forces.',
       },
@@ -187,8 +191,12 @@ export default function WhatIfReplay() {
         gain: candB?.score_delta ? Math.round(candB.score_delta) : (85 - actualStability),
         effort: 'Medium (re-route placement)',
         effortBadge: 'bg-amber-50 text-amber-800 border-amber-300',
-        overhangOutcome: '0.0% (eliminated)',
-        supportOutcome: '100.0%',
+        overhangOutcome: candB?.score_breakdown?.overhang_penalty !== undefined
+          ? `${candB.score_breakdown.overhang_penalty.toFixed(1)}%`
+          : '0.0% (eliminated)',
+        supportOutcome: candB?.score_breakdown?.support_alignment !== undefined
+          ? `${candB.score_breakdown.support_alignment.toFixed(1)}%`
+          : '100.0%',
         candidateId: candB?.id || 'cand_base_tier',
         description: 'Re-routes carton directly to ground or adjacent lower tier, completely isolating the stack from top-heavy load.',
       },
@@ -196,16 +204,20 @@ export default function WhatIfReplay() {
         id: 'opt-c',
         letter: 'C',
         title: candC?.description || 'Add secondary strapping before placing',
-        badge: 'Secured Tier',
+        badge: 'Not recommended',
         badgeCls: 'border-neutral-400 bg-neutral-100 text-neutral-800',
         predictedStability: candC?.score ? Math.round(candC.score) : 78,
         gain: candC?.score_delta ? Math.round(candC.score_delta) : (78 - actualStability),
         effort: 'High (requires additional material)',
         effortBadge: 'bg-neutral-100 text-neutral-700 border-neutral-300',
-        overhangOutcome: '12.0% (constrained)',
-        supportOutcome: '82.0%',
+        overhangOutcome: candC?.score_breakdown?.overhang_penalty !== undefined
+          ? `${candC.score_breakdown.overhang_penalty.toFixed(1)}%`
+          : '12.0% (constrained)',
+        supportOutcome: candC?.score_breakdown?.support_alignment !== undefined
+          ? `${candC.score_breakdown.support_alignment.toFixed(1)}%`
+          : '82.0%',
         candidateId: candC?.id || 'cand_strapping',
-        description: 'Applies tensioned polypropylene pallet strapping to bind tiered boxes before finalizing placement.',
+        description: 'Leaves cantilever overhang partially uncorrected; relies on external strapping rather than stable physical support base.',
       },
     ]
   }, [simulation, actualStability])
@@ -431,7 +443,7 @@ export default function WhatIfReplay() {
               <option value="">Manual timestamp mode...</option>
               {recentEvents.map((ev) => (
                 <option key={ev.event_id} value={ev.event_id}>
-                  #{ev.event_id} · {resolveIncidentTitle(ev)} @ {formatTimestamp(ev.timestamp)}
+                  Event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {resolveIncidentTitle(ev)} [{getVideoScenarioInfo(ev.video_id).cameraName}]
                 </option>
               ))}
             </select>
@@ -468,20 +480,20 @@ export default function WhatIfReplay() {
           <div className="flex items-start gap-3">
             <span className="text-2xl">⚠️</span>
             <div className="flex flex-col gap-1">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-amber-900">
-                What-If Simulation is Available for Structural / Stacking Incidents
+              <h2 className="text-sm font-bold uppercase tracking-wider text-amber-900 font-mono">
+                WHAT-IF NOT APPLICABLE
               </h2>
-              <p className="text-xs text-amber-800 leading-relaxed font-sans">
+              <p className="text-xs text-amber-900 leading-relaxed font-sans">
                 {simulation.simulation_notice ||
-                  `Event #${selectedEventId} concerns worker safety or environmental zone boundaries rather than movable cargo placements. TRACE does not simulate counterfactual movements of human personnel.`}
+                  'WHAT-IF NOT APPLICABLE: TRACE can evaluate counterfactual cargo placement when structural geometry is modeled. It does not physically simulate human movement from monocular video.'}
               </p>
             </div>
           </div>
 
           <div className="bg-white/90 border border-amber-300 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
             <div className="text-[11px] text-neutral-700">
-              <strong className="text-neutral-900 block font-bold">Try Cargo Counterfactual Simulation:</strong>
-              Load the canonical Pallet Overhang incident to see physical support realignment and 3-step intervention comparison.
+              <strong className="text-neutral-900 block font-bold">Counterfactual Simulation Restriction:</strong>
+              Monocular perception does not support physical biomechanics simulation for worker or environmental zone hazards.
             </div>
             <button
               type="button"
@@ -493,8 +505,7 @@ export default function WhatIfReplay() {
               }}
               className="whitespace-nowrap px-3.5 py-1.5 text-xs font-bold bg-neutral-900 hover:bg-neutral-800 text-white shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <span>View What-If for Pallet Overhang (Event #73)</span>
-              <span>➔</span>
+              <span>VIEW VALID WHAT-IF → Pallet Overhang Event #73</span>
             </button>
           </div>
         </div>
@@ -626,7 +637,7 @@ export default function WhatIfReplay() {
                           <span className="text-sm font-bold font-mono text-emerald-800">
                             {opt.predictedStability} / 100
                           </span>
-                          <span className="text-[11px] font-bold font-mono text-emerald-700 bg-emerald-100 px-1 py-0.2 border border-emerald-300">
+                          <span className="text-[11px] font-bold font-mono text-emerald-700 bg-emerald-100 px-1 py-0.5 border border-emerald-300">
                             +{opt.gain} pts
                           </span>
                         </div>

@@ -72,7 +72,7 @@ export default function VideoLibrary({ videos = [], selectedId, onSelect, loadin
                       {info.cameraName}
                     </span>
                   </div>
-                  <span className={`px-1.5 py-0.2 text-[9px] font-bold uppercase border shrink-0 ${badgeStyle}`}>
+                  <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase border shrink-0 ${badgeStyle}`}>
                     {info.riskBand || 'High'} Risk
                   </span>
                 </div>

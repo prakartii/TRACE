@@ -3,7 +3,8 @@ import { listEvents, getEvent } from '../api/events.js'
 import { getEventOutcome } from '../api/measurement.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { getScenarioConfig, DEMO_PRESETS } from '../lib/scenarios.js'
+import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS } from '../lib/scenarios.js'
+import { formatConfidence, formatPercentage, formatEntityName } from '../lib/format.js'
 
 const SCENARIO_TITLES = {
   stepping_on_carton: 'Worker body weight applied to carton surface',
@@ -184,24 +185,22 @@ export default function PlannerView() {
   // Derive evidence metrics
   const evidence = activeEvent?.evidence || {}
   const supportCoverage = evidence.overlap_ratio !== undefined
-    ? `${(evidence.overlap_ratio * 100).toFixed(1)}%`
+    ? formatPercentage(evidence.overlap_ratio, '40.4%')
     : evidence.support_ratio !== undefined
-      ? `${(evidence.support_ratio * 100).toFixed(1)}%`
+      ? formatPercentage(evidence.support_ratio, '40.4%')
       : '40.4%'
 
   const overhangVal = evidence.overhang_ratio !== undefined
-    ? `${(evidence.overhang_ratio * 100).toFixed(1)}%`
+    ? formatPercentage(evidence.overhang_ratio, '46.2%')
     : '46.2%'
 
   const massVal = evidence.mass_ordering !== undefined
     ? String(evidence.mass_ordering)
     : evidence.mass_ratio !== undefined
-      ? `${(evidence.mass_ratio * 100).toFixed(0)}%`
+      ? formatPercentage(evidence.mass_ratio, '70%')
       : '70%'
 
-  const confVal = activeEvent?.confidence !== undefined
-    ? `${(activeEvent.confidence * 100).toFixed(0)}%`
-    : '69%'
+  const confVal = formatConfidence(activeEvent?.confidence, '69%')
 
   // Recommended action text
   const actionHeadline = activeEvent?.planner_recommendation?.action?.split('.')[0] ||
@@ -290,7 +289,7 @@ export default function PlannerView() {
             >
               {recentEvents.map((ev) => (
                 <option key={ev.event_id} value={ev.event_id}>
-                  Event #{ev.event_id} — {getScenarioConfig(ev.scenario).title} @ {formatTimestamp(ev.timestamp)}
+                  Event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {getScenarioConfig(ev.scenario).title} [{getVideoScenarioInfo(ev.video_id).cameraName}]
                 </option>
               ))}
             </select>
@@ -365,9 +364,9 @@ export default function PlannerView() {
             <div className="flex items-center gap-3 text-xs text-neutral-600 pt-0.5">
               <span>Detected at: <strong className="text-neutral-950 font-bold font-mono tabular-nums">{detectedTime}</strong> (<span className="font-mono tabular-nums">{rawSeconds}</span>)</span>
               <span>·</span>
-              <span>Object: <strong className="text-neutral-950 font-medium font-mono">{activeEvent?.entity_id || 'Movable Carton'}</strong></span>
+              <span>Object: <strong className="text-neutral-950 font-medium font-mono">{formatEntityName(activeEvent?.entity_id) || 'Movable Carton'}</strong></span>
               <span>·</span>
-              <span>Camera: <strong className="text-neutral-950 font-medium font-mono">{activeEvent?.video_id || 'Stream-1'}</strong></span>
+              <span>Camera: <strong className="text-neutral-950 font-medium font-mono">{getVideoScenarioInfo(activeEvent?.video_id).cameraName || activeEvent?.video_id || 'Stream-1'}</strong></span>
             </div>
           </div>
 

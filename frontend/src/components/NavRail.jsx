@@ -1,5 +1,6 @@
 const SCREEN_ICONS = {
   Dashboard: '📊',
+  'Scenario Coverage': '🎯',
   Incidents: '🚨',
   'Incident Replay': '▶️',
   'Action Center': '⚡',
@@ -10,11 +11,12 @@ const SCREEN_ICONS = {
 
 const STEP_NUMBERS = {
   Dashboard: '01',
-  Incidents: '02',
-  'Incident Replay': '03',
-  'Action Center': '04',
-  'What-If Simulation': '05',
-  'Live View': '06',
+  'Scenario Coverage': '02',
+  Incidents: '03',
+  'Incident Replay': '04',
+  'Action Center': '05',
+  'What-If Simulation': '06',
+  'Live View': '07',
 }
 
 export default function NavRail({ screens, secondaryScreens = ['Settings'], active, onSelect }) {

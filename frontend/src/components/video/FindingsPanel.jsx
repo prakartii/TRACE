@@ -191,11 +191,11 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
               4. What Happens If We Do That?
             </span>
             {isEligible ? (
-              <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 border border-emerald-300 uppercase">
+              <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 border border-emerald-300 uppercase">
                 What-If Available
               </span>
             ) : (
-              <span className="text-[9px] font-semibold text-neutral-500 bg-neutral-200 px-1.5 py-0.2 uppercase">
+              <span className="text-[9px] font-semibold text-neutral-500 bg-neutral-200 px-1.5 py-0.5 uppercase">
                 Procedural Intervention
               </span>
             )}

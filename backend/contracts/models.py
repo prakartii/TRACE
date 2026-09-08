@@ -572,4 +572,128 @@ class BehaviourEvaluationResponse(BaseModel):
     epistemic_notice: str = ""
 
 
+# ---------------------------------------------------------------------------
+# Feature 1 — Temporal Reasoning Contracts
+# (ARCHITECTURE.md Part 3 — Video Perception + Temporal Reasoning)
+# ---------------------------------------------------------------------------
 
+class TemporalPatternModel(BaseModel):
+    """A detected temporal pattern over ≥2 observed events.
+
+    Epistemic level is always INFERRED — derived from observed event records
+    by deterministic sequence logic, never from new sensor data.
+    """
+    pattern_type: str = Field(
+        ...,
+        description="'escalating_risk' | 'repeated_behaviour' | 'precursor_sequence'"
+    )
+    label: str
+    description: str
+    supporting_event_ids: list[int] = Field(
+        ..., description="IDs of real DB events supporting this pattern"
+    )
+    time_window_sec: float
+    first_timestamp: float
+    last_timestamp: float
+    scenario: Optional[str] = None
+    lens: Optional[str] = None
+    event_count: int
+    score_trend: str = Field(
+        ...,
+        description="'escalating' | 'de-escalating' | 'stable' | 'variable'"
+    )
+    peak_score: Optional[float] = None
+    epistemic_level: str = "INFERRED"
+    notice: str = (
+        "Pattern is INFERRED: derived deterministically from observed event records. "
+        "No new sensor observation."
+    )
+
+
+class TemporalSequenceResponse(BaseModel):
+    """API response for temporal sequence analysis.
+
+    OBSERVED events → INFERRED patterns.
+    Empty patterns list = explicit insufficient-evidence (not an error).
+    """
+    events_analysed: int
+    time_span_sec: float
+    patterns: list[TemporalPatternModel] = Field(default_factory=list)
+    insufficient_evidence: bool
+    insufficient_evidence_reason: Optional[str] = None
+    epistemic_notice: str = (
+        "Underlying events are OBSERVED (from footage analysis). "
+        "Patterns are INFERRED (deterministic sequence logic). "
+        "If evidence is insufficient, patterns list is empty."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Feature 2 — Predictive Risk Contracts
+# (ARCHITECTURE.md Part 3 — Predictive Risk Engine)
+# ---------------------------------------------------------------------------
+
+class PredictiveRiskResult(BaseModel):
+    """A single predicted risk derived from a temporal pattern.
+
+    Epistemic level is PREDICTED — a forecast about what may happen,
+    derived from an INFERRED pattern, grounded in OBSERVED events.
+    The prediction chain is fully traceable:
+      OBSERVED events → INFERRED temporal pattern → PREDICTED risk.
+
+    IMPORTANT: A prediction is NOT a confirmed event. Never claim the
+    predicted outcome actually occurred unless supported by observed evidence.
+    """
+    prediction_id: str = Field(
+        ..., description="Deterministic ID: hash of supporting event IDs + prediction type"
+    )
+    predicted_scenario: str = Field(
+        ..., description="The scenario TRACE predicts may occur"
+    )
+    predicted_band: str = Field(
+        ..., description="Predicted risk band: Low/Medium/High/Critical"
+    )
+    confidence: str = Field(
+        ..., description="Confidence level: Low/Medium/High"
+    )
+    horizon_description: str = Field(
+        ..., description="Time horizon description, e.g. 'within the next handling cycle'"
+    )
+    explanation: str = Field(
+        ..., description="Why TRACE predicts this risk — must be traceable"
+    )
+    supporting_pattern: TemporalPatternModel
+    supporting_event_ids: list[int]
+    epistemic_level: str = "PREDICTED"
+    prediction_chain: list[str] = Field(
+        ...,
+        description="Step-by-step chain: OBSERVED → INFERRED → PREDICTED"
+    )
+    limitations: list[str] = Field(
+        default_factory=list,
+        description="What the prediction cannot guarantee"
+    )
+    notice: str = (
+        "This is a PREDICTED risk — a forecast derived from an inferred temporal pattern "
+        "grounded in observed events. The predicted outcome has NOT been confirmed. "
+        "Treat as a decision-support signal, not a confirmed hazard."
+    )
+
+
+class PredictiveRiskResponse(BaseModel):
+    """API response for predictive risk analysis.
+
+    Contains the full traceable chain:
+    OBSERVED events → INFERRED temporal patterns → PREDICTED risks.
+    """
+    events_analysed: int
+    patterns_found: int
+    predictions: list[PredictiveRiskResult] = Field(default_factory=list)
+    insufficient_evidence: bool
+    insufficient_evidence_reason: Optional[str] = None
+    epistemic_notice: str = (
+        "Predictions are PREDICTED epistemic level — forecasts derived from INFERRED "
+        "temporal patterns that are grounded in OBSERVED events. "
+        "Predictions are deterministic given the same event inputs. "
+        "No statistical model, no ML inference — pure rule-based sequence logic."
+    )

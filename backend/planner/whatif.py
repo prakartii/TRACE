@@ -177,20 +177,6 @@ def run_what_if_trajectory(
     at the intervention timestamp, and re-computes the stability trajectory
     across the timeline for both original and counterfactual paths.
     """
-    record = registry.get(video_id)
-    if record is None:
-        return WhatIfTrajectoryResult(
-            event_id=event_id,
-            video_id=video_id,
-            intervention_timestamp=timestamp,
-            candidate_id="none",
-            candidate_label="None",
-            instruction="Video not found",
-            simulation_available=False,
-            simulation_notice=f"Unknown video id '{video_id}'",
-            limitations=["video_not_found"],
-        )
-
     # 1. Epistemic Gates: Check recorded event if event_id is supplied
     finding_status = FindingStatus.SUPPORTED
     if event_id and db_conn:
@@ -251,6 +237,20 @@ def run_what_if_trajectory(
             simulation_available=False,
             simulation_notice=notice,
             limitations=lims,
+        )
+
+    record = registry.get(video_id)
+    if record is None:
+        return WhatIfTrajectoryResult(
+            event_id=event_id,
+            video_id=video_id,
+            intervention_timestamp=timestamp,
+            candidate_id="none",
+            candidate_label="None",
+            instruction="Video not found",
+            simulation_available=False,
+            simulation_notice=f"Unknown video id '{video_id}'",
+            limitations=["video_not_found"],
         )
 
     pipeline = pipelines.get(model, pipelines.get("pilot"))

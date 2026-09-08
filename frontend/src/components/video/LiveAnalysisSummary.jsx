@@ -227,7 +227,7 @@ export default function LiveAnalysisSummary({ video, findings, loading, findings
               </span>
               {findings.length > 1 && (
                 <span
-                  className="text-[9px] font-semibold bg-neutral-200 text-neutral-700 px-1.5 py-0.2"
+                  className="text-[9px] font-semibold bg-neutral-200 text-neutral-700 px-1.5 py-0.5"
                   title={`${findings.length - 1} additional observations detected at this frame`}
                 >
                   +{findings.length - 1} more
@@ -290,7 +290,7 @@ export default function LiveAnalysisSummary({ video, findings, loading, findings
               4. How TRACE Knows
             </span>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <span className={`border px-1.5 py-0.2 text-[9px] font-bold uppercase ${statusMeta.style}`}>
+              <span className={`border px-1.5 py-0.5 text-[9px] font-bold uppercase ${statusMeta.style}`}>
                 {primary.status.replace(/_/g, ' ')}
               </span>
               {primary.confidence && (

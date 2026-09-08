@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
 
@@ -88,6 +89,12 @@ def init_db(conn: sqlite3.Connection, schema_path: str | Path = SCHEMA_PATH) -> 
 def create_database(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     conn = get_connection(db_path)
     init_db(conn)
+    if Path(db_path).resolve() == Path(DEFAULT_DB_PATH).resolve():
+        try:
+            from backend.db.canonical_seed import sync_canonical_events
+            sync_canonical_events(conn)
+        except Exception as exc:
+            logging.getLogger("trace.db").warning("Canonical seed sync skipped: %s", exc)
     return conn
 
 
