@@ -529,3 +529,21 @@ def test_api_list_outcomes_with_filter(client, test_db, mock_registry):
     items = res.json()
     assert len(items) >= 1
     assert items[0]["classification"] == "prevented"
+
+
+def test_api_submit_session_rating(client, test_db):
+    res = client.post("/api/measurement/rating", json={"rating": 4, "session_id": "sess-abc"})
+    assert res.status_code == 201
+    body = res.json()
+    assert body["rating"] == 4
+    assert body["session_id"] == "sess-abc"
+    assert body["rating_id"] > 0
+
+    summary = client.get("/api/measurement/rating/summary").json()
+    assert summary["count"] == 1
+    assert summary["average_rating"] == 4
+
+
+def test_api_submit_session_rating_rejects_out_of_range(client, test_db):
+    res = client.post("/api/measurement/rating", json={"rating": 9})
+    assert res.status_code == 422

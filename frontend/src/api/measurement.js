@@ -82,3 +82,26 @@ export async function verifyEventOutcome(eventId, windowSec = 5.0) {
   }
   return res.json()
 }
+
+/**
+ * Records a 1–5 human-impact session rating.
+ * @param {number} rating 1–5
+ * @param {string} [sessionId]
+ * @returns {Promise<Object>}
+ */
+export async function submitSessionRating(rating, sessionId = null) {
+  const res = await fetch(`${API_BASE_URL}/api/measurement/rating`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating, session_id: sessionId }),
+  })
+  if (!res.ok) {
+    let errorMsg = `Failed to submit rating (HTTP ${res.status})`
+    try {
+      const data = await res.json()
+      if (data.detail) errorMsg = data.detail
+    } catch (_) {}
+    throw new Error(errorMsg)
+  }
+  return res.json()
+}

@@ -10,9 +10,11 @@ Endpoints:
 from __future__ import annotations
 
 import sqlite3
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from backend.api.perception import ModelName, get_cached_results, get_pipeline_registry
 from backend.api.scene import get_world_model
@@ -42,6 +44,36 @@ from backend.world_model.manifest import get_manifest_for_source
 from backend.world_model.scene_graph import WorldModel
 
 router = APIRouter(prefix="/api/measurement", tags=["measurement"])
+
+
+class SessionRatingRequest(BaseModel):
+    rating: int = Field(..., ge=1, le=5, description="1–5 human impact rating")
+    session_id: Optional[str] = Field(None, description="Browser session id (optional)")
+
+
+@router.post("/rating", status_code=201)
+def submit_session_rating(
+    payload: SessionRatingRequest,
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Records a 1–5 human-impact rating (ARCHITECTURE.md §14). No authentication
+    yet, so this is an honest metric write, not an enforced RBAC action."""
+    session_id = payload.session_id or "default-session"
+    cur = db.execute(
+        "INSERT INTO session_ratings (session_id, rating, created_at) VALUES (?, ?, ?)",
+        (session_id, payload.rating, time.time()),
+    )
+    db.commit()
+    return {"rating_id": cur.lastrowid, "session_id": session_id, "rating": payload.rating}
+
+
+@router.get("/rating/summary")
+def get_rating_summary(db: sqlite3.Connection = Depends(get_db)) -> dict:
+    rows = db.execute(
+        "SELECT COUNT(*) AS n, ROUND(AVG(rating), 2) AS avg_rating "
+        "FROM session_ratings"
+    ).fetchone()
+    return {"count": rows["n"] or 0, "average_rating": rows["avg_rating"] or None}
 
 
 @router.get("/summary", response_model=PreventionSummary)
