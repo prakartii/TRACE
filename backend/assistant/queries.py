@@ -604,17 +604,18 @@ def shift_briefing(conn: sqlite3.Connection) -> QueryResult:
     )
     cards = [_event_card(r) for r in recent_critical]
     
+    top_hazard_name = "Boxes too close to dock edge" if "dock" in top_scen else labels.scenario_title(top_scen)
     summary = (
-        f"Shift Safety Handover Briefing: TRACE has logged {total} verified physical risk events, including {high} High/Critical priorities. "
-        f"Outcome metrics confirm {outcomes.get('prevented', 0)} verified damage preventions and {outcomes.get('near_miss', 0)} recorded near misses. "
-        f"Primary operational hazard for this shift is {labels.scenario_title(top_scen)} ({top_scen_rows[0]['n'] if top_scen_rows else 0} occurrences). "
-        "Recommended supervisor focus: ensure staging pallet deck coverage exceeds 70% and verify fall-protection perimeter at the loading dock."
+        f"Shift Safety Summary: {total} safety alerts recorded today ({high} high priority). "
+        f"{outcomes.get('prevented', 0)} accident was prevented by quick team action. "
+        f"Main issue today: {top_hazard_name} ({top_scen_rows[0]['n'] if top_scen_rows else 0} times). "
+        "Supervisor tip: Remind team members to keep boxes sitting squarely on pallets and at least 1.5m away from dock edges."
     )
     metrics = [
-        {"label": "Active Prioritized Risks", "value": high},
+        {"label": "High Priority Alerts", "value": high},
         {"label": "Prevented Incidents", "value": outcomes.get("prevented", 0)},
-        {"label": "Recorded Near-Misses", "value": outcomes.get("near_miss", 0)},
-        {"label": "Primary Hazard", "value": labels.scenario_title(top_scen)[:20]},
+        {"label": "Near Misses", "value": outcomes.get("near_miss", 0)},
+        {"label": "Top Hazard", "value": top_hazard_name[:24]},
     ]
     return QueryResult(
         kind="shift_briefing",
@@ -670,15 +671,19 @@ def active_interventions(conn: sqlite3.Connection) -> QueryResult:
         }
         for r in rows
     ]
+    cam_short = labels.camera_label(rows[0]['video_id']).split("-")[0].strip()
+    action_text = rows[0]['immediate_action']
+    if "cantilever" in action_text.lower():
+        action_text = "Push the box back so it sits completely on the pallet."
     summary = (
-        f"Currently {len(rows)} real-time intervention alerts are tracked ({crit_count} Critical, {len(rows) - crit_count} High/Medium). "
-        f"Latest alert: '{rows[0]['title']}' at {labels.camera_label(rows[0]['video_id'])}. "
-        f"Immediate required action: {rows[0]['immediate_action']}."
+        f"We have {len(rows)} active safety alerts right now ({crit_count} critical, {len(rows) - crit_count} high/medium). "
+        f"Latest alert: '{rows[0]['title']}' at {cam_short}. "
+        f"Action needed: {action_text}"
     )
     metrics = [
         {"label": "Active Alerts", "value": len(rows)},
         {"label": "Critical Urgency", "value": crit_count},
-        {"label": "Latest Camera", "value": labels.camera_label(rows[0]['video_id']).split("-")[0].strip()},
+        {"label": "Latest Camera", "value": cam_short},
     ]
     return QueryResult(
         kind="active_interventions",
@@ -805,9 +810,9 @@ def scenario_info(conn: sqlite3.Connection, query: str = "") -> QueryResult:
     )
     cards = [_event_card(r) for r in rows]
     summary = (
-        f"Scenario Protocol: {info['title']}. Physical Basis: {info['description']} "
-        f"Corrective Standard: {info['prevention']} "
-        f"TRACE has {len(rows)} recorded instances of this hazard."
+        f"Safety Rule: {info['title']}. {info['description']} "
+        f"How to prevent: {info['prevention']} "
+        f"We have {len(rows)} recorded events for this issue."
     )
     metrics = [
         {"label": "Scenario", "value": info["title"][:20]},
@@ -831,21 +836,21 @@ def scenario_info(conn: sqlite3.Connection, query: str = "") -> QueryResult:
 
 
 def product_rules_summary(conn: sqlite3.Connection) -> QueryResult:
-    products = _rows(conn, "SELECT product_id, class_name, mass_class, fragility, required_orientation, max_stack_height FROM products")
+    products = _rows(conn, "SELECT * FROM products")
     rules = _rows(conn, "SELECT rule_id, product_id, rule_type, rule_value, created_by FROM product_rules")
     custom = _rows(conn, "SELECT rule_id, description, created_by FROM custom_rules")
     
-    prod_summary = f"{len(products)} products registered in warehouse catalog"
+    prod_summary = f"{len(products)} products registered"
     rule_bits = []
     if rules:
-        rule_bits.append(f"{len(rules)} product rules (e.g. {rules[0]['rule_type']}={rules[0]['rule_value']})")
+        rule_bits.append(f"{len(rules)} product rules")
     if custom:
         rule_bits.append(f"{len(custom)} custom supervisor safety rules")
     
     summary = (
-        f"Warehouse Product & Safety Rules Catalog: {prod_summary}. "
-        + (", ".join(rule_bits) if rule_bits else "No custom rules configured yet.")
-        + ". All SKU orientation requirements and maximum stack limits are automatically enforced in real time by the Conformance Lens."
+        f"Product & Stacking Rules: {prod_summary}. "
+        + (", ".join(rule_bits) if rule_bits else "Standard warehouse rules active.")
+        + " TRACE automatically checks box orientations ('This Side Up') and maximum tier heights in real time."
     )
     metrics = [
         {"label": "Catalog SKUs", "value": len(products)},
@@ -867,17 +872,17 @@ def product_rules_summary(conn: sqlite3.Connection) -> QueryResult:
 
 def planner_methodology(conn: sqlite3.Connection) -> QueryResult:
     summary = (
-        "The Safe Action Planner is TRACE's prescriptive decision intelligence engine. "
-        "When an unstable placement or handling hazard is detected, TRACE scores both the proposed action and 2–3 alternative candidate placements using transparent closed-form stability metrics (0–100): "
-        "Deck Support Coverage (50%): Surface contact area over supporting base. "
-        "Centering Eccentricity (30%): Distance from pallet center-of-gravity to prevent tipping moments. "
-        "Mass Ordering (20%): Heavy foundation vs light upper tiers to eliminate crush risk. "
-        "TRACE recommends the highest-scoring candidate with a precise corrective instruction and expected stability delta (+Δ)."
+        "How TRACE checks stability: When a box is placed unsafely, TRACE automatically suggests a safer spot nearby. "
+        "It checks 3 key factors: "
+        "1. Support (50%): Does at least 70% of the box rest on the pallet? "
+        "2. Centering (30%): Is the box centered so it won't tip over? "
+        "3. Weight order (20%): Are heavier boxes at the bottom and lighter items on top? "
+        "TRACE only recommends placements that score 70% or higher."
     )
     metrics = [
-        {"label": "Planner Mode", "value": "Prescriptive"},
-        {"label": "Scoring Scale", "value": "0 - 100 Index"},
-        {"label": "Weights", "value": "50% Support / 30% Center / 20% Mass"},
+        {"label": "Support Weight", "value": "50% Base Area"},
+        {"label": "Centering Weight", "value": "30% Center Offset"},
+        {"label": "Weight Order", "value": "20% Heavy on Bottom"},
     ]
     followups = [
         "What did TRACE recommend for event #73?",

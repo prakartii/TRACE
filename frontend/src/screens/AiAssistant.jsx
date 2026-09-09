@@ -89,49 +89,39 @@ export default function AiAssistant() {
   return (
     <div className="flex flex-col gap-5 pb-6">
       {/* Top Header */}
-      <section className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-4">
+      <section className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-3">
         <div>
           <div className="flex items-center gap-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-ink text-paper">
               <Bot size={15} />
             </span>
-            <h1 className="font-display text-display-lg font-semibold text-ink">Supervisor Safety Assistant</h1>
-            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-medium uppercase tracking-wider text-ok">
-              grounded in event store
+            <h1 className="font-display text-display font-semibold text-ink">Safety Assistant</h1>
+            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-[11px] font-medium text-ok">
+              Live
             </span>
           </div>
-          <p className="mt-1.5 max-w-3xl text-body text-ink-soft">
-            Direct auditable query engine connected to the SQLite audit log, world model scene graphs,
-            and safety protocols. Every metric and card links directly to historical evidence.
-            {meta && (
-              <span className="ml-1.5 text-ink-faint">
-                {meta.llm_available
-                  ? `Natural language synthesis by Claude (${meta.model}).`
-                  : 'Operating in high-precision deterministic retrieval mode.'}
-              </span>
-            )}
+          <p className="mt-1 text-small text-ink-soft">
+            Ask about warehouse safety alerts, high-risk areas, or safe handling guidelines.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {messages.length > 0 && (
-            <button
-              type="button"
-              onClick={handleClear}
-              className="inline-flex items-center gap-1.5 border border-line bg-surface px-3 py-1.5 text-caption font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
-            >
-              <RotateCcw size={13} />
-              clear conversation
-            </button>
-          )}
-        </div>
+        {messages.length > 0 && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="inline-flex items-center gap-1.5 border border-line bg-surface px-3 py-1.5 text-caption font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
+          >
+            <RotateCcw size={13} />
+            clear chat
+          </button>
+        )}
       </section>
 
       {/* Quick Intent Pills */}
       <section className="flex items-center gap-2 overflow-x-auto pb-1 text-caption">
         <span className="inline-flex items-center gap-1 text-ink-faint">
           <ListFilter size={13} />
-          quick inquiries:
+          quick questions:
         </span>
         {CATEGORY_PROMPTS.map((cp) => (
           <button
@@ -146,9 +136,9 @@ export default function AiAssistant() {
         ))}
       </section>
 
-      {/* Chat Container */}
-      <section className="flex min-h-[58vh] flex-col border border-line bg-surface shadow-sm">
-        <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto p-5">
+      {/* Chat Container - Fixed Height & Scrollable */}
+      <section className="flex h-[620px] max-h-[75vh] flex-col border border-line bg-surface shadow-sm">
+        <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4 scroll-smooth">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-line bg-paper text-ink">
@@ -156,8 +146,7 @@ export default function AiAssistant() {
               </div>
               <h2 className="text-small font-semibold text-ink">How can I assist your safety inspection today?</h2>
               <p className="mt-1 max-w-md text-caption text-ink-soft">
-                Query near misses, shift briefings, active interventions, specific events (e.g. #73),
-                bay safety metrics, or structural stability calculations.
+                Ask about today's shift briefing, active alerts, near misses, or safe box stacking.
               </p>
 
               <div className="mt-6 grid max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2 text-left">
@@ -444,7 +433,7 @@ function EventCard({ card, navigateTo }) {
           className="inline-flex items-center gap-1 border border-line bg-paper px-2.5 py-1 font-medium text-ink hover:border-ink transition-colors"
         >
           <RotateCcw size={12} />
-          Inspect in Replay →
+          Inspect Replay →
         </button>
         <button
           type="button"
@@ -457,7 +446,7 @@ function EventCard({ card, navigateTo }) {
           className="inline-flex items-center gap-1 border border-line bg-paper px-2.5 py-1 font-medium text-ink hover:border-ink transition-colors"
         >
           <Eye size={12} />
-          View Live CCTV →
+          Live Camera →
         </button>
       </div>
     </div>
