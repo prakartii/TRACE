@@ -23,7 +23,7 @@ function formatTime(sec) {
 }
 
 export default function LiveView() {
-  const { setLiveState, navigateTo } = useLiveViewContext()
+  const { setLiveState, navigateTo, replayTarget } = useLiveViewContext()
 
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -111,7 +111,7 @@ export default function LiveView() {
       .then((list) => {
         if (cancelled) return
         setVideos(list)
-        setSelectedId((current) => current ?? list[0]?.id ?? null)
+        setSelectedId((current) => replayTarget?.videoId ?? current ?? list[0]?.id ?? null)
       })
       .catch((err) => !cancelled && setError(err.message))
       .finally(() => !cancelled && setLoading(false))
@@ -119,6 +119,18 @@ export default function LiveView() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (replayTarget?.videoId) {
+      setSelectedId(replayTarget.videoId)
+      if (replayTarget.timestamp !== undefined) {
+        setCurrentTime(replayTarget.timestamp)
+        if (videoRef.current) {
+          videoRef.current.currentTime = replayTarget.timestamp
+        }
+      }
+    }
+  }, [replayTarget])
 
   async function handleUpload(file) {
     if (!file) return
