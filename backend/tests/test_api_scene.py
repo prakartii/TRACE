@@ -151,3 +151,18 @@ def test_get_scene_close_people_produce_proximity_edge(client):
 
     edge_types = {e["edge_type"] for e in body["edges"]}
     assert SceneGraphEdgeType.PROXIMITY.value in edge_types
+
+
+def test_get_scenes_timeline_returns_all_snapshots(client):
+    video_id = _video_id(client)
+
+    response = client.get(f"/api/videos/{video_id}/scenes")
+    assert response.status_code == 200
+    snapshots = response.json()
+    assert isinstance(snapshots, list)
+    assert len(snapshots) > 0
+    # Every snapshot has timestamp and nodes
+    for s in snapshots:
+        assert "timestamp" in s
+        assert "nodes" in s
+        assert "edges" in s

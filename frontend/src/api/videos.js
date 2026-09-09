@@ -78,6 +78,15 @@ export async function getScene(id, timestamp, model = 'stock') {
   return res.json()
 }
 
+// Fetch all scene graph snapshots for the whole video timeline
+export async function getScenes(id, model = 'pilot') {
+  const res = await fetch(
+    `${API_BASE_URL}/api/videos/${id}/scenes?model=${model}`,
+  )
+  if (!res.ok) throw new Error(`Failed to load scenes timeline for ${id} (HTTP ${res.status})`)
+  return res.json()
+}
+
 // Evidence-aware risk findings (Phase 5): a list of RiskEvents from every
 // lens that can currently run (behaviour/structural/conformance/
 // environmental) for the sampled frame nearest `timestamp`. Same `model`

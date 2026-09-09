@@ -27,65 +27,20 @@ export default function ScenarioCoverage() {
 
   return (
     <div className="flex flex-col gap-8">
-      {/* header */}
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        <div className="lg:col-span-8">
-          <p className="mb-2 flex items-center gap-2 text-label font-medium text-ink-soft">
+      {/* Clean Header */}
+      <section className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+        <div>
+          <div className="flex items-center gap-2 text-label font-medium text-ink-soft">
             <Crosshair size={13} />
-            operational intelligence
-          </p>
-          <h1 className="font-display text-display-lg font-semibold text-ink">
-            Scenario coverage &amp; multi-lens video intelligence
+            <span>Safety Overview</span>
+          </div>
+          <h1 className="mt-1 font-display text-display font-semibold text-ink">
+            Scenario Coverage &amp; Hazard Catalog
           </h1>
-          <p className="mt-3 max-w-2xl text-body text-ink-soft">
-            Seven canonical warehouse videos, fourteen operational safety scenarios, four
-            independent risk lenses. A single feed can contain several overlapping hazards —
-            TRACE reasons through all of them at once.
+          <p className="mt-1 text-body text-ink-soft">
+            Explore active safety findings and operational hazard scenarios detected across warehouse cameras.
           </p>
         </div>
-        <div className="lg:col-span-4">
-          <div className="flex flex-wrap gap-2">
-            <span className="border border-line bg-surface px-3 py-1.5 font-mono text-caption text-ink-soft">
-              7 videos
-            </span>
-            <span className="border border-line bg-surface px-3 py-1.5 font-mono text-caption text-ink-soft">
-              14 scenarios
-            </span>
-            <span className="border border-line bg-surface px-3 py-1.5 font-mono text-caption text-ink-soft">
-              4 lenses
-            </span>
-          </div>
-        </div>
-      </section>
-
-      {/* metrics — asymmetric */}
-      <section className="grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-4">
-        {[
-          { n: '14', label: 'operational scenarios', sub: 'architecture §9' },
-          { n: '7', label: 'canonical videos', sub: 'distinct cameras' },
-          { n: '4', label: 'independent risk lenses', sub: 'structural · conformance · behaviour · environmental' },
-          { n: '13', label: 'demonstrated in footage', sub: 'one rule-ready', tone: 'ok' },
-        ].map((m) => (
-          <div key={m.label} className="bg-surface p-5">
-            <span className={`font-display text-display-lg font-semibold tabular-nums ${m.tone === 'ok' ? 'text-ok' : 'text-ink'}`}>
-              {m.n}
-            </span>
-            <p className="mt-1 text-small font-medium text-ink">{m.label}</p>
-            <p className="text-caption text-ink-faint">{m.sub}</p>
-          </div>
-        ))}
-      </section>
-
-      {/* epistemic notice */}
-      <section className="flex items-start gap-3 border border-signal/40 bg-signal/5 p-4">
-        <ShieldAlert size={16} className="mt-0.5 shrink-0 text-[#8a5f00]" />
-        <p className="text-small text-ink-soft">
-          <span className="font-semibold text-ink">Epistemic transparency.</span> Thirteen of the
-          fourteen scenarios are demonstrated in the challenge footage. Scenario 13 (wrong
-          equipment usage) is implemented with validated conformance logic and regression tests,
-          but the dataset contains no equipment mismatch — TRACE reports it as rule-ready rather
-          than fabricating a detection.
-        </p>
       </section>
 
       {/* tabs */}

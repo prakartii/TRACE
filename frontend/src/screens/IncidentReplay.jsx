@@ -866,7 +866,6 @@ export default function IncidentReplay() {
                 <FaceRedactionOverlay
                   entities={perception.data?.entities}
                   frame={perception.data}
-                  degraded={!perception.data || !!perception.error}
                   sourceWidth={selectedVideo?.metadata?.width || 1280}
                   sourceHeight={selectedVideo?.metadata?.height || 720}
                   displayWidth={videoBoxSize.width}

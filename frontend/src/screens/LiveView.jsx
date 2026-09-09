@@ -281,7 +281,6 @@ export default function LiveView() {
                 blur while detections are unavailable. */}
             <FaceRedactionOverlay
               entities={entities}
-              degraded={!perception.data || !!perception.error}
               sourceWidth={selectedVideo.metadata.width}
               sourceHeight={selectedVideo.metadata.height}
               displayWidth={videoBoxSize.width}
