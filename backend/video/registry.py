@@ -71,6 +71,11 @@ class VideoRegistry:
         self._records: dict[str, VideoRecord] = {}
         self._scanned = False
 
+    @property
+    def video_dir(self) -> Path:
+        """The directory this registry scans (and where uploads should land)."""
+        return self._video_dir
+
     def refresh(self) -> None:
         records: dict[str, VideoRecord] = {}
         if self._video_dir.is_dir():

@@ -44,10 +44,60 @@ def test_get_video_unknown_id_returns_404(client):
     assert response.status_code == 404
 
 
+def test_upload_video_ingests_and_discovers(tmp_path, client):
+    # Source lives in a subdirectory the registry does not scan, so the upload
+    # (written to the registry's top-level dir) keeps its original filename.
+    src_dir = tmp_path / "incoming"
+    src_dir.mkdir()
+    source_path = src_dir / "incoming.mp4"
+    make_test_video(source_path, frame_count=12, fps=10.0)
+
+    with source_path.open("rb") as fh:
+        response = client.post(
+            "/api/videos",
+            files={"file": ("incoming.mp4", fh, "video/mp4")},
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["filename"] == "incoming.mp4"
+    assert "path" not in body
+
+    listed = client.get("/api/videos").json()
+    assert any(v["filename"] == "incoming.mp4" for v in listed)
+
+
+def test_upload_video_rejects_non_mp4(tmp_path, client):
+    bad = tmp_path / "notes.txt"
+    bad.write_text("not a video")
+    with bad.open("rb") as fh:
+        response = client.post(
+            "/api/videos",
+            files={"file": ("notes.txt", fh, "text/plain")},
+        )
+    assert response.status_code == 415
+
+
+def test_upload_video_discards_undecodable(tmp_path, client):
+    bad = tmp_path / "broken.mp4"
+    bad.write_bytes(b"\x00\x00\x00\x18ftypnotavalidvideo")
+    with bad.open("rb") as fh:
+        response = client.post(
+            "/api/videos",
+            files={"file": ("broken.mp4", fh, "video/mp4")},
+        )
+    assert response.status_code == 422
+
+
 def test_get_frame_returns_jpeg(client):
     video_id = client.get("/api/videos").json()[0]["id"]
 
-    response = client.get(f"/api/videos/{video_id}/frame", params={"timestamp": 1.0})
+    # redact=false: this test asserts JPEG encoding, not the (model-dependent)
+    # face-redaction path, which fails closed with 503 when weights are absent.
+    response = client.get(
+        f"/api/videos/{video_id}/frame",
+        params={"timestamp": 1.0, "redact": False},
+    )
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"

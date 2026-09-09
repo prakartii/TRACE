@@ -7,13 +7,16 @@ reason to go through HTTP.
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import cv2
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from backend.contracts.models import VideoSourceInfo
 from backend.perception.sampling import resolve_sampling_policy
-from backend.video.registry import VideoRegistry
+from backend.video.registry import VideoRegistry, make_source_id
 from backend.video.source import VideoDecodeError
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
@@ -23,6 +26,19 @@ _default_registry = VideoRegistry()
 
 def get_registry() -> VideoRegistry:
     return _default_registry
+
+
+def _deduped_upload_path(video_dir: Path, filename: str) -> Path:
+    """Return a non-colliding destination path inside the video directory."""
+    video_dir.mkdir(parents=True, exist_ok=True)
+    name = Path(filename).name
+    dest = video_dir / name
+    stem, suffix = Path(name).stem, Path(name).suffix
+    counter = 1
+    while dest.exists():
+        dest = video_dir / f"{stem} ({counter}){suffix}"
+        counter += 1
+    return dest
 
 
 def _get_record_or_404(registry: VideoRegistry, video_id: str):
@@ -37,6 +53,52 @@ def list_videos(
     registry: VideoRegistry = Depends(get_registry),
 ) -> list[VideoSourceInfo]:
     return [record.to_public() for record in registry.list_videos()]
+
+
+@router.post("", response_model=VideoSourceInfo, status_code=201)
+def upload_video(
+    file: UploadFile = File(...),
+    registry: VideoRegistry = Depends(get_registry),
+) -> VideoSourceInfo:
+    """Ingest a new MP4 into the monitored video set.
+
+    Saves the upload into the same directory the registry already scans,
+    re-scans so the new file becomes a first-class source, then returns its
+    public record. Detection, tracking and risk analysis run on demand the
+    moment the frontend selects it — no separate processing step needed.
+
+    A file that cannot be decoded as video is refused and deleted rather than
+    left behind as a broken registry entry (CLAUDE.md honesty rule).
+    """
+    original_name = file.filename or "upload.mp4"
+    if not original_name.lower().endswith(".mp4"):
+        raise HTTPException(status_code=415, detail="Only .mp4 files are accepted")
+
+    dest = _deduped_upload_path(registry.video_dir, original_name)
+    try:
+        with dest.open("wb") as out:
+            shutil.copyfileobj(file.file, out)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to store upload: {exc}") from exc
+
+    registry.refresh()
+    record = registry.get(make_source_id(dest.name))
+    meta = record.metadata if record is not None else None
+    meta_ok = (
+        meta is not None
+        and meta.fps > 0
+        and meta.duration > 0
+        and meta.width > 0
+        and meta.height > 0
+    )
+    if not meta_ok:
+        dest.unlink(missing_ok=True)
+        registry.refresh()
+        raise HTTPException(
+            status_code=422,
+            detail="Uploaded file could not be decoded as MP4 video and was discarded.",
+        )
+    return record.to_public()
 
 
 @router.get("/{video_id}", response_model=VideoSourceInfo)
