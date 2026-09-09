@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { getEvent } from '../api/events.js'
 import { getActionPlan } from '../api/actions.js'
 import { getEventOutcome, verifyEventOutcome } from '../api/measurement.js'
@@ -11,6 +11,7 @@ import FaceRedactionOverlay from '../components/video/FaceRedactionOverlay.jsx'
 import SafeActionPanel from '../components/monitor/SafeActionPanel.jsx'
 import OutcomeCheck from '../components/incidents/OutcomeCheck.jsx'
 import ReviewActions from '../components/incidents/ReviewActions.jsx'
+import WhatIfTab from '../components/incidents/WhatIfTab.jsx'
 import {
   formatEvidenceKey,
   formatEvidenceValue,
@@ -30,7 +31,6 @@ const TABS = [
 export default function IncidentDetail() {
   const { id } = useParams()
   const { pathname } = useLocation()
-  const navigate = useNavigate()
   const tab = pathname.split('/')[3] || 'overview'
 
   const [event, setEvent] = useState(null)
@@ -260,33 +260,7 @@ export default function IncidentDetail() {
         </div>
       )}
 
-      {tab === 'what-if' && (
-        <div className="panel">
-          <span className="eyebrow mb-2 block">What-If</span>
-          <p className="mb-3 text-caption text-dim">
-            The observed-vs-simulated trajectory is being folded into this tab in phase 2. For
-            now it opens in the standalone What-If screen.
-          </p>
-          <button
-            type="button"
-            onClick={() =>
-              navigate('/what-if', {
-                state: {
-                  replayTarget: {
-                    eventId: Number(id),
-                    videoId: event.video_id,
-                    timestamp: ts,
-                    event,
-                  },
-                },
-              })
-            }
-            className="rounded-md border border-line-strong bg-bg px-3 py-1.5 text-caption text-dim hover:text-ink"
-          >
-            open What-If for #{id} →
-          </button>
-        </div>
-      )}
+      {tab === 'what-if' && <WhatIfTab eventId={id} />}
     </div>
   )
 }

@@ -14,7 +14,7 @@ import { getScenarioConfig, getVideoScenarioInfo } from '../lib/scenarios.js'
 const MODEL = 'pilot'
 
 export default function Monitor() {
-  const { setLiveState, navigateTo } = useLiveViewContext()
+  const { setLiveState } = useLiveViewContext()
 
   const [videos, setVideos] = useState([])
   const [selectedId, setSelectedId] = useState(null)
@@ -258,13 +258,6 @@ export default function Monitor() {
               title={getScenarioConfig(selectedFinding.scenario).title}
               plan={plan}
               finding={selectedFinding}
-              onSimulate={() =>
-                navigateTo('What-If Simulation', {
-                  videoId: selectedId,
-                  timestamp: currentTime,
-                  scenario: selectedFinding.scenario,
-                })
-              }
             />
           )}
         </div>

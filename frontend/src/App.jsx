@@ -11,7 +11,6 @@ import IncidentDetail from './screens/IncidentDetail.jsx'
 import Dashboard from './screens/Dashboard.jsx'
 import AiAssistant from './screens/AiAssistant.jsx'
 import SupervisorSettings from './screens/SupervisorSettings.jsx'
-import WhatIfReplay from './screens/WhatIfReplay.jsx'
 import ScenarioCoverage from './screens/ScenarioCoverage.jsx'
 import ResponsibleAI from './screens/ResponsibleAI.jsx'
 import PlannerView from './screens/PlannerView.jsx'
@@ -35,7 +34,6 @@ export default function App() {
               <Route path="settings" element={<SupervisorSettings />} />
 
               {/* migrating — folded into Incidents / Patterns / Settings in phase 2–3 */}
-              <Route path="what-if" element={<WhatIfReplay />} />
               <Route path="coverage" element={<ScenarioCoverage />} />
               <Route path="responsible-ai" element={<ResponsibleAI />} />
               <Route path="planner" element={<PlannerView />} />
