@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 import cv2
@@ -32,10 +33,9 @@ from backend.video.registry import VideoRegistry  # noqa: E402
 
 OUT_DIR = REPO_ROOT / "data" / "pilot_annotations"
 IMAGES_DIR = OUT_DIR / "images"
-GRID_DIR = Path(
-    r"C:\Users\prakarti\AppData\Local\Temp\claude\C--Users-prakarti-Desktop-projects-TRACE"
-    r"\78bbbcc6-827b-4fb4-9ea4-f63ba07006d8\scratchpad\annotation_grids"
-)
+# Annotation-aid grid copies are scratch output, never committed — use a
+# platform-independent temp dir rather than a machine-specific absolute path.
+GRID_DIR = Path(tempfile.gettempdir()) / "trace_annotation_grids"
 
 # (video filename substring, split, [(frame_id_suffix, timestamp_seconds), ...])
 PLAN = [

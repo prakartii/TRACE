@@ -44,6 +44,18 @@ RUNS_DIR = REPO_ROOT / "training" / "runs"
 OUTPUT_WEIGHTS = REPO_ROOT / "models" / "trace_pilot_v1.pt"
 
 
+def _resolve_device() -> str:
+    """Use Apple Silicon GPU (MPS) when available, else CPU."""
+    try:
+        import torch
+
+        if torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return "cpu"
+
+
 def _write_resolved_dataset_yaml() -> Path:
     """training/dataset.yaml uses a `path: ../data/pilot_annotations`
     relative reference for readability/portability, but Ultralytics
@@ -74,7 +86,7 @@ TRAIN_CONFIG = dict(
     patience=20,  # early stop if val loss plateaus — 34 train images overfits fast
     imgsz=640,  # matches PerceptionConfig.inference_size
     batch=8,
-    device="cpu",
+    device=_resolve_device(),
     seed=0,
     project=str(RUNS_DIR),
     name="trace_pilot",
