@@ -110,8 +110,8 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
             {finding.lens}
           </span>
           {finding.confidence && (
-            <span>
-              certainty: <span className="font-mono text-ink">{finding.confidence}</span>
+            <span className="border border-line bg-paper px-1.5 py-0.5 text-label text-ink-soft">
+              {finding.confidence} confidence
             </span>
           )}
         </div>
@@ -181,16 +181,14 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
           onClick={() => setShowHowTraceKnows(!showHowTraceKnows)}
           className="flex w-full items-center justify-between py-1 text-caption text-ink-soft hover:text-ink"
         >
-          <span className="font-medium">
-            how TRACE knows ({evidenceEntries.length} telemetry metric{evidenceEntries.length === 1 ? '' : 's'})
-          </span>
+          <span className="font-medium">how TRACE knows</span>
           <span className="font-mono">{showHowTraceKnows ? '−' : '+'}</span>
         </button>
 
         {showHowTraceKnows && (
           <div className="mt-2.5 flex flex-col gap-3 border border-line bg-paper p-3.5">
             <div className="flex items-center justify-between border-b border-line pb-2">
-              <span className="text-label font-medium text-ink-soft">epistemic classification</span>
+              <span className="text-label font-medium text-ink-soft">evidence confidence</span>
               <span className={`border px-1.5 py-0.5 text-label font-medium ${epistemicMeta.badge}`}>
                 {finding.epistemic_level || 'inferred'}
               </span>
@@ -201,7 +199,7 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
 
             {hasEvidence && (
               <div className="border-t border-line pt-2">
-                <span className="block text-label font-medium text-ink-soft">observed telemetry</span>
+                <span className="block text-label font-medium text-ink-soft">observed measurements</span>
                 <ul className="mt-1.5 flex flex-col gap-1">
                   {evidenceEntries.map(([key, val]) => (
                     <li key={key} className="flex items-center justify-between border-b border-dotted border-line py-0.5">
@@ -223,38 +221,10 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
 
             {finding.limitations?.length > 0 && (
               <div className="border-t border-line pt-2">
-                <span className="block text-label font-medium text-ink-soft">sensor & physics limitations</span>
+                <span className="block text-label font-medium text-ink-soft">known limitations</span>
                 <p className="mt-0.5 text-caption text-ink-soft">{finding.limitations.join('; ')}</p>
               </div>
             )}
-
-            {finding.entities?.length > 0 && (
-              <div className="border-t border-line pt-1.5">
-                <span className="text-caption text-ink-faint">
-                  tracked entity identifiers: <span className="font-mono text-ink-soft">{finding.entities.join(', ')}</span>
-                </span>
-              </div>
-            )}
-
-            <div className="border-t border-line pt-2">
-              <span className="block text-label font-medium text-ink-soft">raw audit event JSON</span>
-              <pre className="mt-1 max-h-36 overflow-auto bg-ink p-2.5 font-mono text-caption leading-tight text-paper">
-                {JSON.stringify(
-                  {
-                    status: finding.status,
-                    confidence: finding.confidence,
-                    lens: finding.lens,
-                    scenario: finding.scenario,
-                    timestamp: finding.timestamp,
-                    entities: finding.entities,
-                    evidence: finding.evidence,
-                    limitations: finding.limitations,
-                  },
-                  null,
-                  2
-                )}
-              </pre>
-            </div>
           </div>
         )}
       </div>
