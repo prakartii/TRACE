@@ -24,7 +24,7 @@ export function LiveViewProvider({ children }) {
     modelName: 'pilot',
   })
 
-  const [activeScreen, setActiveScreen] = useState('Dashboard')
+  const [activeScreen, setActiveScreen] = useState('Live View')
   const [replayTarget, setReplayTarget] = useState(null)
 
   // Responsible-AI view mode (ARCHITECTURE.md §15). Presentation filter only —

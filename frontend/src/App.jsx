@@ -18,6 +18,8 @@ import { OPERATOR_SCREENS } from './lib/roles.js'
 import { InterventionProvider, useIntervention } from './context/InterventionContext.jsx'
 import InterventionBanner from './components/intervention/InterventionBanner.jsx'
 import InterventionModal from './components/intervention/InterventionModal.jsx'
+import SessionRatingPrompt from './components/SessionRatingPrompt.jsx'
+import StructuralView from './screens/StructuralView.jsx'
 
 const SCREENS = [
   'Live View',
@@ -27,6 +29,7 @@ const SCREENS = [
   'What-If Simulation',
   'Dashboard',
   'Scenario Coverage',
+  'Structural View',
   'Assistant',
 ]
 
@@ -78,6 +81,8 @@ function AppContent() {
             <Dashboard />
           ) : effectiveScreen === 'Scenario Coverage' || effectiveScreen === 'Operational Intelligence' ? (
             <ScenarioCoverage />
+          ) : effectiveScreen === 'Structural View' ? (
+            <StructuralView />
           ) : effectiveScreen === 'Incidents' || effectiveScreen === 'Event Feed' ? (
             <EventFeed />
           ) : effectiveScreen === 'Incident Replay' ? (
@@ -103,6 +108,8 @@ function AppContent() {
       {selectedAlert && (
         <InterventionModal alert={selectedAlert} onClose={() => setSelectedAlert(null)} />
       )}
+
+      <SessionRatingPrompt />
     </div>
   )
 }
