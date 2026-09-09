@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from backend.contracts.models import EVIDENCE_BACKED_SQL, EVIDENCE_BASIS_NOTE
+from backend.assistant import labels
 from backend.video.labels import source_label as _source_label
 
 
@@ -88,7 +89,7 @@ def overview(conn: sqlite3.Connection) -> QueryResult:
         f"out of {logged} logged observations."
     ]
     if top_scenario:
-        parts.append(f"The most frequent scenario is '{top_scenario}'.")
+        parts.append(f"The most frequent issue is {labels.scenario_title(top_scenario)}.")
     if outcomes:
         parts.append(
             "Verified outcomes: "
@@ -121,7 +122,7 @@ def top_scenarios(conn: sqlite3.Connection, limit: int = 6) -> QueryResult:
     if not rows:
         return QueryResult("top_scenarios", "No evidence-backed risk findings are recorded yet.",
                            {"scenarios": []}, "events", row_count=0)
-    listing = ", ".join(f"{r['scenario']} ({r['n']})" for r in rows)
+    listing = ", ".join(f"{labels.scenario_title(r['scenario'])} ({r['n']})" for r in rows)
     summary = f"The most common evidence-backed risks are: {listing}."
     ids = [
         r["event_id"]
@@ -156,7 +157,7 @@ def top_behaviours(conn: sqlite3.Connection, limit: int = 6) -> QueryResult:
     if not rows:
         return QueryResult("top_behaviours", "No evidence-backed behaviour findings are recorded yet.",
                            {"behaviours": []}, "events (lens='behaviour')", row_count=0)
-    listing = ", ".join(f"{r['scenario']} ({r['n']})" for r in rows)
+    listing = ", ".join(f"{labels.scenario_title(r['scenario'])} ({r['n']})" for r in rows)
     return QueryResult(
         kind="top_behaviours",
         summary=f"The most frequently detected behaviours are: {listing}.",
@@ -238,10 +239,13 @@ def high_risk_events(conn: sqlite3.Connection) -> QueryResult:
     for r in rows:
         by_source[_source_label(r["video_id"])] = by_source.get(_source_label(r["video_id"]), 0) + 1
     worst = max(by_source.items(), key=lambda kv: kv[1])
+    top_scenarios = ", ".join(
+        sorted({labels.scenario_title(r['scenario']) for r in rows if r['scenario']})
+    )
     summary = (
         f"{len(rows)} High/Critical events are logged. "
         f"{worst[0]} has the most ({worst[1]}). "
-        f"Top scenarios: {', '.join(sorted({r['scenario'] for r in rows if r['scenario']}))}."
+        f"Top scenarios: {top_scenarios}."
     )
     return QueryResult(
         kind="high_risk_events",
@@ -325,7 +329,7 @@ def false_positives(conn: sqlite3.Connection) -> QueryResult:
     return QueryResult(
         kind="false_positives",
         summary=f"{len(rows)} event(s) flagged as false positives: "
-                + ", ".join(f"#{r['event_id']} ({r['scenario']})" for r in rows) + ".",
+                + ", ".join(f"#{r['event_id']} ({labels.scenario_title(r['scenario'])})" for r in rows) + ".",
         data={"events": [dict(r) for r in rows]},
         source="events.review_status='false_positive' or feedback flag",
         event_ids=[r["event_id"] for r in rows],
@@ -356,7 +360,14 @@ def explain_event(conn: sqlite3.Connection, event_id: Optional[int] = None,
 
     evidence = _evidence(row["factor_breakdown_json"])
     explanation = _explanation(row["factor_breakdown_json"])
-    ev_bits = ", ".join(f"{k}={v}" for k, v in evidence.items()) if evidence else None
+    ev_bits = (
+        ", ".join(
+            f"{labels.evidence_label(k)} {labels.format_evidence_value(k, v)}"
+            for k, v in evidence.items()
+        )
+        if evidence
+        else None
+    )
     if event_id is not None and row["event_id"] != event_id:
         prefix = f"Event #{event_id} is not in the log — showing the most significant recent finding instead. "
     elif is_fallback:
@@ -364,13 +375,14 @@ def explain_event(conn: sqlite3.Connection, event_id: Optional[int] = None,
     else:
         prefix = ""
     summary = (
-        f"{prefix}Event #{row['event_id']} ({row['scenario']}, {row['lens']} lens) was flagged {row['band']} risk "
-        f"with {row['confidence']} confidence; evidence status: {row['status']}."
+        f"{prefix}Event #{row['event_id']} — {labels.scenario_title(row['scenario'])} — was flagged "
+        f"{row['band']} risk on the {labels.lens_label(row['lens'])} lens, with {row['confidence']} "
+        f"confidence. Status: {labels.status_label(row['status'])}."
     )
     if explanation:
         summary += f" {explanation}"
     if ev_bits:
-        summary += f" Recorded evidence: {ev_bits}."
+        summary += f" Observed: {ev_bits}."
     return QueryResult(
         kind="explain_event",
         summary=summary,

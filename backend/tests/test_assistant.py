@@ -99,7 +99,7 @@ def test_top_scenarios(seeded_db):
     r = q.top_scenarios(seeded_db)
     assert r.data["scenarios"][0]["scenario"] == "box_overhang"
     assert r.data["scenarios"][0]["n"] == 2
-    assert "box_overhang (2)" in r.summary
+    assert "Unstable carton overhang beyond supporting base (2)" in r.summary
 
 
 def test_prevention_breakdown_keeps_buckets_separate(seeded_db):
@@ -119,8 +119,8 @@ def test_near_misses_by_source_picks_the_top_source(seeded_db):
 def test_explain_event_uses_recorded_evidence(seeded_db):
     r = q.explain_event(seeded_db, event_id=1)
     assert r.event_ids == [1]
-    assert "box_overhang" in r.summary
-    assert "overhang_ratio=0.46" in r.summary
+    assert "Unstable carton overhang" in r.summary
+    assert "overhang fraction 46%" in r.summary
     assert "46% base overhang" in r.summary
 
 
