@@ -8,6 +8,27 @@ export async function listVideos(options = {}) {
   return videos.filter((v) => !v.duplicate_of)
 }
 
+// Ingest a new MP4 into the monitored set. Detection, tracking and risk
+// analysis run automatically the moment the returned source is selected —
+// no separate processing step is required.
+export async function uploadVideo(file) {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${API_BASE_URL}/api/videos`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    let msg = `Upload failed (HTTP ${res.status})`
+    try {
+      const d = await res.json()
+      if (d.detail) msg = d.detail
+    } catch (_) {}
+    throw new Error(msg)
+  }
+  return res.json()
+}
+
 
 export async function getVideo(id) {
   const res = await fetch(`${API_BASE_URL}/api/videos/${id}`)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Video } from 'lucide-react'
-import { getEntities, getFindings, getSamplingPolicy, getScene, getWhatIf, listVideos, streamUrl } from '../api/videos.js'
+import { Upload, Video } from 'lucide-react'
+import { getEntities, getFindings, getSamplingPolicy, getScene, getWhatIf, listVideos, streamUrl, uploadVideo } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import FindingsPanel from '../components/video/FindingsPanel.jsx'
 import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
@@ -46,6 +46,8 @@ export default function LiveView() {
   const [whatIfLoading, setWhatIfLoading] = useState(false)
   const [whatIfError, setWhatIfError] = useState(null)
   const [selectedCandidateId, setSelectedCandidateId] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState(null)
 
   const videoRef = useRef(null)
   const modelName = pilotModelEnabled ? 'pilot' : 'stock'
@@ -117,6 +119,25 @@ export default function LiveView() {
       cancelled = true
     }
   }, [])
+
+  async function handleUpload(file) {
+    if (!file) return
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const uploaded = await uploadVideo(file)
+      const refreshed = await listVideos()
+      setVideos(refreshed)
+      setSelectedId(uploaded.id)
+      setPlaying(false)
+      setCurrentTime(0)
+      setWhatIfSimulation(null)
+    } catch (err) {
+      setUploadError(err.message || 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   useEffect(() => {
     const el = videoRef.current
@@ -399,6 +420,30 @@ export default function LiveView() {
           loading={loading}
           error={error}
         />
+
+        <label className="mt-3 flex cursor-pointer flex-col items-center gap-1 border border-dashed border-line bg-surface p-4 text-center transition-colors hover:border-line-strong">
+          <input
+            type="file"
+            accept="video/mp4,.mp4"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) handleUpload(file)
+              e.target.value = ''
+            }}
+          />
+          <Upload size={15} className="text-ink-soft" />
+          <span className="text-caption font-medium text-ink">
+            {uploading ? 'Ingesting footage…' : 'Add camera footage'}
+          </span>
+          <span className="text-caption text-ink-faint">
+            Drop in an MP4 — detection &amp; risk analysis run automatically
+          </span>
+        </label>
+        {uploadError && (
+          <p className="mt-2 border border-danger bg-danger/5 p-2 text-caption text-danger">{uploadError}</p>
+        )}
       </div>
     </div>
     </div>
