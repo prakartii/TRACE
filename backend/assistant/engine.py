@@ -47,6 +47,22 @@ def answer(conn: sqlite3.Connection, question: str) -> dict:
         }
         for res in results
     ]
+    cards = []
+    metrics = []
+    followups = []
+    for res in results:
+        if getattr(res, "cards", None):
+            cards.extend(res.cards)
+        if getattr(res, "metrics", None):
+            metrics.extend(res.metrics)
+        if getattr(res, "suggested_followups", None):
+            for f in res.suggested_followups:
+                if f not in followups:
+                    followups.append(f)
+
+    if not followups:
+        followups = SUGGESTIONS
+
     total_rows = sum(res.row_count for res in results)
 
     return {
@@ -58,5 +74,8 @@ def answer(conn: sqlite3.Connection, question: str) -> dict:
         "grounding": grounding,
         "grounded_row_count": total_rows,
         "data": {res.kind: res.data for res in results},
-        "suggestions": SUGGESTIONS,
+        "suggestions": followups,
+        "suggested_followups": followups,
+        "cards": cards,
+        "metrics": metrics,
     }

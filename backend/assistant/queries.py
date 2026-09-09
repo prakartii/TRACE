@@ -28,6 +28,32 @@ class QueryResult:
     source: str
     event_ids: list[int] = field(default_factory=list)
     row_count: int = 0
+    cards: list[dict] = field(default_factory=list)
+    metrics: list[dict] = field(default_factory=list)
+    suggested_followups: list[str] = field(default_factory=list)
+
+
+def _event_card(row: sqlite3.Row | dict, immediate_action: Optional[str] = None) -> dict:
+    keys = row.keys() if hasattr(row, "keys") else row
+    scenario = row["scenario"] if "scenario" in keys else None
+    video_id = row["video_id"] if "video_id" in keys else None
+    ts = row["timestamp"] if "timestamp" in keys else 0
+    lens = row["lens"] if "lens" in keys else "structural"
+    score = row["score"] if "score" in keys else None
+    return {
+        "event_id": row["event_id"],
+        "scenario": scenario,
+        "title": labels.scenario_title(scenario),
+        "video_id": video_id,
+        "camera_name": labels.camera_label(video_id),
+        "timestamp": round(float(ts or 0), 1),
+        "band": (row["band"] if "band" in keys else "Medium") or "Medium",
+        "confidence": (row["confidence"] if "confidence" in keys else "Medium") or "Medium",
+        "status": (row["status"] if "status" in keys else "probable") or "probable",
+        "lens": lens or "structural",
+        "score": round(float(score or 0), 1) if score is not None else None,
+        "immediate_action": immediate_action,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -96,6 +122,24 @@ def overview(conn: sqlite3.Connection) -> QueryResult:
             + ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in sorted(outcomes.items()))
             + "."
         )
+    
+    top_events = _rows(
+        conn,
+        f"SELECT * FROM events WHERE band IN ('High','Critical') AND {EVIDENCE_BACKED_SQL} ORDER BY event_id DESC LIMIT 3"
+    )
+    cards = [_event_card(r) for r in top_events]
+    metrics = [
+        {"label": "Verified Findings", "value": total},
+        {"label": "High / Critical", "value": high},
+        {"label": "Prevented", "value": outcomes.get("prevented", 0)},
+        {"label": "Near Misses", "value": outcomes.get("near_miss", 0)},
+    ]
+    followups = [
+        "Give me a shift safety briefing",
+        "Show me the High-risk events",
+        "Which source had the most near misses?",
+        "Explain how the Safe Action Planner works",
+    ]
     return QueryResult(
         kind="overview",
         summary=" ".join(parts),
@@ -103,6 +147,9 @@ def overview(conn: sqlite3.Connection) -> QueryResult:
               "by_lens": by_lens, "outcomes": outcomes, "top_scenario": top_scenario},
         source=f"events + outcome_measurements — {EVIDENCE_BASIS_NOTE}",
         row_count=total,
+        cards=cards,
+        metrics=metrics,
+        suggested_followups=followups,
     )
 
 
@@ -247,6 +294,19 @@ def high_risk_events(conn: sqlite3.Connection) -> QueryResult:
         f"{worst[0]} has the most ({worst[1]}). "
         f"Top scenarios: {top_scenarios}."
     )
+    crit_count = sum(1 for r in rows if r["band"] == "Critical")
+    cards = [_event_card(r) for r in rows[:6]]
+    metrics = [
+        {"label": "High/Critical Events", "value": len(rows)},
+        {"label": "Critical Severity", "value": crit_count},
+        {"label": "Most Impacted Bay", "value": worst[0][:20]},
+    ]
+    followups = [
+        f"Explain event #{rows[0]['event_id']}",
+        f"What did TRACE recommend for event #{rows[0]['event_id']}?",
+        "Give me a shift safety briefing",
+        "Which source had the most near misses?",
+    ]
     return QueryResult(
         kind="high_risk_events",
         summary=summary,
@@ -254,6 +314,9 @@ def high_risk_events(conn: sqlite3.Connection) -> QueryResult:
         source="events where band in ('High','Critical')",
         event_ids=[r["event_id"] for r in rows],
         row_count=len(rows),
+        cards=cards,
+        metrics=metrics,
+        suggested_followups=followups,
     )
 
 
@@ -375,7 +438,7 @@ def explain_event(conn: sqlite3.Connection, event_id: Optional[int] = None,
     else:
         prefix = ""
     summary = (
-        f"{prefix}Event #{row['event_id']} — {labels.scenario_title(row['scenario'])} — was flagged "
+        f"{prefix}Event #{row['event_id']} ({labels.scenario_title(row['scenario'])}) was flagged "
         f"{row['band']} risk on the {labels.lens_label(row['lens'])} lens, with {row['confidence']} "
         f"confidence. Status: {labels.status_label(row['status'])}."
     )
@@ -383,6 +446,20 @@ def explain_event(conn: sqlite3.Connection, event_id: Optional[int] = None,
         summary += f" {explanation}"
     if ev_bits:
         summary += f" Observed: {ev_bits}."
+    cards = [_event_card(row, immediate_action=explanation)]
+    eid = row["event_id"]
+    metrics = [
+        {"label": "Event ID", "value": f"#{eid}"},
+        {"label": "Severity", "value": row["band"]},
+        {"label": "Confidence", "value": row["confidence"]},
+        {"label": "Camera", "value": labels.camera_label(row["video_id"]).split("-")[0].strip()},
+    ]
+    followups = [
+        f"What did TRACE recommend for event #{eid}?",
+        f"Explain {labels.scenario_title(row['scenario'])}",
+        "Show me the High-risk events",
+        "Give me a shift safety briefing",
+    ]
     return QueryResult(
         kind="explain_event",
         summary=summary,
@@ -391,6 +468,9 @@ def explain_event(conn: sqlite3.Connection, event_id: Optional[int] = None,
         source=f"events row #{row['event_id']}",
         event_ids=[row["event_id"]],
         row_count=1,
+        cards=cards,
+        metrics=metrics,
+        suggested_followups=followups,
     )
 
 
@@ -437,11 +517,21 @@ def recommendation_for(conn: sqlite3.Connection, event_id: Optional[int] = None,
             "recommendation_for",
             f"No Safe Action recommendation is recorded for event #{eid}.",
             {"event_id": eid}, "planner_recommendations + interventions", event_ids=[eid], row_count=0,
+            suggested_followups=[f"Explain event #{eid}", "Give me a shift safety briefing"],
         )
 
-    summary = f"For event #{eid} TRACE recommended: {action}"
+    summary = f"For event #{eid} TRACE recommended: {action}."
     if steps:
         summary += " Steps: " + "; ".join(steps[:4]) + "."
+
+    cards = list(ev.cards)
+    for c in cards:
+        c["immediate_action"] = action
+    metrics = [
+        {"label": "Event", "value": f"#{eid}"},
+        {"label": "Recommendation", "value": action[:24] if action else "Available"},
+        {"label": "Stability Delta", "value": f"{rec['expected_delta']:+.0f}" if rec and rec['expected_delta'] is not None else "Verified"},
+    ]
     return QueryResult(
         kind="recommendation_for",
         summary=summary,
@@ -451,4 +541,355 @@ def recommendation_for(conn: sqlite3.Connection, event_id: Optional[int] = None,
         source="planner_recommendations + interventions",
         event_ids=[eid],
         row_count=1,
+        cards=cards,
+        metrics=metrics,
+        suggested_followups=[
+            f"Why was event #{eid} risky?",
+            "How does the Safe Action Planner work?",
+            "Give me a shift safety briefing",
+        ],
     )
+
+
+def greetings(conn: sqlite3.Connection) -> QueryResult:
+    total = conn.execute(f"SELECT COUNT(*) FROM events WHERE {EVIDENCE_BACKED_SQL}").fetchone()[0]
+    high = conn.execute(f"SELECT COUNT(*) FROM events WHERE band IN ('High','Critical') AND {EVIDENCE_BACKED_SQL}").fetchone()[0]
+    prevented = conn.execute("SELECT COUNT(*) FROM outcome_measurements WHERE classification = 'prevented'").fetchone()[0]
+    near_misses = conn.execute("SELECT COUNT(*) FROM outcome_measurements WHERE classification = 'near_miss'").fetchone()[0]
+    
+    summary = (
+        "Hello! I am TRACE's Grounded AI Safety Assistant. I monitor warehouse operations across all calibrated camera feeds, "
+        "track physical stability in real time, enforce SKU conformance, and verify damage prevention before risky moves complete. "
+        "How can I assist you with today's shift?"
+    )
+    metrics = [
+        {"label": "Verified Findings", "value": total},
+        {"label": "High / Critical", "value": high},
+        {"label": "Prevented Incidents", "value": prevented},
+        {"label": "Near Misses", "value": near_misses},
+    ]
+    recent_high = _rows(
+        conn,
+        f"SELECT * FROM events WHERE band IN ('High','Critical') AND {EVIDENCE_BACKED_SQL} ORDER BY event_id DESC LIMIT 3"
+    )
+    cards = [_event_card(r) for r in recent_high]
+    followups = [
+        "Give me a shift safety briefing",
+        "Show me the High-risk events",
+        "How many events were prevented?",
+        "Explain how the Safe Action Planner works",
+        "What are the rules for heavy box handling?",
+    ]
+    return QueryResult(
+        kind="greetings",
+        summary=summary,
+        data={"total_events": total, "high_critical": high, "prevented": prevented},
+        source="TRACE Operational Intelligence",
+        cards=cards,
+        metrics=metrics,
+        suggested_followups=followups,
+    )
+
+
+def shift_briefing(conn: sqlite3.Connection) -> QueryResult:
+    total = conn.execute(f"SELECT COUNT(*) FROM events WHERE {EVIDENCE_BACKED_SQL}").fetchone()[0]
+    high = conn.execute(f"SELECT COUNT(*) FROM events WHERE band IN ('High','Critical') AND {EVIDENCE_BACKED_SQL}").fetchone()[0]
+    outcomes = {r["classification"]: r["n"] for r in _rows(conn, "SELECT classification, COUNT(*) n FROM outcome_measurements GROUP BY classification")}
+    top_scen_rows = _rows(conn, f"SELECT scenario, COUNT(*) n FROM events WHERE {EVIDENCE_BACKED_SQL} GROUP BY scenario ORDER BY n DESC LIMIT 1")
+    top_scen = top_scen_rows[0]["scenario"] if top_scen_rows else "box_overhang"
+    
+    recent_critical = _rows(
+        conn,
+        f"SELECT * FROM events WHERE band IN ('High','Critical') AND {EVIDENCE_BACKED_SQL} ORDER BY event_id DESC LIMIT 4"
+    )
+    cards = [_event_card(r) for r in recent_critical]
+    
+    summary = (
+        f"Shift Safety Handover Briefing: TRACE has logged {total} verified physical risk events, including {high} High/Critical priorities. "
+        f"Outcome metrics confirm {outcomes.get('prevented', 0)} verified damage preventions and {outcomes.get('near_miss', 0)} recorded near misses. "
+        f"Primary operational hazard for this shift is {labels.scenario_title(top_scen)} ({top_scen_rows[0]['n'] if top_scen_rows else 0} occurrences). "
+        "Recommended supervisor focus: ensure staging pallet deck coverage exceeds 70% and verify fall-protection perimeter at the loading dock."
+    )
+    metrics = [
+        {"label": "Active Prioritized Risks", "value": high},
+        {"label": "Prevented Incidents", "value": outcomes.get("prevented", 0)},
+        {"label": "Recorded Near-Misses", "value": outcomes.get("near_miss", 0)},
+        {"label": "Primary Hazard", "value": labels.scenario_title(top_scen)[:20]},
+    ]
+    return QueryResult(
+        kind="shift_briefing",
+        summary=summary,
+        data={"total": total, "high": high, "outcomes": outcomes, "top_scenario": top_scen},
+        source="events + outcome_measurements shift synthesis",
+        event_ids=[r["event_id"] for r in recent_critical],
+        row_count=len(recent_critical),
+        cards=cards,
+        metrics=metrics,
+        suggested_followups=[
+            "Show me the High-risk events",
+            f"Explain {labels.scenario_title(top_scen)}",
+            "What did TRACE recommend for the latest event?",
+            "What product rules exist?",
+        ],
+    )
+
+
+def active_interventions(conn: sqlite3.Connection) -> QueryResult:
+    rows = _rows(
+        conn,
+        """
+        SELECT alert_id, event_id, video_id, timestamp, scenario, severity, urgency, state, title, immediate_action
+        FROM interventions
+        ORDER BY CASE severity WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 ELSE 2 END, created_at DESC LIMIT 6
+        """
+    )
+    if not rows:
+        return QueryResult(
+            "active_interventions",
+            "There are currently no active intervention alerts logged in the system.",
+            {"interventions": []},
+            "interventions table",
+            row_count=0,
+            suggested_followups=["Give me a shift safety briefing", "Show me the High-risk events"],
+        )
+    crit_count = sum(1 for r in rows if r["severity"] == "CRITICAL")
+    cards = [
+        {
+            "event_id": r["event_id"],
+            "scenario": r["scenario"],
+            "title": r["title"] or labels.scenario_title(r["scenario"]),
+            "video_id": r["video_id"],
+            "camera_name": labels.camera_label(r["video_id"]),
+            "timestamp": round(float(r["timestamp"] or 0), 1),
+            "band": r["severity"].capitalize(),
+            "confidence": "High",
+            "status": r["state"].lower(),
+            "lens": "intervention",
+            "score": 85.0 if r["severity"] == "CRITICAL" else 65.0,
+            "immediate_action": r["immediate_action"],
+        }
+        for r in rows
+    ]
+    summary = (
+        f"Currently {len(rows)} real-time intervention alerts are tracked ({crit_count} Critical, {len(rows) - crit_count} High/Medium). "
+        f"Latest alert: '{rows[0]['title']}' at {labels.camera_label(rows[0]['video_id'])}. "
+        f"Immediate required action: {rows[0]['immediate_action']}."
+    )
+    metrics = [
+        {"label": "Active Alerts", "value": len(rows)},
+        {"label": "Critical Urgency", "value": crit_count},
+        {"label": "Latest Camera", "value": labels.camera_label(rows[0]['video_id']).split("-")[0].strip()},
+    ]
+    return QueryResult(
+        kind="active_interventions",
+        summary=summary,
+        data={"interventions": [dict(r) for r in rows]},
+        source="interventions table",
+        event_ids=[r["event_id"] for r in rows],
+        row_count=len(rows),
+        cards=cards,
+        metrics=metrics,
+        suggested_followups=[
+            f"What did TRACE recommend for event #{rows[0]['event_id']}?",
+            "Give me a shift safety briefing",
+            "Show me the High-risk events",
+        ],
+    )
+
+
+def camera_events(conn: sqlite3.Connection, query: str = "") -> QueryResult:
+    q_lower = (query or "").lower()
+    matched_vid = None
+    cam_name = "Selected Camera Feed"
+    for vid, name in labels.CAMERA_LABELS.items():
+        if vid in q_lower or name.lower() in q_lower or (name.split("-")[0].strip().lower() in q_lower):
+            matched_vid = vid
+            cam_name = name
+            break
+    if not matched_vid:
+        for vid, name in labels.CAMERA_LABELS.items():
+            if any(term in q_lower for term in ("dock", "cupboard", "camera 1")) and "dock" in name.lower():
+                matched_vid = vid; cam_name = name; break
+            elif any(term in q_lower for term in ("pallet", "staging", "deck", "camera 2")) and "staging" in name.lower():
+                matched_vid = vid; cam_name = name; break
+            elif any(term in q_lower for term in ("wet", "transit", "slip", "camera 3")) and "wet" in name.lower():
+                matched_vid = vid; cam_name = name; break
+            elif any(term in q_lower for term in ("carton", "dropping", "rolling", "camera 4")) and "unloading" in name.lower():
+                matched_vid = vid; cam_name = name; break
+            elif any(term in q_lower for term in ("racking", "stepping", "vertical", "camera 5")) and "racking" in name.lower():
+                matched_vid = vid; cam_name = name; break
+            elif any(term in q_lower for term in ("bulk", "mattress", "dispatch", "camera 6")) and "bulk" in name.lower():
+                matched_vid = vid; cam_name = name; break
+            elif any(term in q_lower for term in ("furniture", "seating", "strap", "camera 7")) and "furniture" in name.lower():
+                matched_vid = vid; cam_name = name; break
+    if not matched_vid:
+        matched_vid = "93e4b1963c6fcd97"
+        cam_name = labels.CAMERA_LABELS[matched_vid]
+
+    rows = _rows(
+        conn,
+        f"""
+        SELECT * FROM events
+        WHERE (video_id LIKE ? OR video_id LIKE ?) AND {EVIDENCE_BACKED_SQL}
+        ORDER BY CASE band WHEN 'Critical' THEN 0 WHEN 'High' THEN 1 ELSE 2 END, score DESC LIMIT 5
+        """,
+        (f"%{matched_vid}%", f"{matched_vid}%"),
+    )
+    if not rows:
+        return QueryResult(
+            "camera_events",
+            f"No evidence-backed events recorded for {cam_name}.",
+            {"camera": cam_name, "video_id": matched_vid, "events": []},
+            f"events (camera: {cam_name})",
+            row_count=0,
+            suggested_followups=["Show me the High-risk events", "Give me a shift safety briefing"],
+        )
+    cards = [_event_card(r) for r in rows]
+    top_scen = labels.scenario_title(rows[0]["scenario"])
+    summary = (
+        f"{cam_name} has {len(rows)} recorded hazard events. "
+        f"Primary concern: {top_scen} ({rows[0]['band']} risk, score {rows[0]['score']:.1f}). "
+        f"Status: {labels.status_label(rows[0]['status'])}."
+    )
+    metrics = [
+        {"label": "Camera", "value": cam_name.split("-")[0].strip()},
+        {"label": "Events Logged", "value": len(rows)},
+        {"label": "Top Risk Level", "value": rows[0]["band"]},
+    ]
+    return QueryResult(
+        kind="camera_events",
+        summary=summary,
+        data={"camera": cam_name, "video_id": matched_vid, "events": [dict(r) for r in rows]},
+        source=f"events at {cam_name}",
+        event_ids=[r["event_id"] for r in rows],
+        row_count=len(rows),
+        cards=cards,
+        metrics=metrics,
+        suggested_followups=[
+            f"Explain event #{rows[0]['event_id']}",
+            f"What did TRACE recommend for event #{rows[0]['event_id']}?",
+            "Show me the High-risk events",
+        ],
+    )
+
+
+def scenario_info(conn: sqlite3.Connection, query: str = "") -> QueryResult:
+    q_lower = (query or "").lower()
+    matched_scen = None
+    for scen_key in labels.SCENARIO_DESCRIPTIONS.keys():
+        if scen_key in q_lower or scen_key.replace("_", " ") in q_lower or scen_key.split("_")[0] in q_lower:
+            matched_scen = scen_key
+            break
+    if not matched_scen:
+        if "overhang" in q_lower or "cantilever" in q_lower: matched_scen = "box_overhang"
+        elif "heavy" in q_lower or "crush" in q_lower: matched_scen = "heavy_on_light"
+        elif "lean" in q_lower or "tilt" in q_lower: matched_scen = "stack_lean"
+        elif "drop" in q_lower or "fall" in q_lower: matched_scen = "dropping_carton"
+        elif "drag" in q_lower or "abrasion" in q_lower: matched_scen = "dragging_heavy_box"
+        elif "step" in q_lower or "climb" in q_lower: matched_scen = "stepping_on_cartons"
+        elif "throw" in q_lower or "toss" in q_lower: matched_scen = "throwing_cartons"
+        elif "wet" in q_lower or "slip" in q_lower: matched_scen = "wet_floor_transit"
+        elif "dock" in q_lower or "edge" in q_lower: matched_scen = "dock_edge_proximity"
+        elif "strap" in q_lower: matched_scen = "strap_lift_hazard"
+        elif "orient" in q_lower or "upright" in q_lower: matched_scen = "vertical_orientation_violation"
+        else: matched_scen = "box_overhang"
+
+    info = labels.scenario_description(matched_scen)
+    rows = _rows(
+        conn,
+        f"""
+        SELECT * FROM events WHERE (scenario = ? OR scenario LIKE ?) AND {EVIDENCE_BACKED_SQL}
+        ORDER BY score DESC LIMIT 4
+        """,
+        (matched_scen, f"%{matched_scen}%"),
+    )
+    cards = [_event_card(r) for r in rows]
+    summary = (
+        f"Scenario Protocol: {info['title']}. Physical Basis: {info['description']} "
+        f"Corrective Standard: {info['prevention']} "
+        f"TRACE has {len(rows)} recorded instances of this hazard."
+    )
+    metrics = [
+        {"label": "Scenario", "value": info["title"][:20]},
+        {"label": "Recorded Events", "value": len(rows)},
+    ]
+    return QueryResult(
+        kind="scenario_info",
+        summary=summary,
+        data={"scenario": matched_scen, "info": info, "events": [dict(r) for r in rows]},
+        source=f"Operational Scenario Manual ({matched_scen})",
+        event_ids=[r["event_id"] for r in rows],
+        row_count=len(rows),
+        cards=cards,
+        metrics=metrics,
+        suggested_followups=[
+            f"Explain event #{rows[0]['event_id']}" if rows else "Show me the High-risk events",
+            "How does the Safe Action Planner work?",
+            "Give me a shift safety briefing",
+        ],
+    )
+
+
+def product_rules_summary(conn: sqlite3.Connection) -> QueryResult:
+    products = _rows(conn, "SELECT product_id, class_name, mass_class, fragility, required_orientation, max_stack_height FROM products")
+    rules = _rows(conn, "SELECT rule_id, product_id, rule_type, rule_value, created_by FROM product_rules")
+    custom = _rows(conn, "SELECT rule_id, description, created_by FROM custom_rules")
+    
+    prod_summary = f"{len(products)} products registered in warehouse catalog"
+    rule_bits = []
+    if rules:
+        rule_bits.append(f"{len(rules)} product rules (e.g. {rules[0]['rule_type']}={rules[0]['rule_value']})")
+    if custom:
+        rule_bits.append(f"{len(custom)} custom supervisor safety rules")
+    
+    summary = (
+        f"Warehouse Product & Safety Rules Catalog: {prod_summary}. "
+        + (", ".join(rule_bits) if rule_bits else "No custom rules configured yet.")
+        + ". All SKU orientation requirements and maximum stack limits are automatically enforced in real time by the Conformance Lens."
+    )
+    metrics = [
+        {"label": "Catalog SKUs", "value": len(products)},
+        {"label": "Active Rules", "value": len(rules) + len(custom)},
+    ]
+    return QueryResult(
+        kind="product_rules_summary",
+        summary=summary,
+        data={"products": [dict(p) for p in products], "rules": [dict(r) for r in rules], "custom_rules": [dict(c) for c in custom]},
+        source="products + product_rules + custom_rules",
+        metrics=metrics,
+        suggested_followups=[
+            "Give me a shift safety briefing",
+            "Show me the High-risk events",
+            "Explain overhang risk",
+        ],
+    )
+
+
+def planner_methodology(conn: sqlite3.Connection) -> QueryResult:
+    summary = (
+        "The Safe Action Planner is TRACE's prescriptive decision intelligence engine. "
+        "When an unstable placement or handling hazard is detected, TRACE scores both the proposed action and 2–3 alternative candidate placements using transparent closed-form stability metrics (0–100): "
+        "Deck Support Coverage (50%): Surface contact area over supporting base. "
+        "Centering Eccentricity (30%): Distance from pallet center-of-gravity to prevent tipping moments. "
+        "Mass Ordering (20%): Heavy foundation vs light upper tiers to eliminate crush risk. "
+        "TRACE recommends the highest-scoring candidate with a precise corrective instruction and expected stability delta (+Δ)."
+    )
+    metrics = [
+        {"label": "Planner Mode", "value": "Prescriptive"},
+        {"label": "Scoring Scale", "value": "0 - 100 Index"},
+        {"label": "Weights", "value": "50% Support / 30% Center / 20% Mass"},
+    ]
+    followups = [
+        "What did TRACE recommend for event #73?",
+        "Give me a shift safety briefing",
+        "Show me the High-risk events",
+    ]
+    return QueryResult(
+        kind="planner_methodology",
+        summary=summary,
+        data={"components": ["support_50", "centering_30", "mass_ordering_20"]},
+        source="TRACE Safe Action Planner Engine (Layer 5)",
+        metrics=metrics,
+        suggested_followups=followups,
+    )
+

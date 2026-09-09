@@ -120,16 +120,43 @@ def route(question: str) -> Route:
     if _kw(t, "false positive", "false-positive", "wrong", "misfire", "incorrect"):
         return Route("false_positives", [q.false_positives])
 
+    # shift handover briefing / daily report ----------------------------------
+    if _kw(t, "briefing", "handover", "daily report", "morning report", "executive summary", "daily summary"):
+        return Route("shift_briefing", [q.shift_briefing])
+
+    # active alerts & interventions ------------------------------------------
+    if _kw(t, "active alert", "active alerts", "intervention", "interventions", "alarms", "urgent alert"):
+        return Route("active_interventions", [q.active_interventions])
+
+    # safe action planner & stability formula --------------------------------
+    if _kw(t, "how does the planner", "how does planner", "how is stability",
+           "stability formula", "calculate stability", "what-if simulation", "counterfactual"):
+        return Route("planner_methodology", [q.planner_methodology])
+
+    # product rules & SKU catalog --------------------------------------------
+    if _kw(t, "sku", "catalog", "custom rule", "product rule", "max stack", "rules for", "orientation rule"):
+        return Route("product_rules_summary", [q.product_rules_summary])
+
+    # specific camera / bay analysis -----------------------------------------
+    if _kw(t, "camera 1", "camera 2", "camera 3", "camera 4", "camera 5", "camera 6", "camera 7",
+           "camera", "loading dock", "staging deck", "transit aisle", "unloading bay", "racking area", "dispatch bay"):
+        return Route("camera_events", [lambda c: q.camera_events(c, t)])
+
+    # scenario explanations / protocols --------------------------------------
+    if (_kw(t, "what is", "tell me about", "describe", "explain") and kw) or _kw(t, "14 scenario", "all scenarios", "scenarios"):
+        return Route("scenario_info", [lambda c: q.scenario_info(c, t)])
+
     # default: a grounded overview + the two headline aggregates -----------
     return Route("overview", [q.overview, q.top_scenarios, q.prevention_breakdown])
 
 
 SUGGESTIONS = [
-    "What were the most common risks?",
+    "Give me a shift safety briefing",
+    "What are the most common risks?",
+    "Show me the High-risk events",
+    "Are there any active alerts?",
+    "How does the Safe Action Planner work?",
     "How many events were prevented?",
-    "Which source had the most near misses?",
-    "Why was event #73 risky?",
-    "What did TRACE recommend for event #73?",
-    "Which behaviour occurred most frequently?",
-    "Show me the High-risk events.",
+    "What happened on Camera 2?",
+    "Explain unstable overhang risk",
 ]

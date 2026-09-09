@@ -883,4 +883,7 @@ class AssistantAnswer(BaseModel):
     grounded_row_count: int = 0
     data: dict = Field(default_factory=dict)
     suggestions: list[str] = Field(default_factory=list)
+    suggested_followups: list[str] = Field(default_factory=list)
+    cards: list[dict] = Field(default_factory=list)
+    metrics: list[dict] = Field(default_factory=list)
 
