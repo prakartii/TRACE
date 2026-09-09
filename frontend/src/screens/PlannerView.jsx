@@ -6,7 +6,8 @@ import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS, formatEvidenceKey, formatEvidenceValue, telemetryEntries } from '../lib/scenarios.js'
 import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
-import { formatConfidence, formatEntityName } from '../lib/format.js'
+import { formatConfidence, formatEntityName, humanizeExplanation } from '../lib/format.js'
+import WorkflowNav from '../components/WorkflowNav.jsx'
 
 const REFERENCE_SCENARIOS = [
   {
@@ -236,7 +237,17 @@ export default function PlannerView() {
       : 'border-steel/40 bg-steel/10 text-steel'
 
   return (
-    <div className="flex flex-col gap-8 pb-12">
+    <div className="flex flex-col gap-6 pb-12">
+      {/* 5-step safety workflow banner */}
+      <WorkflowNav
+        currentStep={5}
+        navigateTo={navigateTo}
+        context={{
+          eventId: activeEvent?.event_id || selectedEventId,
+          videoId: activeEvent?.video_id,
+        }}
+      />
+
       {/* header */}
       <section className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -252,7 +263,7 @@ export default function PlannerView() {
         <button
           type="button"
           onClick={handleReplayCurrent}
-          className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+          className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong cursor-pointer"
         >
           replay in video
           <ArrowRight size={15} />
@@ -265,7 +276,7 @@ export default function PlannerView() {
           <select
             value={selectedEventId || ''}
             onChange={(e) => handleSelectEvent(e.target.value)}
-            className="border border-line bg-paper px-2.5 py-1.5 text-small text-ink focus:border-ink"
+            className="border border-line bg-paper px-2.5 py-1.5 text-small text-ink focus:border-ink cursor-pointer"
           >
             {recentEvents.map((ev) => (
               <option key={ev.event_id} value={ev.event_id}>
@@ -273,27 +284,6 @@ export default function PlannerView() {
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-label font-medium text-ink-faint">recommended demos</span>
-          {DEMO_PRESETS.map((demo) => {
-            const isSelected = selectedEventId === demo.id
-            return (
-              <button
-                key={demo.id}
-                type="button"
-                onClick={() => handleSelectEvent(demo.id)}
-                className={`border px-2.5 py-1 text-caption font-medium transition-colors ${
-                  isSelected
-                    ? 'border-ink bg-ink text-paper'
-                    : 'border-line bg-surface text-ink-soft hover:text-ink'
-                }`}
-                title={demo.desc}
-              >
-                event #{demo.id}
-              </button>
-            )
-          })}
         </div>
       </section>
 
@@ -306,8 +296,8 @@ export default function PlannerView() {
       {/* step 1 */}
       <section className="border border-line bg-surface">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-          <span className="font-mono text-caption font-semibold text-ink">
-            step 1 · what is happening
+          <span className="text-small font-bold text-ink uppercase tracking-wide">
+            Step 1: Current Hazard Assessment
           </span>
           <div className="flex items-center gap-2">
             <span className={`border px-2 py-0.5 text-label font-medium ${severityCls}`}>
@@ -329,7 +319,7 @@ export default function PlannerView() {
               </span>
               <span>·</span>
               <span>
-                object: <span className="font-mono text-ink">{formatEntityName(activeEvent?.entity_id) || 'movable carton'}</span>
+                Target: <span className="font-semibold text-ink">{formatEntityName(activeEvent?.entity_id)}</span>
               </span>
               <span>·</span>
               <span>
@@ -350,8 +340,8 @@ export default function PlannerView() {
       {/* step 2 · what is likely to happen */}
       <section className="border border-line bg-surface">
         <div className="border-b border-line px-4 py-2.5">
-          <span className="font-mono text-caption font-semibold text-ink">
-            step 2 · what is likely to happen (inferred &amp; predicted)
+          <span className="text-small font-bold text-ink uppercase tracking-wide">
+            Step 2: Predicted Risk &amp; Telemetry
           </span>
         </div>
         {/* Rendered from the finding's OWN recorded evidence keys. Evidence keys
@@ -370,8 +360,8 @@ export default function PlannerView() {
           </div>
         )}
         <SupervisorRuleNotice evidence={evidence} className="border-x-0 border-b-0" />
-        <div className="border-t border-line px-4 py-3 text-small text-ink-soft">
-          {safePlan?.reason || whyActionText || 'These optical measurements indicate elevated operational risk requiring corrective intervention.'}
+        <div className="border-t border-line px-4 py-3 text-small text-ink leading-relaxed">
+          {humanizeExplanation(safePlan?.reason || whyActionText, activeEvent?.scenario, activeEvent?.entity_id)}
         </div>
       </section>
 
@@ -379,11 +369,11 @@ export default function PlannerView() {
       <section className="border border-ok/40 bg-surface">
         <div className="h-1 bg-ok" />
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <span className="font-mono text-caption font-semibold text-ok">
-            step 3 · what to do now (safe action plan)
+          <span className="text-small font-bold text-ok uppercase tracking-wide">
+            Step 3: Recommended Safe Action Plan
           </span>
-          <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label text-ok uppercase">
-            {safePlan?.evidence_status || 'deterministic prescription'}
+          <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-semibold text-ok uppercase">
+            {safePlan?.evidence_status || 'Verified Safe Procedure'}
           </span>
         </div>
         <div className="p-5 flex flex-col gap-4">
@@ -428,14 +418,16 @@ export default function PlannerView() {
           {/* Why this action? */}
           <div className="border-t border-line pt-3 flex flex-col gap-1">
             <span className="text-label font-medium text-ink-faint">why this action</span>
-            <p className="text-small text-ink-soft">{safePlan?.reason || whyActionText}</p>
+            <p className="text-small text-ink-soft">
+              {humanizeExplanation(safePlan?.reason || whyActionText, activeEvent?.scenario, activeEvent?.entity_id)}
+            </p>
           </div>
 
           <div className="flex items-center justify-between pt-2 border-t border-line text-caption text-ink-faint flex-wrap gap-2">
             <span>
               confidence: <strong className="font-medium text-ink uppercase">{activeEvent?.confidence || 'HIGH'}</strong> — {safePlan?.evidence_status || 'Verified'}
             </span>
-            <span>{safePlan?.source || 'TRACE Operational Safety Catalog (deterministic rule)'}</span>
+            <span>{safePlan?.source || 'TRACE Certified Safety Procedure Catalog'}</span>
           </div>
         </div>
       </section>
@@ -443,8 +435,8 @@ export default function PlannerView() {
       {/* step 4 */}
       <section className="border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <span className="font-mono text-caption font-semibold text-ink">
-            step 4 · what if we act
+          <span className="text-small font-bold text-ink uppercase tracking-wide">
+            Step 4: Pre-Execution Simulation
           </span>
           <span className="text-caption text-ink-faint">pre-execution verification</span>
         </div>

@@ -129,11 +129,6 @@ export default function InterventionModal({ alert, onClose }) {
                   {alert.severity} — {alert.urgency}
                 </span>
                 <InterventionStatusChip state={alert.state} compact />
-                {alert.occurrence_count > 1 && (
-                  <span className="rounded border border-line bg-paper px-2 py-0.5 text-xs font-medium text-ink-soft">
-                    Repeated {alert.occurrence_count}×
-                  </span>
-                )}
               </div>
               <h2 className="mt-1 text-lg font-bold text-ink">{alert.title}</h2>
               <p className="text-xs text-ink-soft">

@@ -506,9 +506,29 @@ export function supervisorRulesFrom(evidence) {
   return Array.isArray(v) ? v : []
 }
 
-/** `evidence` minus non-telemetry keys, for the observed-metric grids. */
+/** `evidence` minus non-telemetry keys and redundant synonyms, for the observed-metric grids. */
 export function telemetryEntries(evidence) {
-  return Object.entries(evidence || {}).filter(([k]) => k !== SUPERVISOR_RULES_KEY)
+  if (!evidence || typeof evidence !== 'object') return []
+  const raw = Object.entries(evidence).filter(([k, v]) => {
+    if (k === SUPERVISOR_RULES_KEY) return false
+    if (v === null || v === undefined) return false
+    if (typeof v === 'string' && (v.toLowerCase().includes('not modeled') || v.toLowerCase().includes('not applicable'))) return false
+    return true
+  })
+
+  // Deduplicate overlap metrics if values are identical (e.g. support_ratio and horizontal_overlap_ratio)
+  const hasSupport = raw.some(([k]) => k === 'support_ratio' || k === 'support_coverage')
+  if (hasSupport) {
+    const supportVal = raw.find(([k]) => k === 'support_ratio' || k === 'support_coverage')?.[1]
+    return raw.filter(([k, v]) => {
+      if ((k === 'horizontal_overlap_ratio' || k === 'overlap_ratio') && v === supportVal) {
+        return false
+      }
+      return true
+    })
+  }
+
+  return raw
 }
 
 export function formatEvidenceValue(key, value) {

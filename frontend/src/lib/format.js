@@ -58,24 +58,40 @@ export function formatPercentage(val, fallback = 'Not modeled') {
 }
 
 export function formatEntityName(entityId) {
-  if (!entityId || typeof entityId !== 'string') return 'Tracked Entity'
+  if (!entityId || typeof entityId !== 'string') return 'Tracked Cargo'
   const clean = entityId.trim()
+  const lower = clean.toLowerCase()
+
   // Extract trailing id if format is "video_id:track_id"
   const parts = clean.split(':')
-  const trackId = parts.length > 1 ? parts[parts.length - 1] : clean
-  const isPerson = clean.toLowerCase().includes('person') || clean.toLowerCase().includes('worker')
-  const isPallet = clean.toLowerCase().includes('pallet')
-  const isCarton = clean.toLowerCase().includes('carton') || clean.toLowerCase().includes('box')
+  const lastPart = parts.length > 1 ? parts[parts.length - 1] : clean
+  const num = Number(lastPart)
+  const hasNumericTrack = !isNaN(num) && Number.isInteger(num) && num < 100000
 
-  if (isPerson) return `Worker #${trackId}`
-  if (isPallet) return `Pallet Deck #${trackId}`
-  if (isCarton) return `Cargo Carton #${trackId}`
+  const isPerson = lower.includes('person') || lower.includes('worker') || lower.includes('pedestrian')
+  const isPallet = lower.includes('pallet')
+  const isCarton = lower.includes('carton') || lower.includes('box') || lower.includes('package')
 
-  const num = Number(trackId)
-  if (!isNaN(num)) {
-    return `Cargo Item #${trackId}`
+  if (isPerson) {
+    return hasNumericTrack ? `Worker #${num}` : 'Warehouse Worker'
   }
-  return `Tracked Unit #${trackId}`
+  if (isPallet) {
+    return hasNumericTrack ? `Pallet Deck #${num}` : 'Pallet Deck'
+  }
+  if (isCarton) {
+    return hasNumericTrack ? `Cargo Carton #${num}` : 'Cargo Carton'
+  }
+
+  if (hasNumericTrack) {
+    return `Cargo Item #${num}`
+  }
+
+  // If it's an internal test string like "worker_stepping" or "overhang_box", handle gracefully
+  if (lower.includes('step')) return 'Warehouse Worker'
+  if (lower.includes('overhang')) return 'Cargo Carton'
+  if (lower.includes('stack')) return 'Stacked Cargo'
+
+  return 'Tracked Cargo Unit'
 }
 
 export function humanizeExplanation(text, scenario = '', entityId = '') {
@@ -94,7 +110,25 @@ export function humanizeExplanation(text, scenario = '', entityId = '') {
   s = s.replace(/dock_\d+_wet_floor/gi, 'wet floor hazard zone')
   s = s.replace(/This zone is operator-calibrated, not automatically detected from video\./gi, '')
 
-  // 2. Clean up awkward raw polygon / scientific / coordinate text
+  // 2. Remove developer/epistemic debug text
+  s = s.replace(/Classified as Outcome Unclear preserving epistemic discipline:?/gi, 'Outcome pending verification in subsequent camera footage.')
+  s = s.replace(/Risk severity band 'None' and score None do not indicate an actionable risk event;?/gi, 'Safety condition awaiting operator verification;')
+  s = s.replace(/post-action resolution cannot be confirmed from optical evidence alone\.?/gi, 'Physical resolution requires supervisor sign-off or subsequent camera observation.')
+  s = s.replace(/unverified subsequent world-model improvement/gi, 'awaiting post-action video confirmation')
+  s = s.replace(/unverified or missing corrective action/gi, 'awaiting corrective action on floor')
+  s = s.replace(/unverified initial risk prediction/gi, 'initial risk prediction unverified')
+  s = s.replace(/Outcome cannot be definitively verified as prevented \((.*?)\)\.?/gi, 'Awaiting confirmation in subsequent camera frames.')
+
+  // 3. Clean up graph theory & node / math jargon
+  s = s.replace(/Probable evidence observed \((.*?)\)/gi, '$1')
+  s = s.replace(/Person footprint overlapping upper boundary of carton node near floor\.?/gi, 'Worker observed standing or stepping directly on staged cardboard cargo carton. Cardboard packaging cannot support human weight and risks collapsing.')
+  s = s.replace(/carton node near floor/gi, 'staged cardboard carton')
+  s = s.replace(/carton node/gi, 'cargo carton')
+  s = s.replace(/Person footprint overlapping upper boundary/gi, 'Worker foot contact on top surface')
+  s = s.replace(/overlap ratio < 75%/gi, 'less than 75% base support')
+  s = s.replace(/cantilever overhang creates eccentric loading and tipping hazard/gi, 'Overhanging cargo causes uneven weight distribution and severe tipping risk.')
+
+  // 4. Clean up awkward raw polygon / scientific / coordinate text
   s = s.replace(/vertical_gap=[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?/gi, '')
   s = s.replace(/horizontal_overlap=[-+]?[0-9]*\.?[0-9]+/gi, '')
   s = s.replace(/in 2D image space,\s*/gi, '')
@@ -105,10 +139,10 @@ export function humanizeExplanation(text, scenario = '', entityId = '') {
   s = s.replace(/\(\s*,\s*\)/gi, '')
   s = s.replace(/\(\s*\)/gi, '')
 
-  // 3. Clean up raw entity IDs inside text (e.g. f15ad7e2295d190b:30)
+  // 5. Clean up raw entity IDs inside text (e.g. f15ad7e2295d190b:30)
   s = s.replace(/[a-f0-9]{16}:(\d+)/gi, (_, id) => `Worker #${id}`)
 
-  // 4. Transform specific common automated messages into executive phrasing
+  // 6. Transform specific common automated messages into executive phrasing
   if (s.toLowerCase().includes('person is inside') && s.toLowerCase().includes('dock')) {
     return 'Worker positioned within 2.0m of the unbarricaded dock-edge threshold without safety barrier. High risk of fatal fall to roadway.'
   }

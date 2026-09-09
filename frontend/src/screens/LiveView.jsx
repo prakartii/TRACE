@@ -4,7 +4,6 @@ import { getEntities, getFindings, getSamplingPolicy, getScene, getWhatIf, listV
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import FindingsPanel from '../components/video/FindingsPanel.jsx'
 import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
-import LiveAnalysisSummary from '../components/video/LiveAnalysisSummary.jsx'
 import MetadataPanel from '../components/video/MetadataPanel.jsx'
 import PerceptionOverlay from '../components/video/PerceptionOverlay.jsx'
 import FaceRedactionOverlay from '../components/video/FaceRedactionOverlay.jsx'
@@ -13,6 +12,15 @@ import VideoLibrary from '../components/video/VideoLibrary.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
 import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
+import { getVideoScenarioInfo } from '../lib/scenarios.js'
+import WorkflowNav from '../components/WorkflowNav.jsx'
+
+function formatTime(sec) {
+  if (typeof sec !== 'number' || isNaN(sec)) return '00:00.0'
+  const m = Math.floor(sec / 60)
+  const s = (sec % 60).toFixed(1)
+  return `${String(m).padStart(2, '0')}:${s.padStart(4, '0')}`
+}
 
 export default function LiveView() {
   const { setLiveState, navigateTo } = useLiveViewContext()
@@ -49,6 +57,7 @@ export default function LiveView() {
   const findings = useOverlayData(getFindings, findingsEnabled, selectedId, currentTime, modelName)
 
   const selectedVideo = videos.find((v) => v.id === selectedId) ?? null
+  const videoInfo = selectedVideo ? getVideoScenarioInfo(selectedVideo.id || selectedVideo.filename) : null
   useEffect(() => {
     setLiveState({
       selectedId,
@@ -158,15 +167,56 @@ export default function LiveView() {
   const entities = perception.data?.entities ?? []
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_300px]">
+    <div className="flex flex-col gap-6">
+      {/* 5-step safety workflow banner */}
+      <WorkflowNav
+        currentStep={1}
+        navigateTo={navigateTo}
+        context={{ videoId: selectedId, timestamp: currentTime }}
+      />
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_300px]">
       <div className="flex flex-col gap-6">
-        <LiveAnalysisSummary
-          video={selectedVideo}
-          findings={findings.data}
-          loading={findings.loading}
-          findingsEnabled={findingsEnabled}
-          currentTime={currentTime}
-        />
+        {/* Camera Bay Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-surface px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-signal opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-signal"></span>
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-semibold text-ink">
+                  {videoInfo ? videoInfo.cameraName : 'Warehouse Camera Feed'}
+                </h2>
+                <span className="border border-line bg-paper px-2 py-0.5 text-label font-medium text-ink-soft">
+                  {videoInfo?.zone || 'Warehouse'}
+                </span>
+              </div>
+              <p className="text-caption text-ink-soft mt-0.5">
+                {videoInfo?.scenarioTitle || 'Continuous live safety monitoring'}
+                {currentTime !== undefined && (
+                  <> · Position: <span className="font-mono tabular-nums text-ink">{formatTime(currentTime)}</span></>
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {findings.loading ? (
+              <span className="border border-signal/40 bg-signal/10 px-2.5 py-1 text-label font-medium text-[#8a5f00]">
+                evaluating…
+              </span>
+            ) : findings.data && findings.data.length > 0 ? (
+              <span className="border border-signal/40 bg-signal/10 px-2.5 py-1 text-label font-medium text-[#8a5f00]">
+                {findings.data.length} Hazard Warning{findings.data.length === 1 ? '' : 's'}
+              </span>
+            ) : (
+              <span className="border border-ok/40 bg-ok/10 px-2.5 py-1 text-label font-medium text-ok">
+                All Clear · Normal Operation
+              </span>
+            )}
+          </div>
+        </div>
 
         {selectedVideo ? (
           <VideoViewport
@@ -239,136 +289,64 @@ export default function LiveView() {
         )}
 
         {selectedVideo && (
-          <p className="border border-line border-t-0 bg-surface px-3 py-1.5 font-mono text-[10px] text-ink-faint">
-            Responsible AI: personnel faces are obscured. The exported still frame is redacted
-            server-side (fails closed); this streamed view redacts at the presentation layer and
-            falls back to a full-frame blur when detections are unavailable.
-          </p>
+          <div className="flex items-center justify-between border border-line border-t-0 bg-surface px-3 py-1.5 text-caption text-ink-soft">
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-ok" />
+              <span className="font-medium text-ink">Worker Privacy Active:</span>
+              <span>Personnel faces obscured by default</span>
+            </span>
+            <span className="font-mono text-[11px] text-ink-faint">live stream</span>
+          </div>
         )}
 
-        {/* controls */}
-        <div className="flex flex-col border border-line bg-surface">
-          <ToggleRow
-            label="perception overlay"
-            hint="detection & tracking"
-            checked={overlayEnabled}
-            disabled={!selectedVideo}
-            onChange={(checked) => {
-              setOverlayEnabled(checked)
-              if (checked) setPilotModelEnabled(true)
-            }}
-            right={
-              <span className="text-caption text-ink-faint">
-                {perception.error
-                  ? perception.error
-                  : overlayEnabled && perception.loading
-                    ? 'running perception…'
-                    : overlayEnabled
-                      ? `${entities.length} object${entities.length === 1 ? '' : 's'} tracked`
-                      : ''}
-              </span>
-            }
-          />
-
-          {overlayEnabled && (perception.data?.analysis_fps || samplingPolicy?.analysis_fps) && (
-            <div className="flex items-center justify-between border-t border-line px-4 py-1.5">
-              <span className="text-caption text-ink-faint">adaptive sampling</span>
-              <span className="font-mono text-caption text-ink">
-                {perception.data?.analysis_fps || samplingPolicy?.analysis_fps} fps ·{' '}
-                {(perception.data?.sampling_mode || samplingPolicy?.sampling_mode) === 'motion_dense'
-                  ? 'motion-dense'
-                  : 'normal'}
-              </span>
-            </div>
-          )}
-
-          {(overlayEnabled || sceneEnabled) && (
-            <>
-              <ToggleRow
-                label="pilot model fine-tune"
-                hint="adds box + pallet"
-                checked={pilotModelEnabled}
-                onChange={setPilotModelEnabled}
-                right={
-                  pilotModelEnabled && (
-                    <span className="flex items-center gap-3 text-caption text-ink-soft">
-                      <LegendDot color="bg-ink" label="person" />
-                      <LegendDot color="bg-signal" label="box" />
-                      <LegendDot color="bg-ok" label="pallet" />
-                    </span>
-                  )
-                }
+        {/* Streamlined Controls Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border border-line bg-surface px-4 py-2.5 text-caption">
+          <div className="flex flex-wrap items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={overlayEnabled}
+                disabled={!selectedVideo}
+                onChange={(e) => {
+                  setOverlayEnabled(e.target.checked)
+                  if (e.target.checked) setPilotModelEnabled(true)
+                }}
+                className="accent-ink"
               />
-            </>
-          )}
+              <span className="font-medium text-ink">Object Detection</span>
+              <span className="text-ink-faint">({entities.length} tracked)</span>
+            </label>
 
-          <ToggleRow
-            label="spatial scene graph"
-            hint="support & proximity relationships"
-            checked={sceneEnabled}
-            disabled={!selectedVideo}
-            onChange={setSceneEnabled}
-            right={
-              <span className="text-caption text-ink-faint">
-                {scene.error
-                  ? scene.error
-                  : sceneEnabled && scene.loading
-                    ? 'computing…'
-                    : sceneEnabled && scene.data
-                      ? `${scene.data.nodes.length} nodes, ${scene.data.edges.length} edges`
-                      : ''}
-              </span>
-            }
-          />
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={sceneEnabled}
+                disabled={!selectedVideo}
+                onChange={(e) => setSceneEnabled(e.target.checked)}
+                className="accent-ink"
+              />
+              <span className="font-medium text-ink">Stacking &amp; Alignment Overlays</span>
+            </label>
 
-          <ToggleRow
-            label="multi-lens risk evaluation"
-            hint="behaviour, structural & conformance"
-            checked={findingsEnabled}
-            disabled={!selectedVideo}
-            onChange={setFindingsEnabled}
-            right={
-              <span className="text-caption text-ink-faint">
-                {findings.error
-                  ? findings.error
-                  : findingsEnabled && findings.loading
-                    ? 'evaluating…'
-                    : findingsEnabled && findings.data
-                      ? `${findings.data.length} finding${findings.data.length === 1 ? '' : 's'}`
-                      : ''}
-              </span>
-            }
-          />
-
-          <div className="border-t border-line">
-            <button
-              type="button"
-              onClick={() => setShowMethodologyNotes(!showMethodologyNotes)}
-              className="flex w-full items-center justify-between px-4 py-2 text-caption text-ink-soft transition-colors hover:text-ink"
-            >
-              <span>technical calibration & methodology notes</span>
-              <span className="font-mono">{showMethodologyNotes ? '−' : '+'}</span>
-            </button>
-            {showMethodologyNotes && (
-              <div className="flex flex-col gap-2 border-t border-line bg-paper p-3 text-caption text-ink-soft">
-                <p>
-                  <span className="font-medium text-ink">pilot model:</span> fine-tuned on 52
-                  hand-annotated real frames — person detection is strong, box detection is
-                  operational, pallet detection did not learn reliably.
-                </p>
-                <p>
-                  <span className="font-medium text-ink">scene graph edges:</span> solid black =
-                  support hypothesis, gray = contact, dashed = proximity. Geometric observations
-                  only, not definitive 3D contact.
-                </p>
-                <p>
-                  <span className="font-medium text-ink">epistemic safeguards:</span> findings are
-                  evidence-graded (supported / probable / insufficient evidence / unsupported). A
-                  weak observation never generates an ungrounded instruction.
-                </p>
-              </div>
-            )}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={findingsEnabled}
+                disabled={!selectedVideo}
+                onChange={(e) => setFindingsEnabled(e.target.checked)}
+                className="accent-ink"
+              />
+              <span className="font-medium text-ink">Live Hazard Warnings</span>
+            </label>
           </div>
+
+          <button
+            type="button"
+            onClick={() => navigateTo('Incident Replay', { videoId: selectedId })}
+            className="font-medium text-ink-soft hover:text-ink hover:underline text-caption"
+          >
+            Replay in Forensics →
+          </button>
         </div>
 
         {findingsEnabled && (
@@ -397,15 +375,22 @@ export default function LiveView() {
           />
         )}
 
-        <div className="border border-line bg-surface p-4">
-          <MetadataPanel video={selectedVideo} samplingPolicy={samplingPolicy} />
-        </div>
+        {selectedVideo && (
+          <details className="border border-line bg-surface p-3 text-caption">
+            <summary className="cursor-pointer font-medium text-ink-soft hover:text-ink select-none">
+              Camera Specifications &amp; Stream Details
+            </summary>
+            <div className="mt-3 pt-3 border-t border-line">
+              <MetadataPanel video={selectedVideo} samplingPolicy={samplingPolicy} />
+            </div>
+          </details>
+        )}
       </div>
 
       <div>
         <div className="mb-2 flex items-center gap-2">
           <Video size={15} className="text-ink-soft" />
-          <h2 className="text-small font-semibold text-ink">video sources</h2>
+          <h2 className="text-small font-semibold text-ink">Monitored Cameras</h2>
         </div>
         <VideoLibrary
           videos={videos}
@@ -416,33 +401,8 @@ export default function LiveView() {
         />
       </div>
     </div>
-  )
-}
-
-function LegendDot({ color, label }) {
-  return (
-    <span className="inline-flex items-center gap-1">
-      <span className={`h-2 w-2 ${color}`} />
-      {label}
-    </span>
-  )
-}
-
-function ToggleRow({ label, hint, checked, onChange, disabled, right }) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-t border-line px-4 py-2.5 first:border-t-0">
-      <label className="flex cursor-pointer items-center gap-2.5">
-        <input
-          type="checkbox"
-          checked={checked}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.checked)}
-          className="accent-ink"
-        />
-        <span className="text-small font-medium text-ink">{label}</span>
-        {hint && <span className="text-caption text-ink-faint">— {hint}</span>}
-      </label>
-      {right}
     </div>
   )
 }
+
+

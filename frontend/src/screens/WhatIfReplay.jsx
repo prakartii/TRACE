@@ -11,6 +11,7 @@ import {
   formatTimestamp,
 } from '../lib/scenarios.js'
 import { humanizeExplanation } from '../lib/format.js'
+import WorkflowNav from '../components/WorkflowNav.jsx'
 
 // A known-good sequence kept as a quick-select. It is only offered when the
 // backend actually reports an event with this id — never as a value that gets
@@ -211,14 +212,25 @@ export default function WhatIfReplay() {
   const hoveredSim = hoveredIdx != null ? chart?.s?.[hoveredIdx] : null
 
   return (
-    <div className="flex flex-col gap-8 pb-12">
+    <div className="flex flex-col gap-6 pb-12">
+      {/* 5-step safety workflow banner */}
+      <WorkflowNav
+        currentStep={4}
+        navigateTo={navigateTo}
+        context={{
+          eventId: selectedEventId,
+          videoId: selectedVideoId,
+          timestamp: targetTimestamp,
+        }}
+      />
+
       {/* header */}
       <section className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <button
             type="button"
-            onClick={() => navigateTo('Incident Replay')}
-            className="inline-flex items-center gap-1 text-small font-medium text-ink-soft hover:text-ink"
+            onClick={() => navigateTo('Incident Replay', { eventId: selectedEventId, videoId: selectedVideoId, timestamp: targetTimestamp })}
+            className="inline-flex items-center gap-1 text-small font-medium text-ink-soft hover:text-ink cursor-pointer"
           >
             <ArrowLeft size={14} />
             return to incident replay
@@ -242,11 +254,18 @@ export default function WhatIfReplay() {
             <button
               type="button"
               onClick={loadCanonicalDemo}
-              className="border border-signal/50 bg-signal/10 px-3.5 py-2 text-small font-semibold text-[#8a5f00] transition-colors hover:bg-signal/20"
+              className="border border-signal/50 bg-signal/10 px-3.5 py-2 text-small font-semibold text-[#8a5f00] transition-colors hover:bg-signal/20 cursor-pointer"
             >
-              load {CANONICAL_DEMO.label}
+              Load Overhang Incident (#73)
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => navigateTo('Action Center', { eventId: selectedEventId, videoId: selectedVideoId })}
+            className="inline-flex items-center gap-1.5 border border-ok/40 bg-ok/10 px-3.5 py-2 text-small font-semibold text-ok transition-colors hover:bg-ok/20 cursor-pointer"
+          >
+            Go to Safe Action Plan (Step 5) →
+          </button>
           <button
             type="button"
             disabled={loading}
@@ -375,7 +394,7 @@ export default function WhatIfReplay() {
                 onClick={loadCanonicalDemo}
                 className="bg-ink px-3.5 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
               >
-                view valid what-if ({CANONICAL_DEMO.label})
+                View Overhang What-If (Event #73)
               </button>
             </div>
           )}

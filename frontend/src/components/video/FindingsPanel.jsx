@@ -117,16 +117,11 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
         </div>
       </div>
 
-      <h3 className="font-display text-display-md font-semibold leading-tight text-ink">{displayTitle}</h3>
+      <h3 className="text-base font-semibold leading-tight text-ink">{displayTitle}</h3>
 
       <div className="flex flex-col gap-1 border-l-2 border-line pl-3">
         <span className="text-label font-medium text-ink-faint">1. what is happening</span>
         <p className="text-small text-ink">{whatIsHappening}</p>
-        {finding.entities?.length > 0 && (
-          <p className="text-caption text-ink-faint">
-            tracked object: <span className="font-mono text-ink-soft">{finding.entities.join(', ')}</span>
-          </p>
-        )}
       </div>
 
       <div className="flex flex-col gap-1 border-l-2 border-signal pl-3">
@@ -155,34 +150,30 @@ function FindingCard({ finding, isPrimary = false, onSimulateWhatIf }) {
         )}
       </div>
 
-      <div className="flex flex-col justify-between gap-3 border border-line bg-paper p-3 sm:flex-row sm:items-center">
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-label font-medium text-ink-soft">4. what happens if we act</span>
-            {isEligible ? (
-              <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label text-ok">what-if available</span>
-            ) : (
-              <span className="border border-line px-1.5 py-0.5 text-label text-ink-faint">procedural intervention</span>
-            )}
+      {isEligible && (
+        <div className="flex flex-col justify-between gap-3 border border-ok/30 bg-ok/5 p-3 sm:flex-row sm:items-center">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-label font-medium text-ok">Simulate Alternative Placement</span>
+              <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label text-ok">What-If Available</span>
+            </div>
+            <p className="mt-0.5 text-caption text-ink-soft">
+              Simulate repositioning the cargo to verify stability improvement before physically adjusting the stack.
+            </p>
           </div>
-          <p className="mt-0.5 text-caption text-ink-soft">
-            {isEligible
-              ? 'TRACE has structured geometric evidence to simulate alternative placement stability before the load is moved.'
-              : config.whatIfNotice || 'Dynamic motion or environmental zone — physical retreat applies; repositioning is not simulated.'}
-          </p>
-        </div>
 
-        {isEligible && onSimulateWhatIf && (
-          <button
-            type="button"
-            onClick={() => onSimulateWhatIf(finding)}
-            className="inline-flex shrink-0 items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
-          >
-            simulate safer placement
-            <ArrowRight size={13} />
-          </button>
-        )}
-      </div>
+          {onSimulateWhatIf && (
+            <button
+              type="button"
+              onClick={() => onSimulateWhatIf(finding)}
+              className="inline-flex shrink-0 items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft cursor-pointer"
+            >
+              Simulate Safer Placement
+              <ArrowRight size={13} />
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="border-t border-line pt-2">
         <button

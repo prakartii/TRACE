@@ -70,16 +70,6 @@ export default function VideoLibrary({ videos = [], selectedId, onSelect, loadin
 
                 <p className="line-clamp-2 text-caption text-ink-soft">{info.primaryRisk}</p>
 
-                <div className="flex items-center gap-1.5 border-t border-line pt-2 font-mono text-label text-ink-faint">
-                  <span>{formatDuration(video.metadata.duration)}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{frameCount} frames</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{video.metadata.width}×{video.metadata.height}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{formatBytes(video.file_size)}</span>
-                </div>
-
                 <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"

@@ -14,6 +14,7 @@ import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
 import { useIntervention } from '../context/InterventionContext.jsx'
 import InterventionStatusChip from '../components/intervention/InterventionStatusChip.jsx'
+import WorkflowNav from '../components/WorkflowNav.jsx'
 
 import {
   getScenarioConfig,
@@ -535,6 +536,18 @@ export default function IncidentReplay() {
 
   return (
     <div className="flex flex-col gap-6 pb-12">
+      {/* 5-step safety workflow banner */}
+      <WorkflowNav
+        currentStep={3}
+        navigateTo={navigateTo}
+        context={{
+          eventId: incidentEvent?.event_id || selectedEventId,
+          videoId: incidentEvent?.video_id || selectedVideo?.id,
+          timestamp: targetTimestamp,
+          event: incidentEvent,
+        }}
+      />
+
       {/* top navigation */}
       <section className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -582,30 +595,6 @@ export default function IncidentReplay() {
         </div>
       </section>
 
-      {/* demo presets */}
-      <section className="flex flex-wrap items-center gap-2 border border-line bg-surface p-3">
-        <span className="text-label font-medium text-ink-faint">recommended demos</span>
-        {DEMO_PRESETS.map((demo) => {
-          const isActive = selectedEventId === demo.id || incidentEvent?.event_id === demo.id
-          return (
-            <button
-              key={demo.id}
-              type="button"
-              onClick={() => handleSelectAnotherEvent(demo.id)}
-              className={`border px-2.5 py-1 text-caption font-medium transition-colors ${
-                isActive
-                  ? 'border-ink bg-ink text-paper'
-                  : 'border-line bg-surface text-ink-soft hover:text-ink'
-              }`}
-              title={`${demo.desc} (t = ${demo.timestamp.toFixed(1)}s)`}
-            >
-              {demo.tag.replace(/^Demo \d+: /, '')}{' '}
-              <span className="font-mono opacity-70">({demo.timestamp.toFixed(1)}s)</span>
-            </button>
-          )
-        })}
-      </section>
-
       {incidentLoading && !incidentEvent && (
         <div className="flex items-center gap-3 border border-line bg-surface p-8">
           <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
@@ -631,17 +620,17 @@ export default function IncidentReplay() {
 
       {/* decision strip */}
       {incidentEvent && (
-        <section className="border border-ink bg-surface">
-          <div className="h-1 bg-[repeating-linear-gradient(45deg,#1A1712_0_10px,#C28208_10px_20px)]" />
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className={`border px-2.5 py-1 text-caption font-medium ${BAND_STYLE[incidentEvent.band] || BAND_STYLE.High}`}>
-                {incidentEvent.band || '—'} risk
+        <section className="border border-line bg-surface shadow-sm">
+          {/* Header Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-5 py-3.5">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={`border px-2.5 py-1 text-caption font-semibold ${BAND_STYLE[incidentEvent.band] || BAND_STYLE.High}`}>
+                {incidentEvent.band || 'High'} Risk · Score {formatScore(incidentEvent.score)}/100
               </span>
-              <span className="font-display text-display-md font-semibold text-ink">{title}</span>
-              <span className="text-caption text-ink-soft">camera: {videoInfo.cameraName}</span>
-              <span className="border border-line bg-paper px-1.5 py-0.5 font-mono text-caption text-ink-soft">
-                event #{incidentEvent.event_id}
+              <h2 className="text-base font-bold text-ink">{title}</h2>
+              <span className="text-caption text-ink-soft">Location: {videoInfo.cameraName}</span>
+              <span className="border border-line bg-paper px-2 py-0.5 font-mono text-caption text-ink-soft">
+                Event #{incidentEvent.event_id}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -652,78 +641,92 @@ export default function IncidentReplay() {
                   onClick={() => setSelectedAlert(activeIntervention)}
                 />
               )}
-              <span className="border border-line bg-paper px-2 py-0.5 font-mono text-caption tabular-nums text-ink">
-                recorded: {formatTimestamp(targetTimestamp)} ({targetTimestamp.toFixed(1)}s)
+              <span className="border border-line bg-paper px-2.5 py-1 font-mono text-caption text-ink">
+                Timestamp: <strong className="text-ink">{formatTimestamp(targetTimestamp)}</strong>
               </span>
 
               {isVerifiedPrevented ? (
-                <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-medium text-ok">
-                  prevention verified
+                <span className="border border-ok/40 bg-ok/10 px-2.5 py-1 text-label font-semibold text-ok">
+                  ✓ Prevention Verified
                 </span>
               ) : (
-                <span className="border border-line bg-paper px-2 py-0.5 text-label text-ink-faint">
-                  unverified
+                <span className="border border-line bg-paper px-2.5 py-1 text-label font-medium text-ink-soft">
+                  Pending Verification
                 </span>
               )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-px bg-line md:grid-cols-2 lg:grid-cols-4">
-            <div className="bg-paper p-3.5">
-              <span className="text-label font-medium text-ink-faint">1. what happened</span>
-              <p className="mt-1 text-small font-semibold leading-tight text-ink">{title}</p>
-              <p className="mt-1 text-caption text-ink-soft">
-                {humanizeExplanation(incidentEvent.explanation || config.whatIsHappening, incidentEvent.scenario, incidentEvent.entity_id)}
-              </p>
+          {/* 3 Spacious Columns: What Happened | Why Dangerous | Safe Action Required */}
+          <div className="grid grid-cols-1 divide-y divide-line lg:grid-cols-3 lg:divide-y-0 lg:divide-x">
+            {/* 1. What Happened */}
+            <div className="bg-paper p-5 flex flex-col justify-between gap-3">
+              <div>
+                <span className="text-label font-bold uppercase tracking-wider text-ink-faint">
+                  1. Observed Condition
+                </span>
+                <p className="mt-1.5 text-base font-semibold leading-snug text-ink">{title}</p>
+                <p className="mt-2 text-small text-ink-soft leading-relaxed">
+                  {humanizeExplanation(incidentEvent.explanation || config.whatIsHappening, incidentEvent.scenario, incidentEvent.entity_id)}
+                </p>
+              </div>
+              <div className="text-caption text-ink-faint border-t border-line/60 pt-2 flex items-center justify-between">
+                <span>Target: {formatEntityName(incidentEvent.entity_id)}</span>
+                <span>Certainty: {confidenceScore}</span>
+              </div>
             </div>
-            <div className="bg-paper p-3.5">
-              <span className="text-label font-medium text-ink-faint">2. how serious</span>
-              <p className="mt-1 font-display text-display-md font-semibold tabular-nums text-danger">
-                {formatScore(incidentEvent.score)} <span className="text-title text-ink-faint">/ 100</span>
-              </p>
-              <p className="text-caption text-ink-soft">
-                {incidentEvent.lens || '—'} lens · {incidentEvent.band || '—'} band
-              </p>
+
+            {/* 2. Why Dangerous */}
+            <div className="bg-paper p-5 flex flex-col justify-between gap-3">
+              <div>
+                <span className="text-label font-bold uppercase tracking-wider text-[#8a5f00]">
+                  2. Hazard &amp; Consequence
+                </span>
+                <p className="mt-1.5 text-small text-ink-soft leading-relaxed">
+                  {humanizeExplanation(rationaleText, incidentEvent.scenario)}
+                </p>
+              </div>
+              <div className="border-t border-line/60 pt-2 flex items-center justify-between">
+                <span className="text-caption text-ink-soft">Severity Index:</span>
+                <span className="text-small font-bold text-danger">
+                  {formatScore(incidentEvent.score)} / 100 ({incidentEvent.band || 'High'} Band)
+                </span>
+              </div>
             </div>
-            <div className="bg-paper p-3.5">
-              <span className="text-label font-medium text-[#8a5f00]">3. why dangerous</span>
-              <p className="mt-1 text-caption text-ink-soft">
-                {humanizeExplanation(rationaleText, incidentEvent.scenario)}
-              </p>
-            </div>
-            {/* 4. WHAT SHOULD BE DONE ABOUT IT (Safe Action Plan) */}
-            <div className="bg-ok/5 p-3.5 flex flex-col justify-between gap-2 border border-ok/30">
-              <div className="flex flex-col gap-1.5">
+
+            {/* 3. Required Safe Action */}
+            <div className="bg-ok/5 p-5 flex flex-col justify-between gap-3 border-l border-ok/20">
+              <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-label font-medium text-ok uppercase">
-                    4. safe action plan
+                  <span className="text-label font-bold uppercase tracking-wider text-ok">
+                    3. Required Safe Action
                   </span>
                   {safePlan?.evidence_status && (
-                    <span className="text-caption font-mono uppercase px-1.5 py-0.5 border border-ok/40 bg-ok/10 text-ok">
+                    <span className="text-caption font-mono uppercase px-2 py-0.5 border border-ok/40 bg-ok/10 text-ok">
                       {safePlan.evidence_status}
                     </span>
                   )}
                 </div>
-                <strong className="text-small font-semibold text-ink leading-tight">
+                <strong className="text-small font-semibold text-ink leading-snug">
                   {safePlan?.immediate_action || actionText?.split('.')[0] || 'Reposition cargo safely'}
                 </strong>
                 {safePlan?.steps && safePlan.steps.length > 1 ? (
-                  <div className="flex flex-col gap-1 pt-1 border-t border-line">
+                  <div className="flex flex-col gap-1.5 pt-2 border-t border-ok/20">
                     <span className="text-label font-medium text-ink-soft uppercase tracking-wider">action steps:</span>
-                    <ol className="list-decimal list-inside space-y-0.5 text-caption text-ink font-medium">
+                    <ol className="list-decimal list-inside space-y-1 text-caption text-ink font-medium">
                       {safePlan.steps.map((step, idx) => (
-                        <li key={idx} className="leading-tight">{step}</li>
+                        <li key={idx} className="leading-normal">{step.replace(/^\d+\.\s*/, '')}</li>
                       ))}
                     </ol>
                   </div>
-                ) : (
-                  <p className="text-caption text-ink-soft leading-relaxed mt-0.5">
-                    {safePlan?.immediate_action || actionText}
+                ) : actionText && actionText !== safePlan?.immediate_action ? (
+                  <p className="text-caption text-ink-soft leading-relaxed">
+                    {actionText}
                   </p>
-                )}
+                ) : null}
                 {safePlan?.verification && (
-                  <div className="mt-1 bg-surface border border-ok/40 p-2 text-caption text-ink flex items-start gap-1.5">
-                    <span className="font-semibold text-ok shrink-0">✓ verify:</span>
+                  <div className="mt-1 bg-surface border border-ok/40 p-2.5 text-caption text-ink flex items-start gap-1.5">
+                    <span className="font-semibold text-ok shrink-0">✓ Verify:</span>
                     <span className="leading-tight">{safePlan.verification}</span>
                   </div>
                 )}
@@ -731,18 +734,19 @@ export default function IncidentReplay() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5">
-            <div className="flex flex-wrap items-center gap-2">
+          {/* Workflow Action Buttons */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface px-5 py-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
                 onClick={() => seekToTimestamp(targetTimestamp)}
-                className="inline-flex items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
+                className="inline-flex items-center gap-1.5 border border-ink bg-ink px-3.5 py-2 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft cursor-pointer"
               >
                 <Play size={13} />
-                jump to incident ({formatTimestamp(targetTimestamp)})
+                Jump to Incident Moment ({formatTimestamp(targetTimestamp)})
               </button>
 
-              {isWhatIfEligible ? (
+              {isWhatIfEligible && (
                 <button
                   type="button"
                   onClick={() =>
@@ -753,30 +757,29 @@ export default function IncidentReplay() {
                       event: incidentEvent,
                     })
                   }
-                  className="inline-flex items-center gap-1.5 bg-ok px-3.5 py-1.5 text-caption font-semibold text-paper transition-colors hover:opacity-90"
+                  className="inline-flex items-center gap-1.5 border border-ok bg-ok px-3.5 py-2 text-caption font-semibold text-paper transition-colors hover:opacity-90 cursor-pointer"
                 >
                   <FlaskConical size={14} />
-                  simulate alternative placement
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() =>
-                    navigateTo('What-If Simulation', {
-                      eventId: incidentEvent.event_id,
-                      videoId: incidentEvent.video_id || selectedVideo?.id,
-                      timestamp: targetTimestamp,
-                      event: incidentEvent,
-                    })
-                  }
-                  className="inline-flex items-center gap-1.5 border border-line bg-surface px-3.5 py-1.5 text-caption font-medium text-ink transition-colors hover:border-line-strong"
-                >
-                  <FlaskConical size={14} />
-                  evaluate in what-if
+                  Simulate Safer Placement (Step 4) →
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() =>
+                  navigateTo('Action Center', {
+                    eventId: incidentEvent.event_id,
+                    videoId: incidentEvent.video_id || selectedVideo?.id,
+                    timestamp: targetTimestamp,
+                    event: incidentEvent,
+                  })
+                }
+                className="inline-flex items-center gap-1.5 border border-line bg-paper px-3.5 py-2 text-caption font-semibold text-ink transition-colors hover:border-ink cursor-pointer"
+              >
+                View Full Action Checklist (Step 5) →
+              </button>
             </div>
-            <span className="text-caption text-ink-faint">facility zone: {videoInfo.cameraName}</span>
+            <span className="text-caption text-ink-faint">Camera Feed: {videoInfo.cameraName}</span>
           </div>
         </section>
       )}
@@ -945,7 +948,11 @@ export default function IncidentReplay() {
               <div className="mt-3 grid grid-cols-2 gap-px bg-line">
                 <Telemetry label="support deck" value={supportCoverage} note="threshold ≥ 50%" />
                 <Telemetry label="overhang" value={overhangRatio} note="cantilever span" tone="signal" />
-                <Telemetry label="mass tiering" value={massOrdering} note="tier mass ratio" />
+                {evidence.mass_ordering || evidence.mass_ratio != null ? (
+                  <Telemetry label="weight order" value={massOrdering} note="tier mass ratio" />
+                ) : (
+                  <Telemetry label="stability status" value={Number(evidence.overhang_ratio || 0) > 0.3 ? "Overhang Hazard" : "Aligned Cargo"} note="geometric balance" tone="signal" />
+                )}
                 <Telemetry label="confidence" value={confidenceScore} note="visual certainty" tone="ok" />
               </div>
             ) : (
@@ -962,10 +969,10 @@ export default function IncidentReplay() {
             <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
               <span className="text-small font-semibold text-ink">post-action verification</span>
               {isVerifiedPrevented ? (
-                <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-medium text-ok">prevented</span>
+                <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-semibold text-ok">✓ Prevented</span>
               ) : outcomeMeasurement ? (
                 <span className={`border px-2 py-0.5 text-label font-medium ${OUTCOME_BADGES[outcomeMeasurement.classification]?.style || ''}`}>
-                  {OUTCOME_BADGES[outcomeMeasurement.classification]?.label || outcomeMeasurement.classification}
+                  {outcomeMeasurement.classification === 'prevented' ? 'Prevented' : 'Verification Pending'}
                 </span>
               ) : (
                 <span className="text-label text-ink-faint">not yet verified</span>
@@ -979,45 +986,49 @@ export default function IncidentReplay() {
                     isVerifiedPrevented ? 'border-ok/40 bg-ok/5' : 'border-line bg-paper'
                   }`}
                 >
-                  <span className={`font-medium ${isVerifiedPrevented ? 'text-ok' : 'text-ink'}`}>
+                  <span className={`font-semibold text-small ${isVerifiedPrevented ? 'text-ok' : 'text-ink'}`}>
                     {isVerifiedPrevented
-                      ? 'prevention confirmed by subsequent video'
-                      : `outcome recorded: ${OUTCOME_BADGES[outcomeMeasurement.classification]?.label || outcomeMeasurement.classification}`}
+                      ? '✓ Prevention confirmed by subsequent video'
+                      : 'Resolution: Pending operator verification'}
                   </span>
                   {outcomeMeasurement.explanation && (
-                    <p className="text-caption text-ink-soft">{outcomeMeasurement.explanation}</p>
+                    <p className="text-caption text-ink-soft leading-relaxed">
+                      {humanizeExplanation(outcomeMeasurement.explanation)}
+                    </p>
                   )}
 
                   {/* The real 3-condition check — CLAUDE.md §15. All three must hold
                       before anything may be classified "Prevented". */}
                   {threeConditions.length > 0 ? (
-                    <div className="flex flex-col gap-1.5 border-t border-line pt-2">
-                      {threeConditions.map((c) => (
-                        <div key={c.condition_number} className="flex items-start gap-2 text-caption">
-                          <span
-                            className={`mt-px font-mono font-semibold ${
-                              c.satisfied ? 'text-ok' : 'text-ink-faint'
-                            }`}
-                          >
-                            {c.satisfied ? '✓' : '✕'} {c.condition_number}
-                          </span>
-                          <span>
-                            <span className="font-medium text-ink">{c.name}</span>
-                            {c.description && (
-                              <span className="text-ink-soft"> — {c.description}</span>
-                            )}
-                          </span>
-                        </div>
-                      ))}
-                      <span className="mt-0.5 font-mono text-caption text-ink-faint">
-                        response window {Number(outcomeMeasurement.response_window_sec ?? verificationWindow).toFixed(1)}s
-                        {outcomeMeasurement.initial_score != null &&
-                          ` · risk ${Math.round(outcomeMeasurement.initial_score)}`}
-                        {outcomeMeasurement.outcome_score != null &&
-                          ` → ${Math.round(outcomeMeasurement.outcome_score)}`}
-                        {outcomeMeasurement.human_review_status &&
-                          ` · human review: ${outcomeMeasurement.human_review_status}`}
-                      </span>
+                    <div className="flex flex-col gap-2 border-t border-line pt-2.5">
+                      {threeConditions.map((c) => {
+                        const friendlyName = c.condition_number === 1
+                          ? 'Initial Hazard Detected & Tracked'
+                          : c.condition_number === 2
+                          ? 'Corrective Intervention Applied'
+                          : 'Subsequent Frames Confirm Safe'
+                        return (
+                          <div key={c.condition_number} className="flex items-start gap-2 text-caption">
+                            <span
+                              className={`mt-px font-mono font-semibold ${
+                                c.satisfied ? 'text-ok' : 'text-ink-faint'
+                              }`}
+                            >
+                              {c.satisfied ? '✓' : '✕'}
+                            </span>
+                            <div>
+                              <span className="font-semibold text-ink">{friendlyName}</span>
+                              {c.description && (
+                                <span className="text-ink-soft"> — {humanizeExplanation(c.description)}</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                      <div className="mt-1 flex flex-wrap items-center justify-between border-t border-line/60 pt-1.5 text-caption text-ink-soft">
+                        <span>Review: <strong className="text-ink font-medium">{outcomeMeasurement.human_review_status || 'Pending Operator Sign-Off'}</strong></span>
+                        <span>Window: <strong className="font-mono text-ink">{Number(outcomeMeasurement.response_window_sec ?? verificationWindow).toFixed(1)}s</strong></span>
+                      </div>
                     </div>
                   ) : (
                     <p className="border-t border-line pt-2 text-caption text-ink-faint">

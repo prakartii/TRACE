@@ -1,6 +1,7 @@
 import { getFindingPriorityScore } from './FindingsPanel.jsx'
 import {
   getScenarioConfig,
+  getVideoScenarioInfo,
   STATUS_STYLES,
   RISK_BAND_STYLES,
   EPISTEMIC_LEVELS,
@@ -14,20 +15,22 @@ function formatTime(sec) {
 }
 
 export default function LiveAnalysisSummary({ video, findings, loading, findingsEnabled, currentTime }) {
+  const videoInfo = video ? getVideoScenarioInfo(video.id || video.filename) : null
+
   const header = (statusNode) => (
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
       <div>
-        <h3 className="font-display text-display-md font-semibold text-ink">live analysis</h3>
+        <h3 className="font-display text-title font-semibold text-ink">Live Camera Analysis</h3>
         <p className="mt-0.5 text-caption text-ink-soft">
-          {video ? (
+          {videoInfo ? (
             <>
-              source: <span className="font-medium text-ink">{video.filename}</span>
+              Camera: <span className="font-semibold text-ink">{videoInfo.cameraName}</span>
               {currentTime !== undefined && (
-                <> · frame: <span className="font-mono tabular-nums">{formatTime(currentTime)}</span></>
+                <> · Time: <span className="font-mono tabular-nums">{formatTime(currentTime)}</span></>
               )}
             </>
           ) : (
-            'continuous monitoring for unsafe handling, structural instability, and conformance.'
+            'Continuous real-time safety monitoring across warehouse camera feeds.'
           )}
         </p>
       </div>

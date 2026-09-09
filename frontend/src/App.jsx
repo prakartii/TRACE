@@ -20,13 +20,13 @@ import InterventionBanner from './components/intervention/InterventionBanner.jsx
 import InterventionModal from './components/intervention/InterventionModal.jsx'
 
 const SCREENS = [
-  'Dashboard',
-  'Scenario Coverage',
+  'Live View',
   'Incidents',
   'Incident Replay',
   'Action Center',
   'What-If Simulation',
-  'Live View',
+  'Dashboard',
+  'Scenario Coverage',
   'Assistant',
 ]
 

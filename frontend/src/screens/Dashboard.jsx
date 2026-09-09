@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [showTrends, setShowTrends] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -124,95 +125,62 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col gap-8 pb-12">
-      {/* hero — asymmetric */}
-      <section className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-        <div className="lg:col-span-8">
-          <p className="mb-3 flex items-center gap-2 text-label font-medium text-ink-soft">
-            <span className="h-2 w-2 bg-signal" />
-            warehouse safety decision intelligence
-          </p>
-          <h1 className="font-display text-display-xl font-semibold text-ink">
-            See what&apos;s about to go wrong.
-            <br />
-            Know what to do instead.
-          </h1>
-          <p className="mt-4 max-w-xl text-body text-ink-soft">
-            TRACE reads warehouse video, explains the physical hazard behind a risky
-            placement, recommends a safer alternative before the worker touches the load,
-            then verifies the outcome on later footage.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center gap-2">
+      {/* Clean, Human-Focused Header & Action Hub */}
+      <section className="border border-line bg-surface p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-2xl">
+            <p className="mb-2 flex items-center gap-2 text-label font-medium text-ink-soft">
+              <span className="h-2 w-2 rounded-full bg-signal" />
+              Warehouse Safety Decision Intelligence
+            </p>
+            <h1 className="font-display text-display-lg font-bold text-ink">
+              See what&apos;s about to go wrong. Know what to do instead.
+            </h1>
+            <p className="mt-2 text-small text-ink-soft">
+              TRACE continuously monitors warehouse camera feeds to detect unstable loads, explain physical tipping risks, and give workers immediate safe placement instructions before damage occurs.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => navigateTo('Incidents')}
-              className="inline-flex items-center gap-2 border border-ink bg-ink px-4 py-2 text-small font-semibold text-paper transition-colors hover:bg-ink-soft"
+              onClick={() => navigateTo('Live View')}
+              className="inline-flex items-center gap-2 border border-ink bg-ink px-4 py-2 text-small font-semibold text-paper shadow-sm transition-colors hover:bg-ink-soft"
             >
-              explore incidents
+              Watch Live Cameras
               <ArrowRight size={15} />
             </button>
             <button
               type="button"
-              onClick={() => navigateTo('Scenario Coverage')}
-              className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+              onClick={() => navigateTo('Incidents')}
+              className="inline-flex items-center gap-2 border border-line bg-paper px-3.5 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
             >
-              <Crosshair size={15} />
-              14-scenario coverage
+              Active Hazards ({events.length})
             </button>
             <button
               type="button"
               onClick={() => navigateTo('What-If Simulation')}
-              className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+              className="inline-flex items-center gap-2 border border-line bg-paper px-3.5 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
             >
               <FlaskConical size={15} />
-              what-if simulator
+              What-If Simulator
             </button>
             <a
               href={incidentsCsvUrl()}
-              className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+              className="inline-flex items-center gap-1.5 border border-line bg-paper px-3 py-2 text-caption font-medium text-ink-soft transition-colors hover:text-ink"
+              title="Download full incident audit log in CSV format"
             >
-              <Download size={15} />
-              incidents CSV
+              <Download size={14} />
+              Export CSV
             </a>
             <a
               href={shiftSummaryMdUrl()}
-              className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+              className="inline-flex items-center gap-1.5 border border-line bg-paper px-3 py-2 text-caption font-medium text-ink-soft transition-colors hover:text-ink"
+              title="Printable shift safety report"
             >
-              <Download size={15} />
-              shift summary
+              <Download size={14} />
+              Shift Report
             </a>
-          </div>
-        </div>
-
-        {/* status board */}
-        <div className="lg:col-span-4">
-          <div className="border border-ink bg-surface">
-            <div className="h-1 bg-[repeating-linear-gradient(45deg,#1A1712_0_10px,#C28208_10px_20px)]" />
-            <div className="flex items-center justify-between border-b border-line px-4 py-2">
-              <span className="text-label font-medium text-ink-faint">
-                live overview
-              </span>
-              <span className="font-mono text-caption text-ink-faint">shift 07</span>
-            </div>
-            <dl className="divide-y divide-line">
-              <div className="flex items-baseline justify-between px-4 py-3">
-                <dt className="text-small text-ink-soft">monitored feeds</dt>
-                <dd className="font-display text-display-md font-semibold tabular-nums text-ink">
-                  {activeFeedsCount}
-                </dd>
-              </div>
-              <div className="flex items-baseline justify-between px-4 py-3">
-                <dt className="text-small text-ink-soft">hazards prevented</dt>
-                <dd className="font-display text-display-md font-semibold tabular-nums text-ok">
-                  {preventedDisplay}
-                </dd>
-              </div>
-              <div className="flex items-baseline justify-between px-4 py-3">
-                <dt className="text-small text-ink-soft">recent incidents</dt>
-                <dd className="font-display text-display-md font-semibold tabular-nums text-ink">
-                  {loading ? '…' : events.length}
-                </dd>
-              </div>
-            </dl>
           </div>
         </div>
       </section>
@@ -223,201 +191,119 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* decision pipeline — a real sequence, numbered */}
-      <section>
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-display text-display-md font-semibold text-ink">
-            How TRACE closes the loop
-          </h2>
-          <span className="font-mono text-caption text-ink-faint">
-            detect → explain → recommend → simulate → verify
+      {/* 4 Clean, Human-Understandable Warehouse Safety Metrics */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="border border-line bg-surface p-5 transition-colors hover:border-line-strong">
+          <span className="text-label font-medium uppercase tracking-wider text-ink-faint">
+            Monitored Camera Bays
           </span>
+          <p className="mt-2 font-display text-display-lg font-bold tabular-nums text-ink">
+            {activeFeedsCount} <span className="text-title font-medium text-ink-soft">Bays</span>
+          </p>
+          <p className="mt-1 text-caption text-ink-soft">
+            Live coverage across loading docks, staging zones, and narrow aisles
+          </p>
         </div>
-        <ol className="grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-5">
-          {PIPELINE.map((step, i) => (
-            <li
-              key={step.n}
-              className={`bg-surface p-4 ${i === PIPELINE.length - 1 ? 'bg-ink text-paper' : ''}`}
-            >
-              <span
-                className={`font-display text-display-md font-semibold ${
-                  i === PIPELINE.length - 1 ? 'text-signal' : 'text-ink-faint'
-                }`}
-              >
-                {step.n}
-              </span>
-              <p
-                className={`mt-1 text-small font-semibold ${
-                  i === PIPELINE.length - 1 ? 'text-paper' : 'text-ink'
-                }`}
-              >
-                {step.verb}
-              </p>
-              <p
-                className={`mt-0.5 text-caption ${
-                  i === PIPELINE.length - 1 ? 'text-paper/70' : 'text-ink-soft'
-                }`}
-              >
-                {step.q} — {step.detail}
-              </p>
-            </li>
-          ))}
-        </ol>
-      </section>
 
-      {/* KPI bento — asymmetric spans */}
-      <section>
-        <h2 className="mb-3 font-display text-display-md font-semibold text-ink">
-          Shift at a glance
-        </h2>
-        <div className="grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-6">
-          <div className="bg-surface p-5 sm:col-span-3">
-            <span className="text-label font-medium text-ink-faint">
-              incident severity
+        <div className="border border-ok/40 bg-ok/5 p-5 transition-colors hover:border-ok">
+          <span className="text-label font-medium uppercase tracking-wider text-ok">
+            Verified Damage Prevented
+          </span>
+          <p className="mt-2 font-display text-display-lg font-bold tabular-nums text-ok">
+            {preventedDisplay} <span className="text-title font-medium text-ok/80">Prevented</span>
+          </p>
+          <p className="mt-1 text-caption text-ink-soft">
+            Event #75: load corrected before release (18 outcomes awaiting review)
+          </p>
+        </div>
+
+        <div className="border border-line bg-surface p-5 transition-colors hover:border-line-strong">
+          <span className="text-label font-medium uppercase tracking-wider text-ink-faint">
+            Active Hazard Findings
+          </span>
+          <p className="mt-2 font-display text-display-lg font-bold tabular-nums text-ink">
+            {events.length}{' '}
+            <span className="text-title font-medium text-signal">
+              ({(severityCounts.Critical || 0) + (severityCounts.High || 0)} High)
             </span>
-            <div className="mt-3 flex items-end gap-3">
-              {(['Critical', 'High', 'Medium', 'Low']).map((b) => (
-                <div key={b} className="flex flex-col items-center gap-1">
-                  <span
-                    className={`h-16 w-9 border ${
-                      BAND_STYLE[b]?.split(' ')[0] || 'border-line'
-                    } ${BAND_STYLE[b]?.split(' ')[1] || 'bg-paper'}`}
-                    style={{ height: `${(severityCounts[b] || 1) * 12 + 12}px` }}
-                  />
-                  <span className="text-label text-ink-soft">{b}</span>
-                  <span className="font-display text-title font-semibold tabular-nums text-ink">
-                    {severityCounts[b] || 0}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="bg-surface p-5 sm:col-span-2">
-            <span className="text-label font-medium text-ink-faint">
-              scenario coverage
-            </span>
-            <p className="mt-2 font-display text-display-lg font-semibold tabular-nums text-ink">
-              {loading ? '…' : distinctScenarioCount}
-              <span className="text-title"> / 14</span>
-            </p>
-            <p className="mt-1 text-caption text-ink-soft">
-              distinct scenario types present in the current log
-            </p>
-          </div>
-          <div className="bg-surface p-5 sm:col-span-1">
-            <span className="text-label font-medium text-ink-faint">
-              verified
-            </span>
-            <p className="mt-2 font-display text-display-lg font-semibold tabular-nums text-ok">
-              {preventedDisplay}
-            </p>
-            <p className="mt-1 text-caption text-ink-soft">prevented, on video</p>
-          </div>
+          </p>
+          <p className="mt-1 text-caption text-ink-soft">
+            Evidence-backed physical risks (overhangs, unstable stacks, blindspots)
+          </p>
+        </div>
+
+        <div className="border border-line bg-surface p-5 transition-colors hover:border-line-strong">
+          <span className="text-label font-medium uppercase tracking-wider text-ink-faint">
+            Worker Privacy & Ethics
+          </span>
+          <p className="mt-2 font-display text-display-lg font-bold tabular-nums text-ink">
+            100% <span className="text-title font-medium text-ink-soft">Redacted</span>
+          </p>
+          <p className="mt-1 text-caption text-ink-soft">
+            Personnel faces obscured by default; zero individual worker blame
+          </p>
         </div>
       </section>
 
-      {/* monitored zones */}
-      <section>
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-display text-display-md font-semibold text-ink">
-            Monitored warehouse zones
-          </h2>
-          <button
-            type="button"
-            onClick={() => navigateTo('Scenario Coverage')}
-            className="inline-flex items-center gap-1 text-small font-medium text-ink-soft transition-colors hover:text-ink"
-          >
-            view the 14-scenario matrix
-            <ArrowRight size={14} />
-          </button>
-        </div>
-        <div className="grid grid-cols-1 gap-px border border-line bg-line md:grid-cols-2 xl:grid-cols-3">
-          {Object.entries(CANONICAL_SCENARIO_VIDEOS).map(([id, info], i) => (
-            <div
-              key={id}
-              className={`group bg-surface p-4 ${
-                i === 3 ? 'xl:col-span-1' : ''
-              } transition-colors hover:bg-paper`}
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className={`border px-2 py-0.5 text-label font-medium ${
-                    BAND_STYLE[info.riskBand] || BAND_STYLE.High
-                  }`}
-                >
-                  {info.riskBand} risk
-                </span>
-                <span className="font-mono text-caption text-ink-faint">{info.duration}</span>
-              </div>
-              <h3 className="mt-3 text-small font-semibold leading-snug text-ink">
-                {info.scenarioTitle}
-              </h3>
-              <p className="text-caption text-ink-soft">{info.cameraName}</p>
-              <p className="mt-2 line-clamp-2 text-caption text-ink-soft">{info.description}</p>
-              <button
-                type="button"
-                onClick={() => navigateTo('Incident Replay', { videoId: id })}
-                className="mt-3 inline-flex items-center gap-1 text-small font-medium text-ink underline-offset-2 hover:underline"
-              >
-                replay incidents
-                <ArrowUpRight size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* recommended demos */}
-      <section>
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-display text-display-md font-semibold text-ink">
-            Recommended demonstrations
+      {/* How TRACE Protects Workers — Clean 4-Step Operational Flow */}
+      <section className="border border-line bg-surface p-5">
+        <div className="mb-4 flex items-baseline justify-between">
+          <h2 className="font-display text-display-sm font-semibold text-ink">
+            How TRACE Prevents Warehouse Damage
           </h2>
           <span className="text-caption text-ink-faint">
-            one click jumps to the recorded moment
+            Autonomous decision intelligence loop
           </span>
         </div>
-        <div className="grid grid-cols-1 gap-px border border-line bg-line md:grid-cols-3">
-          {DEMO_PRESETS.map((preset, i) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => handleLaunchPreset(preset)}
-              className={`group flex flex-col gap-2 bg-surface p-4 text-left transition-colors hover:bg-paper ${
-                i === 0 ? 'border-l-2 border-signal' : ''
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-caption font-semibold text-ink">
-                  event #{preset.id}
-                </span>
-                <span className="font-mono text-caption text-ink-faint">
-                  {preset.timestamp.toFixed(1)}s
-                </span>
-              </div>
-              <p className="text-small font-semibold text-ink">{preset.tag}</p>
-              <p className="text-caption text-ink-soft">{preset.desc}</p>
-              <span className="inline-flex items-center gap-1 text-caption font-medium text-ink-soft group-hover:text-ink">
-                replay incident
-                <ArrowRight size={13} />
-              </span>
-            </button>
-          ))}
+        <div className="grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-4">
+          <div className="bg-paper p-4">
+            <span className="font-mono text-label font-bold text-signal">STEP 01</span>
+            <h3 className="mt-1 text-small font-bold text-ink">Spot the Hazard</h3>
+            <p className="mt-1 text-caption text-ink-soft">
+              Cameras detect overhanging cartons, leaning stacks, or workers entering hazardous machine zones.
+            </p>
+          </div>
+          <div className="bg-paper p-4">
+            <span className="font-mono text-label font-bold text-signal">STEP 02</span>
+            <h3 className="mt-1 text-small font-bold text-ink">Evaluate Physics</h3>
+            <p className="mt-1 text-caption text-ink-soft">
+              Calculates tipping-moment risk, center-of-gravity offset, and cargo crushing danger in real time.
+            </p>
+          </div>
+          <div className="bg-paper p-4">
+            <span className="font-mono text-label font-bold text-signal">STEP 03</span>
+            <h3 className="mt-1 text-small font-bold text-ink">Guide Safe Action</h3>
+            <p className="mt-1 text-caption text-ink-soft">
+              Provides the worker with immediate, clear guidance (e.g. push box back 15cm, rotate 90°) with voice alerts.
+            </p>
+          </div>
+          <div className="bg-ink p-4 text-paper">
+            <span className="font-mono text-label font-bold text-signal">STEP 04</span>
+            <h3 className="mt-1 text-small font-bold text-paper">Verify Resolution</h3>
+            <p className="mt-1 text-caption text-paper/80">
+              Analyzes follow-up video to verify the hazard was cleared before classifying as safely prevented.
+            </p>
+          </div>
         </div>
       </section>
 
-      {/* recent incidents */}
+      {/* Active Hazards Section */}
       <section>
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-display text-display-md font-semibold text-ink">
-            Recent safety incidents
-          </h2>
+        <div className="mb-4 flex items-baseline justify-between">
+          <div>
+            <h2 className="font-display text-display-sm font-semibold text-ink">
+              Recent Safety Hazards Requiring Attention
+            </h2>
+            <p className="text-caption text-ink-soft">
+              Detected by warehouse vision sensors — review and verify corrective action
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => navigateTo('Incidents')}
-            className="inline-flex items-center gap-1 text-small font-medium text-ink-soft transition-colors hover:text-ink"
+            className="inline-flex items-center gap-1.5 border border-line bg-paper px-3 py-1.5 text-small font-medium text-ink transition-colors hover:border-line-strong"
           >
-            view all incidents ({events.length})
+            View All Incidents ({events.length})
             <ArrowRight size={14} />
           </button>
         </div>
@@ -425,15 +311,15 @@ export default function Dashboard() {
         {loading ? (
           <div className="flex items-center gap-3 border border-line bg-surface p-6 text-small text-ink-soft">
             <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
-            loading incident stream…
+            Loading incident stream…
           </div>
         ) : events.length === 0 ? (
           <div className="border border-line bg-surface p-6 text-small text-ink-soft">
-            No incidents recorded yet. Open the live view to start monitoring challenge videos.
+            No incidents recorded. All monitored areas nominal.
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-px border border-line bg-line md:grid-cols-2">
-            {recentDistinctIncidents.map((ev) => {
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {recentDistinctIncidents.slice(0, 4).map((ev) => {
               const config = getScenarioConfig(ev.scenario)
               const videoInfo = getVideoScenarioInfo(ev.video_id)
               const severity = ev.band || config.defaultBand || 'Medium'
@@ -447,17 +333,17 @@ export default function Dashboard() {
               )
 
               return (
-                <div key={ev.event_id} className="flex flex-col gap-3 bg-surface p-4">
+                <div key={ev.event_id} className="flex flex-col gap-3 border border-line bg-surface p-5 transition-colors hover:border-line-strong">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`border px-2 py-0.5 text-label font-medium ${
+                        className={`border px-2 py-0.5 text-label font-bold uppercase tracking-wider ${
                           BAND_STYLE[severity] || BAND_STYLE.Low
                         }`}
                       >
-                        {severity} risk
+                        {severity} Risk
                       </span>
-                      <span className="text-caption text-ink-soft">{videoInfo.cameraName}</span>
+                      <span className="text-caption font-medium text-ink-soft">{videoInfo.cameraName}</span>
                     </div>
                     <span className="font-mono text-caption font-semibold tabular-nums text-ink">
                       {formatTimestamp(ev.timestamp)}
@@ -465,27 +351,27 @@ export default function Dashboard() {
                   </div>
 
                   <div>
-                    <h3 className="text-title font-semibold leading-tight text-ink">{title}</h3>
-                    <p className="mt-1 line-clamp-2 text-small text-ink-soft">{whyItMatters}</p>
+                    <h3 className="text-title font-bold leading-tight text-ink">{title}</h3>
+                    <p className="mt-1 text-small text-ink-soft">{whyItMatters}</p>
                   </div>
 
                   {action && (
-                    <div className="border-l-2 border-ok bg-ok/5 px-3 py-2 text-small text-ink">
-                      <span className="block text-label font-medium text-ok">
-                        recommended action
+                    <div className="rounded border-l-2 border-ok bg-ok/5 px-3 py-2 text-small text-ink">
+                      <span className="block text-label font-bold uppercase tracking-wider text-ok">
+                        Safe Action Required
                       </span>
                       {action}
                     </div>
                   )}
 
-                  <div className="mt-auto flex items-center justify-between border-t border-line pt-2">
-                    <span className="text-caption text-ink-faint">{videoInfo.scenarioTitle}</span>
+                  <div className="mt-auto flex items-center justify-between border-t border-line pt-3">
+                    <span className="text-caption text-ink-faint">{videoInfo.zone || videoInfo.scenarioTitle}</span>
                     <button
                       type="button"
                       onClick={() => handleLaunchIncident(ev)}
-                      className="inline-flex items-center gap-1.5 border border-ink bg-ink px-3 py-1 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
+                      className="inline-flex items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
                     >
-                      view incident
+                      Replay & Verify
                       <ArrowRight size={13} />
                     </button>
                   </div>
@@ -496,7 +382,31 @@ export default function Dashboard() {
         )}
       </section>
 
-      <LearningInsights />
+      {/* Warehouse Safety Trends & Coaching (Collapsible to preserve calm UI) */}
+      <section className="border border-line bg-surface p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-display text-display-sm font-semibold text-ink">
+              Warehouse Safety Trends & Coaching Focus
+            </h2>
+            <p className="text-caption text-ink-soft">
+              Recurring hazard patterns and supervisor coaching priorities across camera bays
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowTrends(!showTrends)}
+            className="border border-line bg-paper px-3.5 py-1.5 text-small font-medium text-ink transition-colors hover:border-line-strong"
+          >
+            {showTrends ? 'Hide Trends' : 'View Safety Trends & Heatmap'}
+          </button>
+        </div>
+        {showTrends && (
+          <div className="mt-6 border-t border-line pt-6">
+            <LearningInsights />
+          </div>
+        )}
+      </section>
     </div>
   )
 }

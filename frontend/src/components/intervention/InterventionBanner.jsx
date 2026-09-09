@@ -85,16 +85,6 @@ export default function InterventionBanner({ onOpenDetail }) {
               >
                 {bannerAlert.severity} — {bannerAlert.urgency}
               </span>
-              {bannerAlert.occurrence_count > 1 && (
-                <span className="rounded border border-line-strong bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-soft">
-                  Repeated {bannerAlert.occurrence_count}× in active session
-                </span>
-              )}
-              {bannerAlert.state === 'ACKNOWLEDGED' && (
-                <span className="rounded bg-signal/20 px-2 py-0.5 text-[11px] font-semibold text-[#8a5f00]">
-                  Acknowledged by {bannerAlert.acknowledged_by || 'Supervisor'}
-                </span>
-              )}
             </div>
 
             <h3 className="mt-1 text-base font-bold text-ink">
