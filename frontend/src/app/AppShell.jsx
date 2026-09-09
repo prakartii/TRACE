@@ -35,8 +35,8 @@ const navItemClass = ({ isActive }) =>
 function NavGroup({ label, items }) {
   if (!items.length) return null
   return (
-    <div className="flex flex-col gap-0.5">
-      {label && <span className="eyebrow mb-1.5 px-2.5">{label}</span>}
+    <div className="flex gap-0.5 md:flex-col">
+      {label && <span className="eyebrow mb-1.5 hidden px-2.5 md:block">{label}</span>}
       {items.map(({ label: text, path, icon: Icon }) => (
         <NavLink key={path} to={path} className={navItemClass}>
           <Icon size={15} strokeWidth={2} className="shrink-0" />
@@ -143,18 +143,21 @@ export default function AppShell() {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-[1180px]">
-        <nav className="flex w-52 shrink-0 flex-col gap-5 border-r border-line px-3 py-6">
+      <div className="mx-auto flex max-w-[1180px] flex-col md:flex-row">
+        <nav
+          aria-label="Primary"
+          className="flex shrink-0 gap-2 overflow-x-auto border-b border-line px-3 py-2 md:w-52 md:flex-col md:gap-5 md:overflow-visible md:border-b-0 md:border-r md:py-6"
+        >
           <NavGroup items={primary} />
           {!isOperator && (
             <>
-              <div className="border-t border-line" />
+              <div className="hidden border-t border-line md:block" />
               <NavGroup items={[{ label: 'Settings', path: '/settings', icon: SettingsIcon }]} />
             </>
           )}
         </nav>
 
-        <main className="min-w-0 flex-1 px-7 py-6">
+        <main className="min-w-0 flex-1 px-4 py-5 md:px-7 md:py-6">
           <InterventionBanner onOpenDetail={setSelectedAlert} />
           <Outlet />
         </main>

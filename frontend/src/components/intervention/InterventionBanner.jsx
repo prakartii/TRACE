@@ -18,15 +18,15 @@ export default function InterventionBanner({ onOpenDetail }) {
   // 1. Connection notification banner when disconnected
   if (connectionNotice) {
     return (
-      <div className="mb-5 flex items-center justify-between rounded-lg border border-signal/40 bg-signal/10 px-4 py-2.5 text-xs text-ink transition-all">
+      <div className="mb-5 flex items-center justify-between rounded-lg border border-high/40 bg-high/10 px-4 py-2.5 text-xs text-ink transition-all">
         <div className="flex items-center gap-2.5">
-          <RefreshCw className="h-4 w-4 animate-spin text-signal" />
+          <RefreshCw className="h-4 w-4 animate-spin text-high" />
           <div>
             <span className="font-semibold text-ink">Live Monitoring Status:</span>{' '}
-            <span className="text-ink-soft">{connectionNotice}</span>
+            <span className="text-dim">{connectionNotice}</span>
           </div>
         </div>
-        <span className="rounded bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-soft border border-line">
+        <span className="rounded bg-bg px-2 py-0.5 text-[11px] font-medium text-dim border border-line">
           Reconnecting automatically
         </span>
       </div>
@@ -40,16 +40,16 @@ export default function InterventionBanner({ onOpenDetail }) {
   const isHigh = bannerAlert.severity === 'HIGH'
 
   const borderClass = isCritical
-    ? 'border-danger/60 bg-danger/10'
+    ? 'border-crit/60 bg-crit/10'
     : isHigh
-    ? 'border-signal/50 bg-signal/10'
-    : 'border-steel/40 bg-steel/10'
+    ? 'border-high/50 bg-high/10'
+    : 'border-line-strong/40 bg-dim/10'
 
   const badgeClass = isCritical
-    ? 'bg-danger text-white'
+    ? 'bg-crit text-white'
     : isHigh
-    ? 'bg-signal text-ink font-semibold'
-    : 'bg-steel text-white'
+    ? 'bg-high text-ink font-semibold'
+    : 'bg-dim text-white'
 
   const handleAcknowledge = async (e) => {
     e.stopPropagation()
@@ -73,7 +73,7 @@ export default function InterventionBanner({ onOpenDetail }) {
         <div className="flex items-start gap-3.5">
           <div
             className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-              isCritical ? 'bg-danger text-white' : 'bg-signal text-ink'
+              isCritical ? 'bg-crit text-white' : 'bg-high text-ink'
             }`}
           >
             <ShieldAlert className="h-5 w-5" />
@@ -86,12 +86,12 @@ export default function InterventionBanner({ onOpenDetail }) {
                 {bannerAlert.severity} — {bannerAlert.urgency}
               </span>
               {bannerAlert.occurrence_count > 1 && (
-                <span className="rounded border border-line-strong bg-paper px-2 py-0.5 text-[11px] font-medium text-ink-soft">
+                <span className="rounded border border-line-strong bg-bg px-2 py-0.5 text-[11px] font-medium text-dim">
                   Repeated {bannerAlert.occurrence_count}× in active session
                 </span>
               )}
               {bannerAlert.state === 'ACKNOWLEDGED' && (
-                <span className="rounded bg-signal/20 px-2 py-0.5 text-[11px] font-semibold text-[#8a5f00]">
+                <span className="rounded bg-high/20 px-2 py-0.5 text-[11px] font-semibold text-high">
                   Acknowledged by {bannerAlert.acknowledged_by || 'Supervisor'}
                 </span>
               )}
@@ -103,7 +103,7 @@ export default function InterventionBanner({ onOpenDetail }) {
 
             {/* WHAT TO DO NOW (Primary prominent scan element) */}
             <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-ink-soft">
+              <span className="text-xs font-bold uppercase tracking-wider text-dim">
                 Action:
               </span>
               <p className="text-sm font-semibold text-ink">
@@ -120,7 +120,7 @@ export default function InterventionBanner({ onOpenDetail }) {
               type="button"
               onClick={handleAcknowledge}
               disabled={acknowledging}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-ink/20 bg-ink px-3.5 py-1.5 text-xs font-semibold text-paper shadow-sm transition-all hover:bg-ink/90 active:scale-95 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-ink bg-ink px-3.5 py-1.5 text-xs font-semibold text-bg shadow-sm transition-all hover:bg-dim active:scale-95 disabled:opacity-50"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
               {acknowledging ? 'Acknowledging...' : 'Acknowledge'}
@@ -134,16 +134,16 @@ export default function InterventionBanner({ onOpenDetail }) {
                 voice.speak(spokenTextFor(bannerAlert, voice.lang), { force: true })
               }
               title={`Speak this alert${voice.enabled ? '' : ' (voice alerts off)'}`}
-              className="rounded-lg border border-line-strong bg-paper p-1.5 text-ink shadow-sm transition-all hover:bg-paper-subtle active:scale-95"
+              className="rounded-lg border border-line-strong bg-bg p-1.5 text-ink shadow-sm transition-all hover:bg-raised active:scale-95"
             >
-              <Volume2 className="h-3.5 w-3.5" />
+              <Volume2 aria-label="Speak this alert" className="h-3.5 w-3.5" />
             </button>
           )}
 
           <button
             type="button"
             onClick={() => onOpenDetail && onOpenDetail(bannerAlert)}
-            className="inline-flex items-center gap-1 rounded-lg border border-line-strong bg-paper px-3 py-1.5 text-xs font-medium text-ink shadow-sm transition-all hover:bg-paper-subtle active:scale-95"
+            className="inline-flex items-center gap-1 rounded-lg border border-line-strong bg-bg px-3 py-1.5 text-xs font-medium text-ink shadow-sm transition-all hover:bg-raised active:scale-95"
           >
             <span>View Safe Plan</span>
             <ChevronRight className="h-3.5 w-3.5" />
@@ -152,10 +152,10 @@ export default function InterventionBanner({ onOpenDetail }) {
           <button
             type="button"
             onClick={() => dismissBanner(bannerAlert.alert_id)}
-            className="rounded p-1.5 text-ink-faint transition-colors hover:bg-paper hover:text-ink"
+            className="rounded p-1.5 text-mute transition-colors hover:bg-bg hover:text-ink"
             title="Dismiss from banner"
           >
-            <X className="h-4 w-4" />
+            <X aria-label="Dismiss" className="h-4 w-4" />
           </button>
         </div>
       </div>

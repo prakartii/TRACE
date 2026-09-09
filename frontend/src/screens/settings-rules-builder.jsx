@@ -30,7 +30,7 @@ const EMPTY_RULE = {
 
 const BAND_COLORS = {
   Low: 'text-ok bg-ok/10 border-ok/40',
-  Medium: 'text-steel bg-steel/10 border-steel/40',
+  Medium: 'text-dim bg-dim/10 border-line-strong/40',
   High: 'text-high bg-high/10 border-high/40',
   Critical: 'text-crit bg-crit/10 border-crit/40',
 }
@@ -84,7 +84,7 @@ function ConditionSummary({ condition }) {
   const { field, operator, value } = condition
   return (
     <span className="font-mono text-caption">
-      <span className="text-steel">{field}</span>
+      <span className="text-dim">{field}</span>
       <span className="mx-1 text-mute">{operator}</span>
       <span className="font-medium text-ink">{String(value)}</span>
     </span>
@@ -208,7 +208,7 @@ function CompoundConditionEditor({ condition, onChange, schema, disabled }) {
       </div>
 
       {isCompound ? (
-        <div className="flex flex-col gap-2 border-l-2 border-steel/40 pl-3">
+        <div className="flex flex-col gap-2 border-l-2 border-line-strong/40 pl-3">
           <div className="flex items-center gap-2">
             <span className="text-caption text-dim">combine with</span>
             <select
@@ -288,8 +288,8 @@ function RuleForm({ initialRule, schema, onSave, onCancel, saving }) {
         <textarea rows={2} maxLength={1000} placeholder="Describe the operational purpose of this rule" value={form.description} onChange={(e) => update('description', e.target.value)} className={`${inputCls} resize-none`} />
       </div>
 
-      <div className="flex flex-col gap-3 border border-steel/40 bg-steel/5 p-3">
-        <div className="text-label font-medium text-steel">when</div>
+      <div className="flex flex-col gap-3 border border-line-strong/40 bg-dim/5 p-3">
+        <div className="text-label font-medium text-dim">when</div>
         <div>
           <label className={`${labelCls} mb-2`}>condition</label>
           <CompoundConditionEditor condition={form.condition} onChange={(c) => update('condition', c)} schema={schema} disabled={saving} />
@@ -338,7 +338,7 @@ function RuleForm({ initialRule, schema, onSave, onCancel, saving }) {
       </div>
 
       <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="border border-ink bg-ink px-4 py-1.5 text-body font-medium text-paper transition-colors hover:bg-ink-soft disabled:opacity-60">
+        <button type="submit" disabled={saving} className="border border-ink bg-ink px-4 py-1.5 text-body font-medium text-bg transition-colors hover:bg-ink-soft disabled:opacity-60">
           {saving ? 'saving…' : 'save rule'}
         </button>
         <button type="button" onClick={onCancel} disabled={saving} className="border border-line px-4 py-1.5 text-body text-dim transition-colors hover:bg-bg">
@@ -354,15 +354,15 @@ function EvaluationPanel({ result, onClose }) {
   const { matched_count, total_evaluated, sample_matches, epistemic_label, notice } = result
 
   return (
-    <div className="flex flex-col gap-3 border border-steel/40 bg-steel/5 p-4">
+    <div className="flex flex-col gap-3 border border-line-strong/40 bg-dim/5 p-4">
       <div className="flex items-center justify-between">
-        <div className="text-body font-medium text-steel">evaluation result</div>
+        <div className="text-body font-medium text-dim">evaluation result</div>
         <button onClick={onClose} className="text-caption text-mute hover:text-ink">close</button>
       </div>
 
       <div className="flex gap-6">
         <div>
-          <div className="text-[20px] font-semibold tabular-nums text-steel">{matched_count}</div>
+          <div className="text-[20px] font-semibold tabular-nums text-dim">{matched_count}</div>
           <div className="text-caption text-dim">matched events</div>
         </div>
         <div>
@@ -445,8 +445,8 @@ function RuleCard({ rule, onEdit, onDelete, onEvaluate, evaluating }) {
         <span className="shrink-0 font-mono text-caption tabular-nums text-mute">#{rule.rule_id}</span>
       </div>
 
-      <div className="border border-steel/40 bg-steel/5 p-2">
-        <div className="mb-1 text-label font-medium text-steel">when</div>
+      <div className="border border-line-strong/40 bg-dim/5 p-2">
+        <div className="mb-1 text-label font-medium text-dim">when</div>
         <ConditionSummary condition={rule.condition} />
       </div>
 
@@ -458,7 +458,7 @@ function RuleCard({ rule, onEdit, onDelete, onEvaluate, evaluating }) {
       )}
 
       <div className="flex items-center gap-2 border-t border-line pt-2">
-        <button onClick={() => onEvaluate(rule.rule_id)} disabled={evaluating} className="border border-steel/40 px-2.5 py-1 text-caption font-medium text-steel transition-colors hover:bg-steel/10 disabled:opacity-50">
+        <button onClick={() => onEvaluate(rule.rule_id)} disabled={evaluating} className="border border-line-strong/40 px-2.5 py-1 text-caption font-medium text-dim transition-colors hover:bg-dim/10 disabled:opacity-50">
           {evaluating ? 'testing…' : 'test rule'}
         </button>
         <button onClick={() => onEdit(rule)} className="border border-line px-2.5 py-1 text-caption text-dim transition-colors hover:bg-bg">
@@ -466,7 +466,7 @@ function RuleCard({ rule, onEdit, onDelete, onEvaluate, evaluating }) {
         </button>
         {confirmDelete ? (
           <div className="ml-auto inline-flex items-center gap-1.5">
-            <button onClick={() => onDelete(rule.rule_id)} className="bg-crit px-1.5 py-0.5 text-label font-medium text-paper hover:opacity-90">
+            <button onClick={() => onDelete(rule.rule_id)} className="bg-crit px-1.5 py-0.5 text-label font-medium text-bg hover:opacity-90">
               confirm delete
             </button>
             <button onClick={() => setConfirmDelete(false)} className="bg-bg px-1.5 py-0.5 text-label text-dim hover:bg-line">
@@ -598,7 +598,7 @@ export default function RuleBuilder() {
             data. Rules are evaluated deterministically — no code execution.
           </p>
         </div>
-        <button onClick={openCreateForm} className="inline-flex shrink-0 items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-body font-medium text-paper transition-colors hover:bg-ink-soft">
+        <button onClick={openCreateForm} className="inline-flex shrink-0 items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-body font-medium text-bg transition-colors hover:bg-ink-soft">
           <Plus size={14} />
           new rule
         </button>
@@ -678,7 +678,7 @@ export default function RuleBuilder() {
               const info = schema.field_details[f] || {}
               return (
                 <div key={f} className="flex items-start gap-3">
-                  <span className="w-24 shrink-0 font-mono font-medium text-steel">{f}</span>
+                  <span className="w-24 shrink-0 font-mono font-medium text-dim">{f}</span>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-caption text-dim">{info.description}</span>
                     {info.allowed_values && <span className="text-caption text-mute">values: {info.allowed_values.join(', ')}</span>}

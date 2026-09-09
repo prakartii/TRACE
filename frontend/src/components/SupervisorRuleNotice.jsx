@@ -13,8 +13,8 @@ export default function SupervisorRuleNotice({ evidence, className = '' }) {
   if (rules.length === 0) return null
 
   return (
-    <div className={`border border-line bg-paper p-3 ${className}`}>
-      <span className="block text-label font-medium text-ink-soft">
+    <div className={`border border-line bg-bg p-3 ${className}`}>
+      <span className="block text-label font-medium text-dim">
         supervisor rule{rules.length === 1 ? '' : 's'} applied
       </span>
       <ul className="mt-1.5 flex flex-col gap-2">
@@ -23,13 +23,13 @@ export default function SupervisorRuleNotice({ evidence, className = '' }) {
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-caption font-medium text-ink">{r.rule_name || 'Unnamed rule'}</span>
               {r.band_raised_to && (
-                <span className="shrink-0 font-mono text-label tabular-nums text-ink-soft">
+                <span className="shrink-0 font-mono text-label tabular-nums text-dim">
                   {r.band_raised_from} → {r.band_raised_to}
                 </span>
               )}
             </div>
-            {r.action_text && <p className="text-caption text-ink-soft">{r.action_text}</p>}
-            <p className="text-label text-ink-soft">
+            {r.action_text && <p className="text-caption text-dim">{r.action_text}</p>}
+            <p className="text-label text-dim">
               {r.band_raised_to
                 ? 'Severity raised by operator policy. Risk lenses are unchanged.'
                 : 'Operator rule matched. Severity unchanged.'}
