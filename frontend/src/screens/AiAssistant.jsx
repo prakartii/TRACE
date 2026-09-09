@@ -482,15 +482,18 @@ function renderFormattedAnswer(text) {
           /^(Supervisor tip|Supervisor Tip|Recommended supervisor focus|Recommended Supervisor Focus|Action required|Action Required|Immediate action|Immediate Action):?\s*(.*)$/i
         )
         if (tipMatch) {
+          const isAction = /action/i.test(tipMatch[1])
           return (
             <div
               key={idx}
-              className="flex items-start gap-2.5 rounded-xs border border-amber-400/60 bg-amber-500/10 p-3 text-ink shadow-xs"
+              className={`flex items-start gap-2.5 rounded-xs border p-3 text-ink shadow-xs ${
+                isAction ? 'border-amber-400/80 bg-amber-500/15' : 'border-emerald-500/50 bg-emerald-500/10'
+              }`}
             >
-              <ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-600" />
+              <ShieldAlert size={16} className={`mt-0.5 shrink-0 ${isAction ? 'text-amber-700' : 'text-emerald-700'}`} />
               <div className="flex-1">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
-                  Supervisor Action Tip & Recommendation
+                <div className={`text-[10px] font-bold uppercase tracking-wider ${isAction ? 'text-amber-900' : 'text-emerald-900'}`}>
+                  {isAction ? 'Immediate Action Required' : 'Supervisor Action Tip & Recommendation'}
                 </div>
                 <div className="mt-0.5 text-small font-medium text-ink leading-relaxed">
                   {formatInline(tipMatch[2])}
@@ -500,38 +503,66 @@ function renderFormattedAnswer(text) {
           )
         }
 
-        // 2. Shift Safety Summary / Executive Overview
-        const summaryMatch = line.match(
-          /^(Shift Safety Summary|Shift Safety Handover Briefing|Executive Summary|Safety Briefing):?\s*(.*)$/i
-        )
-        if (summaryMatch) {
+        // 2. Safety Protocol Card
+        const protocolMatch = line.match(/^(Safety Protocol|Safety Rule):?\s*(.*)$/i)
+        if (protocolMatch) {
           return (
-            <div key={idx} className="rounded-xs border border-line bg-surface p-3 shadow-xs">
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-soft mb-1">
-                <CheckCircle2 size={13} className="text-ok" />
-                <span>Shift Briefing Overview</span>
+            <div key={idx} className="rounded-xs border border-sky-400/60 bg-sky-500/10 p-3 shadow-xs">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-sky-800 mb-0.5">
+                Warehouse Safety Standard & Protocol
               </div>
-              <div className="text-small text-ink leading-relaxed font-medium">
-                {formatInline(summaryMatch[2])}
+              <div className="text-small font-semibold text-ink">
+                {formatInline(protocolMatch[2])}
               </div>
             </div>
           )
         }
 
-        // 3. Primary Hazard / Main Issue
+        // 3. Shift Safety Summary / Executive Overview / High Risk Summary / Stability Formula
+        const summaryMatch = line.match(
+          /^(Shift Safety Summary|Shift Safety Handover Briefing|Executive Summary|Safety Briefing|High Risk Summary|Stability Formula & Safety Checks|Active Interventions):?\s*(.*)$/i
+        )
+        if (summaryMatch) {
+          const title = summaryMatch[1]
+          const isHighRisk = /high risk|active intervention/i.test(title)
+          return (
+            <div
+              key={idx}
+              className={`rounded-xs border p-3 shadow-xs ${
+                isHighRisk ? 'border-danger/30 bg-danger/5' : 'border-line bg-surface'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-soft mb-1">
+                {isHighRisk ? (
+                  <AlertTriangle size={13} className="text-danger" />
+                ) : (
+                  <CheckCircle2 size={13} className="text-ok" />
+                )}
+                <span>{title}</span>
+              </div>
+              {summaryMatch[2] && (
+                <div className="text-small text-ink leading-relaxed font-medium">
+                  {formatInline(summaryMatch[2])}
+                </div>
+              )}
+            </div>
+          )
+        }
+
+        // 4. Primary Hazard / Main Issue
         const hazardMatch = line.match(
-          /^(Main issue today|Primary operational hazard|Primary Hazard):?\s*(.*)$/i
+          /^(Main issue today|Primary operational hazard|Primary Hazard|Risk Description):?\s*(.*)$/i
         )
         if (hazardMatch) {
           return (
             <div
               key={idx}
-              className="flex items-start gap-2 rounded-xs border border-danger/30 bg-danger/5 p-2.5 text-small"
+              className="flex items-start gap-2 rounded-xs border border-amber-300/40 bg-amber-500/5 p-2.5 text-small"
             >
-              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-danger" />
+              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-600" />
               <div>
-                <span className="font-semibold text-danger uppercase tracking-wider text-[10px]">
-                  Primary Operational Hazard:{' '}
+                <span className="font-semibold text-amber-800 uppercase tracking-wider text-[10px]">
+                  {hazardMatch[1]}:{' '}
                 </span>
                 <span className="text-ink font-medium">{formatInline(hazardMatch[2])}</span>
               </div>
@@ -539,11 +570,11 @@ function renderFormattedAnswer(text) {
           )
         }
 
-        // 4. Numbered steps (e.g. "1. Check dock boundary...")
+        // 5. Numbered steps (e.g. "1. Check dock boundary...")
         const numMatch = line.match(/^(\d+)[\.\)]\s*(.*)$/)
         if (numMatch) {
           return (
-            <div key={idx} className="flex items-start gap-2.5 pl-1">
+            <div key={idx} className="flex items-start gap-2.5 pl-1 py-0.5">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink text-[10px] font-bold text-paper mt-0.5">
                 {numMatch[1]}
               </span>
@@ -552,18 +583,18 @@ function renderFormattedAnswer(text) {
           )
         }
 
-        // 5. Bullet points
+        // 6. Bullet points
         if (line.startsWith('•') || line.startsWith('- ') || line.startsWith('* ')) {
           const content = line.replace(/^[•\-*]\s*/, '')
           return (
-            <div key={idx} className="flex items-start gap-2 pl-2">
-              <span className="text-ink-soft font-bold leading-relaxed">•</span>
+            <div key={idx} className="flex items-start gap-2 pl-2 py-0.5">
+              <span className="text-ink font-bold leading-relaxed text-xs">•</span>
               <div className="text-small leading-relaxed text-ink">{formatInline(content)}</div>
             </div>
           )
         }
 
-        // 6. Regular narrative paragraph
+        // 7. Regular narrative paragraph
         return (
           <p key={idx} className="text-small leading-relaxed text-ink">
             {formatInline(line)}

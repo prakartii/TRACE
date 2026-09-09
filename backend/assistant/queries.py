@@ -286,13 +286,20 @@ def high_risk_events(conn: sqlite3.Connection) -> QueryResult:
     for r in rows:
         by_source[_source_label(r["video_id"])] = by_source.get(_source_label(r["video_id"]), 0) + 1
     worst = max(by_source.items(), key=lambda kv: kv[1])
-    top_scenarios = ", ".join(
-        sorted({labels.scenario_title(r['scenario']) for r in rows if r['scenario']})
-    )
+    scen_counts: dict[str, int] = {}
+    for r in rows:
+        if r["scenario"]:
+            title = labels.scenario_title(r["scenario"])
+            scen_counts[title] = scen_counts.get(title, 0) + 1
+    top_3 = sorted(scen_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+    top_items = [f"• {title} ({count} alerts)" for title, count in top_3]
+
     summary = (
-        f"{len(rows)} High/Critical events are logged. "
-        f"{worst[0]} has the most ({worst[1]}). "
-        f"Top scenarios: {top_scenarios}."
+        f"High Risk Summary: {len(rows)} High/Critical safety alerts recorded across the floor.\n"
+        f"Most active area: {worst[0]} ({worst[1]} alerts).\n"
+        f"Top safety concerns to address right now:\n"
+        + "\n".join(top_items) + "\n"
+        "Supervisor tip: Inspect loading dock ledge perimeters and remind material handlers to push overhanging cartons at least 15cm back onto pallet decks."
     )
     crit_count = sum(1 for r in rows if r["band"] == "Critical")
     cards = [_event_card(r) for r in rows[:6]]
@@ -606,9 +613,9 @@ def shift_briefing(conn: sqlite3.Connection) -> QueryResult:
     
     top_hazard_name = "Boxes too close to dock edge" if "dock" in top_scen else labels.scenario_title(top_scen)
     summary = (
-        f"Shift Safety Summary: {total} safety alerts recorded today ({high} high priority). "
-        f"{outcomes.get('prevented', 0)} accident was prevented by quick team action. "
-        f"Main issue today: {top_hazard_name} ({top_scen_rows[0]['n'] if top_scen_rows else 0} times). "
+        f"Shift Safety Summary: {total} safety alerts recorded today ({high} High priority).\n"
+        f"Accident prevention: {outcomes.get('prevented', 0)} incident was prevented by quick team action.\n"
+        f"Primary operational hazard: {top_hazard_name} ({top_scen_rows[0]['n'] if top_scen_rows else 0} occurrences).\n"
         "Supervisor tip: Remind team members to keep boxes sitting squarely on pallets and at least 1.5m away from dock edges."
     )
     metrics = [
@@ -676,9 +683,10 @@ def active_interventions(conn: sqlite3.Connection) -> QueryResult:
     if "cantilever" in action_text.lower():
         action_text = "Push the box back so it sits completely on the pallet."
     summary = (
-        f"We have {len(rows)} active safety alerts right now ({crit_count} critical, {len(rows) - crit_count} high/medium). "
-        f"Latest alert: '{rows[0]['title']}' at {cam_short}. "
-        f"Action needed: {action_text}"
+        f"Active Interventions: {len(rows)} urgent safety alerts logged ({crit_count} Critical, {len(rows) - crit_count} High/Medium).\n"
+        f"Latest alert: '{rows[0]['title']}' at {cam_short}.\n"
+        f"Action required: {action_text}\n"
+        "Supervisor tip: Review high-risk cameras immediately and dispatch lead handlers to secure dock ledge clearance."
     )
     metrics = [
         {"label": "Active Alerts", "value": len(rows)},
@@ -810,9 +818,10 @@ def scenario_info(conn: sqlite3.Connection, query: str = "") -> QueryResult:
     )
     cards = [_event_card(r) for r in rows]
     summary = (
-        f"Safety Rule: {info['title']}. {info['description']} "
-        f"How to prevent: {info['prevention']} "
-        f"We have {len(rows)} recorded events for this issue."
+        f"Safety Protocol: {info['title']}\n"
+        f"Risk Description: {info['description']}\n"
+        f"Action required: {info['prevention']}\n"
+        f"Supervisor tip: {len(rows)} incidents of this type have been logged in audit history. Verify compliance during floor walk."
     )
     metrics = [
         {"label": "Scenario", "value": info["title"][:20]},
@@ -872,12 +881,12 @@ def product_rules_summary(conn: sqlite3.Connection) -> QueryResult:
 
 def planner_methodology(conn: sqlite3.Connection) -> QueryResult:
     summary = (
-        "How TRACE checks stability: When a box is placed unsafely, TRACE automatically suggests a safer spot nearby. "
-        "It checks 3 key factors: "
-        "1. Support (50%): Does at least 70% of the box rest on the pallet? "
-        "2. Centering (30%): Is the box centered so it won't tip over? "
-        "3. Weight order (20%): Are heavier boxes at the bottom and lighter items on top? "
-        "TRACE only recommends placements that score 70% or higher."
+        "Stability Formula & Safety Checks:\n"
+        "When an unstable placement is detected, TRACE calculates a counterfactual safe target spot based on 3 rules:\n"
+        "1. Support Area (50%): At least 70% of the carton base must rest squarely on the pallet deck.\n"
+        "2. Center of Gravity (30%): The carton center must align within the pallet footprint boundary.\n"
+        "3. Mass Tiering (20%): Heavy items must be stacked at the bottom tier, lighter boxes on top.\n"
+        "Supervisor tip: Only placements scoring 70%+ stability index are approved for material handling."
     )
     metrics = [
         {"label": "Support Weight", "value": "50% Base Area"},

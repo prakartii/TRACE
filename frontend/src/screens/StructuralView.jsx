@@ -71,6 +71,7 @@ export default function StructuralView() {
 
   const videoRef = useRef(null)
   const videoContainerRef = useRef(null)
+  const scenesCacheRef = useRef({})
   const [videoBoxSize, setVideoBoxSize] = useState({ width: 640, height: 360 })
 
   // Measure video container for overlays
@@ -115,12 +116,22 @@ export default function StructuralView() {
   useEffect(() => {
     if (!selectedId) return
     let cancelled = false
+
+    // Instant zero-buffering retrieval from client cache
+    if (scenesCacheRef.current[selectedId]) {
+      setScenes(scenesCacheRef.current[selectedId])
+      setLoadingScenes(false)
+      return
+    }
+
     setLoadingScenes(true)
 
     getScenes(selectedId, 'pilot')
       .then((data) => {
         if (!cancelled) {
-          setScenes(data || [])
+          const list = data || []
+          scenesCacheRef.current[selectedId] = list
+          setScenes(list)
         }
       })
       .catch(() => {
@@ -230,37 +241,63 @@ export default function StructuralView() {
 
     // Smoothly interpolate positions and footprints of matching nodes
     const afterNodesMap = new Map((after.nodes || []).map((n) => [n.entity_id, n]))
+    const matchedAfterIds = new Set()
+
     const interpolatedNodes = (before.nodes || []).map((bNode) => {
-      const aNode = afterNodesMap.get(bNode.entity_id)
-      if (!aNode) return bNode
+      let aNode = afterNodesMap.get(bNode.entity_id)
 
-      const bPos = bNode.position || [0.5, 0.5]
-      const aPos = aNode.position || bPos
-      const pos = [
-        bPos[0] + (aPos[0] - bPos[0]) * alpha,
-        bPos[1] + (aPos[1] - bPos[1]) * alpha,
-      ]
-
-      let fp = bNode.footprint
-      if (bNode.footprint && aNode.footprint) {
-        fp = {
-          x1: bNode.footprint.x1 + (aNode.footprint.x1 - bNode.footprint.x1) * alpha,
-          y1: bNode.footprint.y1 + (aNode.footprint.y1 - bNode.footprint.y1) * alpha,
-          x2: bNode.footprint.x2 + (aNode.footprint.x2 - bNode.footprint.x2) * alpha,
-          y2: bNode.footprint.y2 + (aNode.footprint.y2 - bNode.footprint.y2) * alpha,
+      // Fallback: If track ID shifted during motion, match nearest candidate of same class
+      if (!aNode && after.nodes?.length) {
+        const bPos = bNode.position || [0.5, 0.5]
+        let bestCandidate = null
+        let bestDist = 0.28 // up to 28% screen distance
+        for (const cand of after.nodes) {
+          if (cand.entity_class === bNode.entity_class && !matchedAfterIds.has(cand.entity_id)) {
+            const cPos = cand.position || [0.5, 0.5]
+            const dist = Math.hypot(cPos[0] - bPos[0], cPos[1] - bPos[1])
+            if (dist < bestDist) {
+              bestDist = dist
+              bestCandidate = cand
+            }
+          }
+        }
+        if (bestCandidate) {
+          aNode = bestCandidate
         }
       }
 
-      return {
-        ...bNode,
-        position: pos,
-        footprint: fp,
+      if (aNode) {
+        matchedAfterIds.add(aNode.entity_id)
+        const bPos = bNode.position || [0.5, 0.5]
+        const aPos = aNode.position || bPos
+        const pos = [
+          bPos[0] + (aPos[0] - bPos[0]) * alpha,
+          bPos[1] + (aPos[1] - bPos[1]) * alpha,
+        ]
+
+        let fp = bNode.footprint
+        if (bNode.footprint && aNode.footprint) {
+          fp = {
+            x1: bNode.footprint.x1 + (aNode.footprint.x1 - bNode.footprint.x1) * alpha,
+            y1: bNode.footprint.y1 + (aNode.footprint.y1 - bNode.footprint.y1) * alpha,
+            x2: bNode.footprint.x2 + (aNode.footprint.x2 - bNode.footprint.x2) * alpha,
+            y2: bNode.footprint.y2 + (aNode.footprint.y2 - bNode.footprint.y2) * alpha,
+          }
+        }
+
+        return {
+          ...bNode,
+          position: pos,
+          footprint: fp,
+        }
       }
+
+      return bNode
     })
 
     // Include any nodes that only appeared in `after`
     for (const aNode of after.nodes || []) {
-      if (!interpolatedNodes.some((n) => n.entity_id === aNode.entity_id)) {
+      if (!matchedAfterIds.has(aNode.entity_id) && !interpolatedNodes.some((n) => n.entity_id === aNode.entity_id)) {
         interpolatedNodes.push(aNode)
       }
     }
@@ -529,12 +566,24 @@ export default function StructuralView() {
                 <Layers size={13} />
                 Top-Down Floor Blueprint
               </span>
-              <span className="text-ink font-mono text-[11px] font-medium lowercase">
-                {hoveredNode || `${activeSnapshot?.nodes?.length || 0} entities tracked`}
+              <span className="text-ink font-mono text-[11px] font-medium">
+                {hoveredNode || (
+                  <span>
+                    <strong className="text-amber-600 font-bold">{activeSnapshot?.nodes?.filter((n) => n.entity_class === 'box').length || 0}</strong> cartons/packets ·{' '}
+                    <strong className="text-blue-600 font-bold">{activeSnapshot?.nodes?.filter((n) => n.entity_class === 'pallet').length || 0}</strong> pallets ·{' '}
+                    <strong className="text-emerald-600 font-bold">{activeSnapshot?.nodes?.filter((n) => n.entity_class === 'person').length || 0}</strong> personnel
+                  </span>
+                )}
               </span>
             </div>
 
             <div className="relative aspect-[16/9] w-full border-2 border-line bg-[#090e17] overflow-hidden select-none rounded-xs shadow-inner">
+              {loadingScenes && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-xs text-white">
+                  <span className="h-5 w-5 animate-spin border-2 border-white border-t-transparent rounded-full mb-1.5" />
+                  <span className="text-[11px] font-mono tracking-wider">Syncing High-Precision 2D Digital Twin…</span>
+                </div>
+              )}
               <BlueprintMap
                 snapshot={activeSnapshot}
                 zones={activeZones}
@@ -691,6 +740,18 @@ function BlueprintMap({ snapshot, zones, onHover }) {
   const edges = snapshot?.edges ?? []
   const nodeById = useMemo(() => Object.fromEntries(nodes.map((n) => [n.entity_id, n])), [nodes])
 
+  // Sort nodes: pallets on floor deck, stacked cartons ordered with depth, workers on top
+  const sortedNodes = useMemo(() => {
+    return [...nodes].sort((a, b) => {
+      const classRank = { pallet: 0, box: 1, person: 2 }
+      const diff = (classRank[a.entity_class] ?? 1) - (classRank[b.entity_class] ?? 1)
+      if (diff !== 0) return diff
+      const yA = a.footprint?.y2 ?? (a.position ? a.position[1] : 0)
+      const yB = b.footprint?.y2 ?? (b.position ? b.position[1] : 0)
+      return yA - yB
+    })
+  }, [nodes])
+
   return (
     <svg
       viewBox="0 0 160 90"
@@ -844,7 +905,7 @@ function BlueprintMap({ snapshot, zones, onHover }) {
       })}
 
       {/* Entity Nodes (Pallets, Boxes, Personnel) */}
-      {nodes.map((node) => {
+      {sortedNodes.map((node) => {
         const palette = PALETTE[node.entity_class] || PALETTE.box
         const [cx, cy] = [node.position[0] * 160, node.position[1] * 90]
 
