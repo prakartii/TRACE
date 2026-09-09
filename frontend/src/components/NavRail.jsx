@@ -1,4 +1,5 @@
 import {
+  Boxes,
   Crosshair,
   GitCompareArrows,
   LayoutGrid,
@@ -47,6 +48,11 @@ const SCREEN_META = {
   'Scenario Coverage': {
     label: '14 Hazard Scenarios',
     icon: Crosshair,
+    category: 'intelligence',
+  },
+  'Structural View': {
+    label: 'Structural 2D View',
+    icon: Boxes,
     category: 'intelligence',
   },
   Assistant: {
