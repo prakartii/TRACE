@@ -1,6 +1,5 @@
-import { useEffect } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
-import { LiveViewProvider, useLiveViewContext } from './LiveViewContext.jsx'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { LiveViewProvider } from './LiveViewContext.jsx'
 import { InterventionProvider } from './context/InterventionContext.jsx'
 import AppShell from './app/AppShell.jsx'
 
@@ -8,7 +7,7 @@ import AppShell from './app/AppShell.jsx'
 // steps 3–5 replace Monitor / Incidents / Incident detail, phase 2–3 the rest.
 import Monitor from './screens/Monitor.jsx'
 import Incidents from './screens/Incidents.jsx'
-import IncidentReplay from './screens/IncidentReplay.jsx'
+import IncidentDetail from './screens/IncidentDetail.jsx'
 import Dashboard from './screens/Dashboard.jsx'
 import AiAssistant from './screens/AiAssistant.jsx'
 import SupervisorSettings from './screens/SupervisorSettings.jsx'
@@ -17,21 +16,6 @@ import ScenarioCoverage from './screens/ScenarioCoverage.jsx'
 import ResponsibleAI from './screens/ResponsibleAI.jsx'
 import PlannerView from './screens/PlannerView.jsx'
 
-// Feeds the `:id` from the URL into the old string-nav `replayTarget` so a
-// direct load / refresh of /incidents/:id still selects that incident. Removed
-// when step 5 rebuilds this screen against `useParams` directly.
-function IncidentDetailRoute() {
-  const { id } = useParams()
-  const { replayTarget, setReplayTarget } = useLiveViewContext()
-  useEffect(() => {
-    const eid = Number(id)
-    if (eid && replayTarget?.eventId !== eid) {
-      setReplayTarget({ ...(replayTarget || {}), eventId: eid })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
-  return <IncidentReplay />
-}
 
 export default function App() {
   return (
@@ -43,7 +27,9 @@ export default function App() {
               <Route index element={<Navigate to="/monitor" replace />} />
               <Route path="monitor" element={<Monitor />} />
               <Route path="incidents" element={<Incidents />} />
-              <Route path="incidents/:id" element={<IncidentDetailRoute />} />
+              <Route path="incidents/:id" element={<IncidentDetail />} />
+              <Route path="incidents/:id/replay" element={<IncidentDetail />} />
+              <Route path="incidents/:id/what-if" element={<IncidentDetail />} />
               <Route path="patterns" element={<Dashboard />} />
               <Route path="assistant" element={<AiAssistant />} />
               <Route path="settings" element={<SupervisorSettings />} />
