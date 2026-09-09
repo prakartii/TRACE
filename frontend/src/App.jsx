@@ -8,10 +8,9 @@ import AppShell from './app/AppShell.jsx'
 import Monitor from './screens/Monitor.jsx'
 import Incidents from './screens/Incidents.jsx'
 import IncidentDetail from './screens/IncidentDetail.jsx'
-import Dashboard from './screens/Dashboard.jsx'
+import Patterns from './screens/Patterns.jsx'
 import AiAssistant from './screens/AiAssistant.jsx'
 import SupervisorSettings from './screens/SupervisorSettings.jsx'
-import ScenarioCoverage from './screens/ScenarioCoverage.jsx'
 import ResponsibleAI from './screens/ResponsibleAI.jsx'
 import PlannerView from './screens/PlannerView.jsx'
 
@@ -29,12 +28,11 @@ export default function App() {
               <Route path="incidents/:id" element={<IncidentDetail />} />
               <Route path="incidents/:id/replay" element={<IncidentDetail />} />
               <Route path="incidents/:id/what-if" element={<IncidentDetail />} />
-              <Route path="patterns" element={<Dashboard />} />
+              <Route path="patterns" element={<Patterns />} />
               <Route path="assistant" element={<AiAssistant />} />
               <Route path="settings" element={<SupervisorSettings />} />
 
               {/* migrating — folded into Incidents / Patterns / Settings in phase 2–3 */}
-              <Route path="coverage" element={<ScenarioCoverage />} />
               <Route path="responsible-ai" element={<ResponsibleAI />} />
               <Route path="planner" element={<PlannerView />} />
 

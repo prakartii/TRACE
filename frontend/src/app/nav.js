@@ -1,5 +1,4 @@
 import {
-  Crosshair,
   LayoutGrid,
   MessagesSquare,
   ShieldCheck,
@@ -20,7 +19,6 @@ export const PRIMARY_NAV = [
 // Screens that still live on their own route until phase 2/3 folds them into
 // Incidents / Patterns / Settings. This whole group is deleted then.
 export const MIGRATING_NAV = [
-  { label: 'Coverage', path: '/coverage', icon: Crosshair },
   { label: 'Safe Action', path: '/planner', icon: Zap },
   { label: 'Responsible AI', path: '/responsible-ai', icon: ShieldCheck },
 ]

@@ -42,7 +42,7 @@ function screenToPath(screen, target) {
     case 'What-If':
       return '/incidents'
     case 'Scenario Coverage':
-      return '/coverage'
+      return '/patterns'
     case 'Responsible AI':
       return '/responsible-ai'
     case 'Action Center':
