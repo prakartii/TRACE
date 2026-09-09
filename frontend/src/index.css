@@ -1,3 +1,28 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-bg font-sans text-body text-ink antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid theme('colors.ink');
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* The one card primitive. Replaces every ad-hoc `border border-line bg-surface`. */
+  .panel {
+    @apply rounded-md border border-line bg-raised p-4;
+  }
+
+  /* Small uppercase section label. The only place uppercase is used besides nav. */
+  .eyebrow {
+    @apply text-label font-semibold uppercase tracking-[0.06em] text-mute;
+  }
+}
