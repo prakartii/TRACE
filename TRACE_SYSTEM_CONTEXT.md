@@ -59,11 +59,16 @@ graph TD
 #### Layer 1: Ingestion & Perception (`backend/video/`, `backend/perception/`)
 * **Registry & Deduplication:** `backend/video/registry.py` scans `data/challenge_videos/` and calculates SHA-256 content hashes to discover duplicate feeds (e.g., Clip #8 tagged as duplicate of Clip #7).
 * **Ingestion API:** `POST /api/videos` accepts `.mp4` uploads, validates decodability with OpenCV, and immediately registers them into the active monitoring set without requiring restarts.
-* **Dual Detectors:** `Stock YOLOv8n` (COCO `person`) and `Pilot YOLOv8n` (`models/trace_pilot_v1.pt`, custom-trained on warehouse objects: `person`, `box`, `pallet`).
+* **Dual Detectors & Perception Tuning:**
+  * `Stock YOLOv8n` (COCO `person`).
+  * `Pilot YOLOv8n` (`models/trace_pilot_v1.pt`, custom-trained on warehouse objects: `person`, `box`, `pallet`).
+  * **High-Precision Tuning (`PILOT_CONFIG`):** `confidence_threshold = 0.15`, `track_activation_threshold = 0.15`, and secondary confidence = `0.08` tuned specifically to track all cartons, flat KD packets, and pallets without missing dropped boxes.
+  * **Dense Sampling:** Operates at **5.0 FPS** (sampling every 0.2s) with `max_samples_per_run = 500`.
+* **Zero-Buffering Precomputed Cache (`data/.perception_cache/`):** Precomputed 5.0 FPS timeline scene graphs for all challenge videos, slashing scene retrieval latency from 12–17s down to **0.01s – 0.07s**.
 * **Multi-Object Tracking:** ByteTrack Kalman filter (`backend/perception/tracker.py`) with matching threshold strictly maintained at `0.80` and track lifecycle badges (`TRACKED`, `REACQUIRED`, `TEMPORARILY_LOST`).
 * **Adaptive Temporal Sampling:** `backend/perception/sampling.py` resolves 3.0 FPS normal rate vs. 6.0 FPS motion-dense rate based on inter-frame centroid velocity spikes.
 
-#### Layer 2: Spatial World Model & Temporal Sequencer (`backend/world_model/`)
+#### Layer 2: Spatial World Model & 2D Digital Twin (`backend/world_model/`, `frontend/src/screens/StructuralView.jsx`)
 * **Scene Graph:** `SceneGraphSnapshot` contains `nodes` (`SceneGraphNode`) and `edges` (`SceneGraphEdge`).
 * **Normalized Space:** Normalized $[0, 1]$ 2D image coordinates relative to frame resolution.
 * **Geometric Edges:**
@@ -71,6 +76,12 @@ graph TD
   * `CONTACT`: Evaluated via 2D bounding box intersection over union ($\text{IoU} > 0.05$).
   * `PROXIMITY`: Evaluated via normalized centroid Euclidean distance ($d \le 0.15$).
 * **Temporal Kinematics:** `backend/world_model/temporal.py` computes displacement vectors, velocity norms ($px/s$), and downward acceleration vectors ($px/s^2$) across frame history buffers.
+* **2D Digital Twin Blueprint (`StructuralView.jsx`):**
+  * Synchronous top-down SVG blueprint alongside CCTV video.
+  * In-memory cache (`scenesCacheRef`) for instant, zero-lag video switching.
+  * Continuous linear interpolation with nearest-neighbor track-recovery fallback (up to 28% screen distance) to prevent jumpy or frozen boxes during rapid motion.
+  * SVG Z-index depth layering (`sortedNodes`: pallets on floor deck, cartons stacked with depth ordering by `y2`, workers on top).
+  * Real-time inventory breakdown counter in blueprint header (`X cartons/packets · Y pallets · Z personnel`).
 
 #### Layer 3 & 4: 4 Evidence-Aware Risk Lenses (`backend/lenses/`, `backend/behaviour/`)
 1. **Structural Stability Lens:** Detects unstable carton overhang, base coverage deficits, vertical stacking gaps, and heavy-on-light mass inversions.
@@ -113,10 +124,20 @@ Ceilings are governed by detector class reliability:
 * Automatically classifies outcomes into: `prevented`, `near_miss`, `outcome_unclear`, or `confirmed_damage`.
 * **Session Feedback:** 1–5 star human impact operator feedback stored in SQLite table `session_ratings`.
 
-#### Layer 9: Learning, Micro-Training & Grounded AI Assistant (`backend/api/assistant/`, `backend/rules/`)
-* **Supervisor Micro-Training:** Live SKU registration and custom rule creation (e.g., *"Do not place Heavy Box on Fragile Glass"*).
-* **Grounded AI Assistant:** Deterministic SQL-backed conversational assistant that answers supervisor queries in plain language without raw key names.
-* **Responsible AI:** Automated face redaction, data retention auto-purge, and identity-blind ethics (explicitly declines worker productivity ranking).
+#### Layer 9: Grounded AI Safety Assistant & Micro-Training (`backend/assistant/`, `frontend/src/screens/AiAssistant.jsx`)
+* **Deterministic SQL Grounding:** Assistant connects directly to the SQLite audit log (`events`, `outcome_measurements`, `products`), world model scene graphs, and safety rules.
+* **Supervisor-Friendly Structured Formatting:**
+  * Dedicated **Safety Protocol** cards (sky-blue).
+  * **Immediate Action Required** callouts (amber).
+  * **Supervisor Action Tip & Recommendation** badges (emerald with `ShieldAlert` icon).
+  * Clear 3-factor counterfactual stability formula (Support 50%, Centering 30%, Weight Tiering 20%).
+* **Interactive Collapsible Dropdown Accordion:**
+  * Related Event Records are collapsed by default into a sleek dropdown button: `[4] RELATED EVENT RECORDS — Click to inspect incident replay & footage ▾`.
+  * Prevents vertical bloat and tall messages during shift briefings.
+  * **Single-Record Quick Filter:** Inside the dropdown, a `<select>` filter allows supervisors to view all records or zero-in on a single event record (`#377`, `#374`, etc.).
+  * Matching `ChevronDown` dropdown indicator on the `"View audit trace"` toggle.
+* **Micro-Training & Catalog Rules:** Live SKU registration, polygon hazard zone editor, and custom operational safety rules (`screens/SupervisorSettings.jsx`, `backend/rules/`).
+* **Responsible AI & Worker Privacy:** Automated face blurring/redaction toggle, data retention auto-purge, and identity-blind ethics (explicitly declines worker productivity ranking) (`screens/ResponsibleAiPanel.jsx`).
 
 ---
 
@@ -127,14 +148,14 @@ The frontend is a React 18 SPA built with Vite and TailwindCSS. Navigation is ma
 | Screen Name in Code | NavRail Label | File Path | Core Functionality |
 | :--- | :--- | :--- | :--- |
 | **`Live View`** | `1. Live Camera Feeds` | `frontend/src/screens/LiveView.jsx` | Native HTML5 video player, SVG overlays (boxes, track badges, support lines), Findings panel, What-If candidate trigger, and MP4 drop-zone. |
-| **`Structural View`** | `Structural 2D View` | `frontend/src/screens/StructuralView.jsx` | Digital twin: 2D SVG canvas rendering entity footprints, support/contact/proximity lines, and hazard zones with scrubber and model toggle. |
+| **`Structural View`** | `Structural 2D View` | `frontend/src/screens/StructuralView.jsx` | Synchronous 2D digital twin: top-down SVG blueprint alongside video, dense 5 FPS tracking, zero-buffering disk cache, and real-time inventory counter. |
 | **`Event Feed`** | `2. Active Hazards` | `frontend/src/screens/EventFeed.jsx` | SQLite incident audit ledger with multi-criteria filters, epistemic badges, CSV export, and human review gates. |
 | **`Incident Replay`** | `3. Incident Replay` | `frontend/src/screens/IncidentReplay.jsx` | Forensic video scrubber linking recorded hazards to exact video timestamps with epistemic breakdown. |
 | **`What-If Simulation`** | `4. What-If Simulator` | `frontend/src/screens/WhatIfReplay.jsx` | Counterfactual comparison of actual placement vs alternative placement stability curves. |
 | **`Planner View`** | `5. Safe Action Center` | `frontend/src/screens/PlannerView.jsx` | Mathematical interactive sandbox scoring alternative placements and counter-proposals. |
 | **`Dashboard`** | `Safety Overview` | `frontend/src/screens/Dashboard.jsx` | Operational KPIs: verified prevented incidents, near-miss ratios, scenario breakdown, and risk heat maps. |
 | **`Scenario Coverage`**| `14 Hazard Scenarios` | `frontend/src/screens/ScenarioCoverage.jsx` | Benchmark matrix auditing all 14 physical warehouse hazard scenarios. |
-| **`Assistant`** | `AI Safety Assistant` | `frontend/src/screens/AssistantView.jsx` | Grounded conversational interface querying operational trends and incident causes. |
+| **`Assistant`** | `AI Safety Assistant` | `frontend/src/screens/AiAssistant.jsx` | Grounded conversational interface with structured warehouse cards, collapsible event records dropdown, and live replay links. |
 | **`Supervisor`** | `Safety Rules & Catalog`| `frontend/src/screens/SupervisorSettings.jsx` | Dynamic SKU catalog management, environmental zone polygon editor, and custom rule builder. |
 | **`Responsible AI`** | `Worker Privacy & Ethics`| `frontend/src/screens/ResponsibleAiPanel.jsx` | Face redaction toggle, auto-purge retention scheduler, and identity-blind ethics audit log. |
 
@@ -195,7 +216,7 @@ When working on TRACE in any new Antigravity session, follow these rules:
 * **Environment:** Python 3.12+ with `.venv`
 * **Install:** `.venv\Scripts\python -m pip install -r backend/requirements.txt`
 * **Start Server:** `.venv\Scripts\python -m uvicorn backend.main:app --port 8000`
-* **Test Suite:** `.venv\Scripts\pytest` (Runs all 674 backend unit & integration tests)
+* **Test Suite:** `.venv\Scripts\pytest` (Runs all 675 backend unit & integration tests)
 
 ### Frontend
 * **Environment:** Node.js 18+
