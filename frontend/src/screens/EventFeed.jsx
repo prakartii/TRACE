@@ -5,7 +5,7 @@ import { incidentsCsvUrl } from '../api/reports.js'
 import { getActionPlan } from '../api/actions.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle } from '../lib/scenarios.js'
+import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle, formatEventRef } from '../lib/scenarios.js'
 import {
   formatConfidence,
   formatEntityName,
@@ -659,7 +659,7 @@ export default function EventFeed() {
                 <span className="text-small font-semibold text-ink">Incident Inspection</span>
               </div>
               {selectedEvent && (
-                <span className="font-mono text-caption text-ink-faint">Event #{selectedEvent.event_id}</span>
+                <span className="text-caption text-ink-faint">{formatEventRef(selectedEvent)}</span>
               )}
             </div>
 

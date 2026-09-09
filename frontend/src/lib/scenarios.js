@@ -385,6 +385,20 @@ export function resolveIncidentTitle(event) {
   return config.title || 'Recorded Operational Hazard'
 }
 
+/**
+ * Human reference for an event — what it is and where, instead of an opaque
+ * "event #73" database id. Used in list headers and cross-screen links so the
+ * reader sees the hazard, not the primary key.
+ */
+export function formatEventRef(event) {
+  if (!event) return 'Recorded operational hazard'
+  const title = resolveIncidentTitle(event)
+  const cam = getVideoScenarioInfo(event.video_id).cameraName
+  const base = cam && cam !== 'Warehouse Sensor Feed' ? `${title} — ${cam}` : title
+  if (event.event_id != null) return `${base} (event #${event.event_id})`
+  return base
+}
+
 export const RISK_BAND_STYLES = {
   Critical: {
     label: 'critical risk',

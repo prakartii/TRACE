@@ -4,7 +4,7 @@ import { listEvents, getEvent } from '../api/events.js'
 import { getActionPlan } from '../api/actions.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS, formatEvidenceKey, formatEvidenceValue, telemetryEntries } from '../lib/scenarios.js'
+import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS, formatEvidenceKey, formatEvidenceValue, telemetryEntries, formatEventRef } from '../lib/scenarios.js'
 import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
 import { formatConfidence, formatEntityName, humanizeExplanation } from '../lib/format.js'
 import WorkflowNav from '../components/WorkflowNav.jsx'
@@ -303,8 +303,8 @@ export default function PlannerView() {
             <span className={`border px-2 py-0.5 text-label font-medium ${severityCls}`}>
               {severity} severity
             </span>
-            <span className="font-mono text-caption text-ink-faint">
-              event #{activeEvent?.event_id || selectedEventId}
+            <span className="text-caption text-ink-faint">
+              {formatEventRef(activeEvent)}
             </span>
           </div>
         </div>

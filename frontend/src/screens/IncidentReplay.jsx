@@ -26,6 +26,7 @@ import {
   formatEvidenceKey,
   formatEvidenceValue,
   telemetryEntries,
+  formatEventRef,
 } from '../lib/scenarios.js'
 import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
 import {
@@ -629,8 +630,8 @@ export default function IncidentReplay() {
               </span>
               <h2 className="text-base font-bold text-ink">{title}</h2>
               <span className="text-caption text-ink-soft">Location: {videoInfo.cameraName}</span>
-              <span className="border border-line bg-paper px-2 py-0.5 font-mono text-caption text-ink-soft">
-                Event #{incidentEvent.event_id}
+              <span className="border border-line bg-paper px-2 py-0.5 text-caption text-ink-soft">
+                {formatEventRef(incidentEvent)}
               </span>
             </div>
             <div className="flex items-center gap-2">
