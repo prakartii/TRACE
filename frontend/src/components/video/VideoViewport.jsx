@@ -34,7 +34,7 @@ const VideoViewport = forwardRef(function VideoViewport(
   videoRef,
 ) {
   return (
-    <div className="border border-line bg-surface">
+    <div className="border border-line bg-raised">
       <div className="relative bg-black">
         <video
           ref={videoRef}

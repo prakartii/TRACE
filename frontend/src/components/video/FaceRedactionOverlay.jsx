@@ -41,7 +41,7 @@ export default function FaceRedactionOverlay({
           WebkitBackdropFilter: 'blur(16px)',
         }}
       >
-        <span className="bg-ink/70 px-1.5 py-0.5 font-mono text-[10px] text-paper">
+        <span className="bg-ink/70 px-1.5 py-0.5 font-mono text-[10px] text-bg">
           faces obscured — person detection unavailable
         </span>
       </div>

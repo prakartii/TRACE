@@ -1,82 +1,117 @@
 /**
- * LiveViewContext — shared state bridge between LiveView and PlannerView.
+ * LiveViewContext — shared state bridge + navigation shim.
  *
- * LiveView writes the currently-selected video and the latest findings into
- * this context. PlannerView reads from it so it can display the actual
- * detected risk + planner recommendation instead of a static lookup table.
+ * Two jobs:
+ *  1. `liveState` — the selected video + latest findings, shared between the
+ *     Monitor screen and the Safe Action panel.
+ *  2. A `navigateTo(screenName, target)` shim so screens written against the
+ *     old string-keyed navigation keep working while the app moves to real
+ *     routes. It maps the old names to paths and pushes the router, carrying
+ *     `target` as `replayTarget` (both in React state and in history state so
+ *     a back-nav restores it).
  *
- * This is intentionally minimal: only the three pieces of state that
- * PlannerView needs are stored here. All heavy perception/scene logic
- * remains inside LiveView.
+ * New screens should use react-router (`useNavigate`, `<Link>`, `useParams`)
+ * directly. This shim is removed once no screen depends on it.
  */
-import { createContext, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 const LiveViewContext = createContext(null)
 
+// Old screen name -> path. An `eventId` on the target routes to that incident.
+function screenToPath(screen, target) {
+  switch (screen) {
+    case 'Live View':
+    case 'Monitor':
+      return '/monitor'
+    case 'Incidents':
+    case 'Event Feed':
+      return '/incidents'
+    case 'Incident Replay':
+      return target?.eventId ? `/incidents/${target.eventId}` : '/incidents'
+    case 'Dashboard':
+    case 'Patterns':
+      return '/patterns'
+    case 'Assistant':
+    case 'AI Assistant':
+      return '/assistant'
+    case 'Settings':
+      return '/settings'
+    case 'What-If Simulation':
+    case 'What-If Replay':
+    case 'What-If':
+      return '/incidents'
+    case 'Scenario Coverage':
+      return '/patterns'
+    case 'Responsible AI':
+      return '/settings/governance'
+    case 'Action Center':
+    case 'Safe Action Planner':
+      return '/monitor'
+    default:
+      return '/monitor'
+  }
+}
+
 export function LiveViewProvider({ children }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+
   const [liveState, setLiveState] = useState({
     selectedId: null,
     selectedFilename: null,
     currentTime: 0,
-    findings: null,   // null = not loaded; [] = loaded but empty
+    findings: null, // null = not loaded; [] = loaded but empty
     findingsLoading: false,
     findingsError: null,
     modelName: 'pilot',
   })
 
-  const [activeScreen, setActiveScreen] = useState('Dashboard')
-  const [replayTarget, setReplayTarget] = useState(null)
+  const [replayTargetState, setReplayTarget] = useState(null)
 
-  // Responsible-AI view mode (ARCHITECTURE.md §15). Presentation filter only —
-  // there is no authentication layer yet, so this does not enforce access.
-  const [role, setRole] = useState(() => {
+  const [role, setRoleState] = useState(() => {
     try {
       return localStorage.getItem('trace.role') || 'supervisor'
     } catch {
       return 'supervisor'
     }
   })
-  const changeRole = (r) => {
-    setRole(r)
+  const setRole = useCallback((r) => {
+    setRoleState(r)
     try {
       localStorage.setItem('trace.role', r)
     } catch {
       /* ignore */
     }
-  }
+  }, [])
 
-  const SCREEN_ALIASES = {
-    'Safe Action Planner': 'Action Center',
-    'Event Feed': 'Incidents',
-    'What-If Replay': 'What-If Simulation',
-    'What-If': 'What-If Simulation',
-  }
-
-  const navigateTo = (screen, target = null) => {
-    if (target !== undefined && target !== null) {
-      setReplayTarget(target)
-    }
-    const normalized = SCREEN_ALIASES[screen] || screen
-    setActiveScreen(normalized)
-  }
-
-  return (
-    <LiveViewContext.Provider
-      value={{
-        liveState,
-        setLiveState,
-        activeScreen,
-        setActiveScreen,
-        replayTarget,
-        setReplayTarget,
-        navigateTo,
-        role,
-        setRole: changeRole,
-      }}
-    >
-      {children}
-    </LiveViewContext.Provider>
+  const navigateTo = useCallback(
+    (screen, target = null) => {
+      if (target !== undefined && target !== null) setReplayTarget(target)
+      const path = screenToPath(screen, target)
+      navigate(path, target ? { state: { replayTarget: target } } : undefined)
+    },
+    [navigate],
   )
+
+  // Prefer the target carried in history state (survives back-nav / reload)
+  // over the last one set imperatively.
+  const replayTarget = location.state?.replayTarget ?? replayTargetState
+
+  const value = useMemo(
+    () => ({
+      liveState,
+      setLiveState,
+      replayTarget,
+      setReplayTarget,
+      navigateTo,
+      role,
+      setRole,
+    }),
+    [liveState, replayTarget, navigateTo, role, setRole],
+  )
+
+  return <LiveViewContext.Provider value={value}>{children}</LiveViewContext.Provider>
 }
 
 export function useLiveViewContext() {

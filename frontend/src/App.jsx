@@ -1,119 +1,42 @@
-import { useEffect, useState } from 'react'
-import Header from './components/Header.jsx'
-import NavRail from './components/NavRail.jsx'
-import { API_BASE_URL } from './config.js'
-import { LiveViewProvider, useLiveViewContext } from './LiveViewContext.jsx'
-import EventFeed from './screens/EventFeed.jsx'
-import IncidentReplay from './screens/IncidentReplay.jsx'
-import LiveView from './screens/LiveView.jsx'
-import PlaceholderScreen from './screens/PlaceholderScreen.jsx'
-import PlannerView from './screens/PlannerView.jsx'
-import SupervisorSettings from './screens/SupervisorSettings.jsx'
-import WhatIfReplay from './screens/WhatIfReplay.jsx'
-import Dashboard from './screens/Dashboard.jsx'
-import ScenarioCoverage from './screens/ScenarioCoverage.jsx'
-import AiAssistant from './screens/AiAssistant.jsx'
-import ResponsibleAI from './screens/ResponsibleAI.jsx'
-import { OPERATOR_SCREENS } from './lib/roles.js'
-import { InterventionProvider, useIntervention } from './context/InterventionContext.jsx'
-import InterventionBanner from './components/intervention/InterventionBanner.jsx'
-import InterventionModal from './components/intervention/InterventionModal.jsx'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { LiveViewProvider } from './LiveViewContext.jsx'
+import { InterventionProvider } from './context/InterventionContext.jsx'
+import AppShell from './app/AppShell.jsx'
 
-const SCREENS = [
-  'Dashboard',
-  'Scenario Coverage',
-  'Incidents',
-  'Incident Replay',
-  'Action Center',
-  'What-If Simulation',
-  'Live View',
-  'Assistant',
-]
+// Screens. Primary routes still point at the pre-redesign screens; phase-1
+// steps 3–5 replace Monitor / Incidents / Incident detail, phase 2–3 the rest.
+import Monitor from './screens/Monitor.jsx'
+import Incidents from './screens/Incidents.jsx'
+import IncidentDetail from './screens/IncidentDetail.jsx'
+import Patterns from './screens/Patterns.jsx'
+import Assistant from './screens/Assistant.jsx'
+import Settings from './screens/Settings.jsx'
 
-const SECONDARY_SCREENS = ['Responsible AI', 'Settings']
-
-function useBackendStatus() {
-  const [status, setStatus] = useState('checking')
-
-  useEffect(() => {
-    let cancelled = false
-    fetch(`${API_BASE_URL}/health`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
-      .then(() => !cancelled && setStatus('online'))
-      .catch(() => !cancelled && setStatus('offline'))
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return status
-}
-
-function AppContent() {
-  const backendStatus = useBackendStatus()
-  const { activeScreen, navigateTo, role } = useLiveViewContext()
-  const { selectedAlert, setSelectedAlert } = useIntervention()
-
-  const isOperator = role === 'operator'
-  const visibleScreens = isOperator ? SCREENS.filter((s) => OPERATOR_SCREENS.includes(s)) : SCREENS
-  const visibleSecondary = isOperator ? [] : SECONDARY_SCREENS
-  // If the operator view hides the active screen, fall back to Live View.
-  const effectiveScreen =
-    isOperator && !OPERATOR_SCREENS.includes(activeScreen) ? 'Live View' : activeScreen
-
-  return (
-    <div className="min-h-screen bg-paper text-ink selection:bg-signal selection:text-ink">
-      <Header backendStatus={backendStatus} />
-      <div className="mx-auto flex max-w-[1240px]">
-        <NavRail
-          screens={visibleScreens}
-          secondaryScreens={visibleSecondary}
-          active={effectiveScreen}
-          onSelect={navigateTo}
-        />
-        <main className="min-w-0 flex-1 border-l border-line px-8 py-7">
-          <InterventionBanner onOpenDetail={setSelectedAlert} />
-
-          {effectiveScreen === 'Dashboard' ? (
-            <Dashboard />
-          ) : effectiveScreen === 'Scenario Coverage' || effectiveScreen === 'Operational Intelligence' ? (
-            <ScenarioCoverage />
-          ) : effectiveScreen === 'Incidents' || effectiveScreen === 'Event Feed' ? (
-            <EventFeed />
-          ) : effectiveScreen === 'Incident Replay' ? (
-            <IncidentReplay />
-          ) : effectiveScreen === 'Action Center' || effectiveScreen === 'Safe Action Planner' ? (
-            <PlannerView />
-          ) : effectiveScreen === 'What-If Simulation' || effectiveScreen === 'What-If Replay' || effectiveScreen === 'What-If' ? (
-            <WhatIfReplay />
-          ) : effectiveScreen === 'Live View' ? (
-            <LiveView />
-          ) : effectiveScreen === 'Assistant' || effectiveScreen === 'AI Assistant' ? (
-            <AiAssistant />
-          ) : effectiveScreen === 'Responsible AI' ? (
-            <ResponsibleAI />
-          ) : effectiveScreen === 'Settings' ? (
-            <SupervisorSettings />
-          ) : (
-            <PlaceholderScreen name={effectiveScreen} />
-          )}
-        </main>
-      </div>
-
-      {selectedAlert && (
-        <InterventionModal alert={selectedAlert} onClose={() => setSelectedAlert(null)} />
-      )}
-    </div>
-  )
-}
 
 export default function App() {
   return (
-    <LiveViewProvider>
-      <InterventionProvider>
-        <AppContent />
-      </InterventionProvider>
-    </LiveViewProvider>
+    <BrowserRouter>
+      <LiveViewProvider>
+        <InterventionProvider>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route index element={<Navigate to="/monitor" replace />} />
+              <Route path="monitor" element={<Monitor />} />
+              <Route path="incidents" element={<Incidents />} />
+              <Route path="incidents/:id" element={<IncidentDetail />} />
+              <Route path="incidents/:id/replay" element={<IncidentDetail />} />
+              <Route path="incidents/:id/what-if" element={<IncidentDetail />} />
+              <Route path="patterns" element={<Patterns />} />
+              <Route path="assistant" element={<Assistant />} />
+              <Route path="settings" element={<Navigate to="/settings/rules" replace />} />
+              <Route path="settings/:section" element={<Settings />} />
+
+
+              <Route path="*" element={<Navigate to="/monitor" replace />} />
+            </Route>
+          </Routes>
+        </InterventionProvider>
+      </LiveViewProvider>
+    </BrowserRouter>
   )
 }
-
