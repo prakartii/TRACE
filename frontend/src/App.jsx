@@ -7,7 +7,7 @@ import AppShell from './app/AppShell.jsx'
 // Screens. Primary routes still point at the pre-redesign screens; phase-1
 // steps 3–5 replace Monitor / Incidents / Incident detail, phase 2–3 the rest.
 import Monitor from './screens/Monitor.jsx'
-import EventFeed from './screens/EventFeed.jsx'
+import Incidents from './screens/Incidents.jsx'
 import IncidentReplay from './screens/IncidentReplay.jsx'
 import Dashboard from './screens/Dashboard.jsx'
 import AiAssistant from './screens/AiAssistant.jsx'
@@ -42,7 +42,7 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route index element={<Navigate to="/monitor" replace />} />
               <Route path="monitor" element={<Monitor />} />
-              <Route path="incidents" element={<EventFeed />} />
+              <Route path="incidents" element={<Incidents />} />
               <Route path="incidents/:id" element={<IncidentDetailRoute />} />
               <Route path="patterns" element={<Dashboard />} />
               <Route path="assistant" element={<AiAssistant />} />
