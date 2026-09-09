@@ -233,6 +233,29 @@ class FindingStatus(str, Enum):
     UNSUPPORTED = "unsupported"
 
 
+# The statuses that cleared the evidence bar and may therefore back a *claim*
+# ("the most common risks are…", "this configuration recurs", "coach the team
+# on X", risk-density heat map, scorecards).
+#
+# INSUFFICIENT_EVIDENCE / UNSUPPORTED findings are still persisted and still
+# shown in the event log with their status badge — that is the honest audit
+# trail — but aggregating them into an insight would be inventing one
+# (CLAUDE.md §30, and §20's "do not claim learning beyond what is implemented").
+EVIDENCE_BACKED_STATUSES: tuple[str, ...] = (
+    FindingStatus.SUPPORTED.value,
+    FindingStatus.PROBABLE.value,
+)
+
+# Reusable SQL fragment for the `events` table. Callers append it to a WHERE.
+EVIDENCE_BACKED_SQL = "status IN ('supported', 'probable')"
+
+EVIDENCE_BASIS_NOTE = (
+    "Counts evidence-backed findings only (status supported or probable). "
+    "Insufficient-evidence and unsupported observations stay in the event log "
+    "with their status but never drive an aggregate claim."
+)
+
+
 class RiskEvent(BaseModel):
     """Phase 1 risk-event contract, extended in Phase 5 for evidence-
     aware findings. All Phase 5 fields are additive/defaulted so the
@@ -274,6 +297,11 @@ class StabilityBreakdown(BaseModel):
     mass_order: float = 0.0
     orientation_alignment: float = 0.0
     overhang_penalty: float = 0.0
+    # Tipping-moment estimate (ARCHITECTURE.md §5.1): mass_class_weight x
+    # normalized COG offset, 0 (no tipping tendency) - 100. A comparative
+    # indicator reported for explainability; it is NOT an independent weighted
+    # term in the final score (see backend/planner/stability.py).
+    tipping_estimate: float = 0.0
 
 
 class StabilityScore(BaseModel):
@@ -820,4 +848,39 @@ class AlertDismissRequest(BaseModel):
 class InterventionFeedResponse(BaseModel):
     active_count: int
     alerts: list[InterventionAlert] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
+# Grounded AI assistant (ARCHITECTURE.md Screen 7 / CLAUDE.md §21)
+# --------------------------------------------------------------------------- #
+
+class AssistantAskRequest(BaseModel):
+    question: str
+
+
+class AssistantGrounding(BaseModel):
+    query: str
+    source: str
+    row_count: int = 0
+    event_ids: list[int] = Field(default_factory=list)
+
+
+class RetentionPolicyUpdate(BaseModel):
+    """Partial update for the Responsible-AI data-retention policy."""
+
+    window_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    auto_purge: Optional[bool] = None
+
+
+class AssistantAnswer(BaseModel):
+    question: str
+    answer: str
+    # The retrieval-only answer, always present even when `used_llm` is True.
+    deterministic_answer: Optional[str] = None
+    used_llm: bool = False
+    intent: str
+    grounding: list[AssistantGrounding] = Field(default_factory=list)
+    grounded_row_count: int = 0
+    data: dict = Field(default_factory=dict)
+    suggestions: list[str] = Field(default_factory=list)
 

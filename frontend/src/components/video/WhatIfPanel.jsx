@@ -20,23 +20,30 @@ const CLASSIFICATION_STYLES = {
   poor_geometric_support: 'text-danger bg-danger/10 border-danger/40',
 }
 
-function BreakdownBar({ label, value, max = 100, isPenalty = false }) {
+function BreakdownBar({ label, value, max = 100, isPenalty = false, indicator = false }) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100))
-  const color = isPenalty
-    ? value > 30
-      ? 'bg-danger'
-      : 'bg-line'
-    : value >= 75
-      ? 'bg-ok'
-      : value >= 50
-        ? 'bg-signal'
-        : 'bg-danger'
+  const color = indicator
+    ? 'bg-line-strong'
+    : isPenalty
+      ? value > 30
+        ? 'bg-danger'
+        : 'bg-line'
+      : value >= 75
+        ? 'bg-ok'
+        : value >= 50
+          ? 'bg-signal'
+          : 'bg-danger'
 
   return (
     <div className="flex flex-col gap-0.5 text-caption">
       <div className="flex justify-between text-ink-soft">
-        <span>{label}</span>
-        <span className="font-mono">{isPenalty ? `-${value.toFixed(0)}%` : `${value.toFixed(0)}%`}</span>
+        <span>
+          {label}
+          {indicator && <span className="ml-1 text-ink-faint">(reported, not scored)</span>}
+        </span>
+        <span className="font-mono">
+          {isPenalty ? `-${value.toFixed(0)}%` : `${value.toFixed(0)}%`}
+        </span>
       </div>
       <div className="h-1.5 w-full overflow-hidden border border-line bg-paper">
         <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
@@ -52,6 +59,7 @@ export default function WhatIfPanel({
   selectedCandidateId,
   onSelectCandidate,
   onClose,
+  onOpenReplay,
 }) {
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false)
 
@@ -101,6 +109,15 @@ export default function WhatIfPanel({
           <p className="mt-2 text-caption text-ink-faint">
             <span className="font-medium text-ink">operational basis:</span> {simulation.limitations.join('; ')}
           </p>
+        )}
+        {onOpenReplay && (
+          <button
+            type="button"
+            onClick={onOpenReplay}
+            className="mt-3 inline-flex items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
+          >
+            open the full What-If Replay for a recorded incident →
+          </button>
         )}
       </div>
     )
@@ -297,6 +314,7 @@ export default function WhatIfPanel({
                   <BreakdownBar label="centering" value={current?.breakdown?.centering || 0} />
                   <BreakdownBar label="mass order" value={current?.breakdown?.mass_order || 0} />
                   <BreakdownBar label="overhang penalty" value={current?.breakdown?.overhang_penalty || 0} isPenalty={true} />
+                  <BreakdownBar label="tipping estimate" value={current?.breakdown?.tipping_estimate || 0} indicator={true} />
                 </div>
 
                 {selectedCandidate && (
@@ -306,6 +324,7 @@ export default function WhatIfPanel({
                     <BreakdownBar label="centering" value={selectedCandidate.score_breakdown?.centering || 0} />
                     <BreakdownBar label="mass order" value={selectedCandidate.score_breakdown?.mass_order || 0} />
                     <BreakdownBar label="overhang penalty" value={selectedCandidate.score_breakdown?.overhang_penalty || 0} isPenalty={true} />
+                    <BreakdownBar label="tipping estimate" value={selectedCandidate.score_breakdown?.tipping_estimate || 0} indicator={true} />
                   </div>
                 )}
               </div>

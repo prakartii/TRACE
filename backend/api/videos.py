@@ -51,6 +51,15 @@ def get_video(
 def get_frame(
     video_id: str,
     timestamp: float = Query(..., ge=0.0, description="Seconds from the start"),
+    model: str = Query("stock", description="Perception model used to locate faces for redaction ('stock' or 'pilot')."),
+    redact: bool = Query(
+        True,
+        description=(
+            "Obscure personnel head regions (Responsible AI — on by default). "
+            "Disabling is a supervisor action; there is no auth layer yet, so "
+            "this is currently an honest toggle, not an enforced permission."
+        ),
+    ),
     registry: VideoRegistry = Depends(get_registry),
 ) -> Response:
     record = _get_record_or_404(registry, video_id)
@@ -75,11 +84,47 @@ def get_frame(
     finally:
         source.close()
 
-    ok, buffer = cv2.imencode(".jpg", frame.image)
+    image = frame.image
+    redaction_state = "disabled"
+    if redact:
+        # Lazy import: backend.api.perception imports get_registry from this
+        # module, so a top-level import here would be circular.
+        from backend.api.perception import get_pipeline_registry
+
+        pipelines = get_pipeline_registry()
+        pipeline = pipelines.get(model) or pipelines["stock"]
+        try:
+            image, region_count = pipeline.redact_frame_image(frame.image)
+            redaction_state = "faces-blurred" if region_count else "no-faces-detected"
+        except Exception as exc:
+            # Fail closed on privacy: ANY redactor failure refuses the frame.
+            # This deliberately catches Exception rather than enumerating
+            # types. The tuple here was (FileNotFoundError, ImportError,
+            # OSError), which covers missing weights and an absent
+            # torch/ultralytics, but not what inference actually raises in
+            # practice — a torch RuntimeError, a cv2.error, a shape mismatch —
+            # so the common failures escaped as an opaque 500 with a stack
+            # trace instead of this privacy-specific 503. No frame was ever
+            # leaked either way, but the operator could not tell redaction was
+            # the reason.
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Face redaction is enabled but the perception pipeline is unavailable "
+                    f"({type(exc).__name__}); refusing to serve an un-redacted frame. Retry "
+                    "with redact=false only if you are authorised to view raw footage."
+                ),
+            ) from exc
+
+    ok, buffer = cv2.imencode(".jpg", image)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to encode frame as JPEG")
 
-    return Response(content=buffer.tobytes(), media_type="image/jpeg")
+    return Response(
+        content=buffer.tobytes(),
+        media_type="image/jpeg",
+        headers={"X-TRACE-Redaction": redaction_state},
+    )
 
 
 @router.api_route("/{video_id}/stream", methods=["GET", "HEAD"])

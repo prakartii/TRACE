@@ -306,3 +306,99 @@ def evaluate_rule_against_events(
             "new sensor observation."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Runtime application (CLAUDE.md §17)
+# ---------------------------------------------------------------------------
+
+BAND_ORDER = {"Low": 0, "Medium": 1, "High": 2, "Critical": 3}
+
+CUSTOM_RULE_EVIDENCE_KEY = "supervisor_rules_applied"
+
+
+def apply_custom_rules_to_findings(findings: list, conn: sqlite3.Connection) -> list:
+    """Applies enabled supervisor rules to freshly computed findings, in place.
+
+    CLAUDE.md §17 requires configured rules to change runtime behaviour rather
+    than sit in the UI as decoration. Before this ran, `severity_band` and
+    `action_text` were stored on the rule and read back by nothing: a
+    supervisor could write "treat any structural finding as Critical" and the
+    pipeline would carry on emitting High.
+
+    What a matching rule may do:
+      - RAISE the finding's band to the rule's `severity_band`.
+      - Attach the supervisor's `action_text` as a directive.
+
+    What it must never do (CLAUDE.md §30):
+      - Lower a band. An operator policy must not suppress a detection the
+        lenses actually made; it can only escalate.
+      - Touch `status`, `confidence`, or `epistemic_level`. A rule match is
+        INFERRED policy applied to evidence, not new evidence.
+      - Apply silently. Every escalation is recorded in the finding's evidence
+        under `supervisor_rules_applied`, naming the rule and the band it
+        moved, so the UI can always show why severity is higher than the lens
+        alone would give.
+    """
+    try:
+        from backend.rules.db import list_custom_rules
+
+        rules = [r for r in list_custom_rules(conn) if r.get("enabled")]
+    except Exception as exc:  # a rules-table problem must not drop findings
+        logger.warning("Custom rules not applied: %s", exc)
+        return findings
+
+    if not rules:
+        return findings
+
+    for finding in findings:
+        event_row = {
+            "lens": getattr(finding.lens, "value", finding.lens),
+            "score": finding.score,
+            "band": getattr(finding.band, "value", finding.band),
+            "confidence": getattr(finding.confidence, "value", finding.confidence),
+            "scenario": finding.scenario,
+        }
+        applied: list[dict] = []
+
+        for rule in rules:
+            condition = rule.get("condition")
+            if not isinstance(condition, dict):
+                continue
+            try:
+                if not _evaluate_node(condition, event_row):
+                    continue
+            except Exception as exc:
+                logger.warning("Rule %s failed on a finding: %s", rule.get("rule_id"), exc)
+                continue
+
+            record = {
+                "rule_id": rule.get("rule_id"),
+                "rule_name": rule.get("name"),
+                "action_text": rule.get("action_text"),
+                "basis": "INFERRED — operator rule matched this finding's recorded fields.",
+            }
+
+            target = rule.get("severity_band")
+            current = event_row["band"]
+            if (
+                target in BAND_ORDER
+                and current in BAND_ORDER
+                and BAND_ORDER[target] > BAND_ORDER[current]
+            ):
+                from backend.contracts.models import RiskBand
+
+                record["band_raised_from"] = current
+                record["band_raised_to"] = target
+                finding.band = RiskBand(target)
+                event_row["band"] = target  # later rules see the escalated band
+
+            applied.append(record)
+
+        if applied:
+            finding.evidence[CUSTOM_RULE_EVIDENCE_KEY] = applied
+            directives = [r["action_text"] for r in applied if r.get("action_text")]
+            if directives:
+                finding.recommended_action = directives[0]
+
+    return findings

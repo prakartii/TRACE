@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { ArrowLeft, ArrowRight, Play, RotateCcw, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Download, Play, RotateCcw, TriangleAlert } from 'lucide-react'
 import { listEvents, getEvent, submitReview } from '../api/events.js'
+import { incidentsCsvUrl } from '../api/reports.js'
 import { getActionPlan } from '../api/actions.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
@@ -192,23 +193,27 @@ export default function EventFeed() {
     }
   }, [])
 
+  // One definition of "what is currently filtered", shared by the list query
+  // and the CSV export. They were built separately, and the export omitted the
+  // review-state filter entirely — so "export CSV (filtered)" downloaded every
+  // event while the screen showed a filtered subset.
+  const activeFilters = useMemo(() => {
+    const f = {}
+    if (filterLens) f.lens = filterLens
+    if (filterStatus) f.status = filterStatus
+    if (filterBand) f.band = filterBand
+    if (filterVideo) f.videoId = filterVideo
+    if (filterReviewState === 'unreviewed') f.reviewed = false
+    else if (filterReviewState === 'reviewed') f.reviewed = true
+    else if (filterReviewState) f.reviewStatus = filterReviewState
+    return f
+  }, [filterLens, filterStatus, filterBand, filterVideo, filterReviewState])
+
   const fetchEvents = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const filters = { limit, offset, order }
-      if (filterLens) filters.lens = filterLens
-      if (filterStatus) filters.status = filterStatus
-      if (filterBand) filters.band = filterBand
-      if (filterVideo) filters.videoId = filterVideo
-
-      if (filterReviewState === 'unreviewed') {
-        filters.reviewed = false
-      } else if (filterReviewState === 'reviewed') {
-        filters.reviewed = true
-      } else if (filterReviewState === 'confirmed_damage' || filterReviewState === 'false_positive' || filterReviewState === 'unresolved') {
-        filters.reviewStatus = filterReviewState
-      }
+      const filters = { limit, offset, order, ...activeFilters }
 
       const data = await listEvents(filters)
       setEvents(data)
@@ -227,7 +232,7 @@ export default function EventFeed() {
     } finally {
       setLoading(false)
     }
-  }, [filterLens, filterStatus, filterBand, filterVideo, filterReviewState, order, offset, selectedEventId])
+  }, [activeFilters, order, offset, selectedEventId])
 
   useEffect(() => {
     fetchEvents()
@@ -386,16 +391,25 @@ export default function EventFeed() {
       <section className="border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
           <span className="text-small font-semibold text-ink">filters</span>
-          {activeFilterCount > 0 && (
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink cursor-pointer"
+          <div className="flex items-center gap-3">
+            <a
+              href={incidentsCsvUrl(activeFilters)}
+              className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink"
             >
-              <RotateCcw size={13} />
-              reset filters ({activeFilterCount})
-            </button>
-          )}
+              <Download size={13} />
+              export CSV{activeFilterCount > 0 ? ' (filtered)' : ''}
+            </a>
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="inline-flex items-center gap-1 text-caption text-ink-soft hover:text-ink cursor-pointer"
+              >
+                <RotateCcw size={13} />
+                reset filters ({activeFilterCount})
+              </button>
+            )}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-px bg-line md:grid-cols-6">
           <Filter

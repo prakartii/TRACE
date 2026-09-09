@@ -15,6 +15,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.assistant import router as assistant_router
 from backend.api.behaviour import router as behaviour_router
 from backend.api.actions import router as actions_router
 from backend.api.events import router as events_router
@@ -25,6 +26,9 @@ from backend.api.planner_whatif import canonical_router as canonical_whatif_rout
 from backend.api.planner_whatif import router as planner_whatif_router
 from backend.api.intervention import live_ws_router as intervention_ws_router
 from backend.api.intervention import router as intervention_router
+from backend.api.learning import router as learning_router
+from backend.api.responsible_ai import router as responsible_ai_router
+from backend.api.reports import router as reports_router
 from backend.api.rules import router as rules_router
 from backend.api.scene import router as scene_router
 from backend.api.simulation import router as simulation_router
@@ -47,6 +51,16 @@ async def lifespan(app: FastAPI):
         seed_default_rule(conn)
     except Exception as exc:
         logging.getLogger("trace.rules").warning("Rules seed skipped: %s", exc)
+    try:
+        from backend.api.responsible_ai import run_auto_purge_if_enabled
+
+        result = run_auto_purge_if_enabled(conn)
+        if result and result.get("total"):
+            logging.getLogger("trace.retention").info(
+                "Retention auto-purge removed %s aged record(s): %s", result["total"], result["by_table"]
+            )
+    except Exception as exc:
+        logging.getLogger("trace.retention").warning("Retention auto-purge skipped: %s", exc)
     finally:
         conn.close()
     yield
@@ -77,6 +91,10 @@ app.include_router(rules_router)
 app.include_router(temporal_router)
 app.include_router(intervention_router)
 app.include_router(intervention_ws_router)
+app.include_router(assistant_router)
+app.include_router(responsible_ai_router)
+app.include_router(learning_router)
+app.include_router(reports_router)
 
 
 

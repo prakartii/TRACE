@@ -160,7 +160,34 @@ def test_stability_score_base_tier_ground_placement():
     assert stab.breakdown.support_alignment == 100.0
     assert stab.breakdown.centering == 100.0
     assert stab.breakdown.overhang_penalty == 0.0
+    assert stab.breakdown.tipping_estimate == 0.0  # nothing to tip off at floor level
     assert stab.score >= 80.0
+
+
+def test_tipping_estimate_scales_with_mass_and_cog_offset():
+    """ARCHITECTURE.md §5.1 — tipping-moment estimate = ordinal mass weight x
+    normalized COG offset. Reported for explainability; it does not change the
+    final score (which already docks the same COG offset via `centering`)."""
+    support = BoundingBox(x1=0.30, y1=0.60, x2=0.50, y2=0.80)
+    centered = BoundingBox(x1=0.30, y1=0.40, x2=0.50, y2=0.60)      # COG offset 0
+    off_centre = BoundingBox(x1=0.42, y1=0.40, x2=0.62, y2=0.60)    # COG well off support
+
+    heavy = ProductMetadata(product_id="h", class_name="carton", mass_class=MassClass.HEAVY, fragility=Fragility.LOW)
+    light = ProductMetadata(product_id="l", class_name="carton", mass_class=MassClass.LIGHT, fragility=Fragility.LOW)
+
+    # Perfectly centred -> zero tipping tendency regardless of mass.
+    assert compute_stability_score(centered, support, target_product=heavy).breakdown.tipping_estimate == 0.0
+
+    # Same off-centre geometry: heavier item -> higher tipping estimate than lighter.
+    tip_heavy = compute_stability_score(off_centre, support, target_product=heavy).breakdown.tipping_estimate
+    tip_light = compute_stability_score(off_centre, support, target_product=light).breakdown.tipping_estimate
+    assert tip_heavy > tip_light > 0.0
+
+    # It is a reported diagnostic only — the score is unchanged by mass here
+    # (mass_order needs a support_product; tipping_estimate is not a score term).
+    s_heavy = compute_stability_score(off_centre, support, target_product=heavy).score
+    s_none = compute_stability_score(off_centre, support).score
+    assert s_heavy == s_none
 
 
 # ==============================================================================

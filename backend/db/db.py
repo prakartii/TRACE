@@ -3,14 +3,28 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from pathlib import Path
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 DEFAULT_DB_PATH = Path(__file__).parent / "trace.db"
 
+# Env var so the database location can be redirected without editing code.
+# The test suite sets it to a temp file: several suites build a TestClient
+# without overriding get_db, and were writing into the real demo database —
+# adding events and interventions, and in one case deleting seeded events.
+DB_PATH_ENV_VAR = "TRACE_DB_PATH"
 
-def get_connection(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
+
+def default_db_path() -> Path:
+    """Resolved per call, not bound at import, so the env var is always honoured."""
+    override = os.environ.get(DB_PATH_ENV_VAR)
+    return Path(override) if override else DEFAULT_DB_PATH
+
+
+def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
+    db_path = default_db_path() if db_path is None else db_path
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -134,10 +148,11 @@ def init_db(conn: sqlite3.Connection, schema_path: str | Path = SCHEMA_PATH) -> 
     conn.commit()
 
 
-def create_database(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
+def create_database(db_path: str | Path | None = None) -> sqlite3.Connection:
+    db_path = default_db_path() if db_path is None else db_path
     conn = get_connection(db_path)
     init_db(conn)
-    if Path(db_path).resolve() == Path(DEFAULT_DB_PATH).resolve():
+    if Path(db_path).resolve() == Path(default_db_path()).resolve():
         try:
             from backend.db.canonical_seed import sync_canonical_events
             sync_canonical_events(conn)
@@ -146,7 +161,7 @@ def create_database(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection
     return conn
 
 
-def get_db(db_path: str | Path = DEFAULT_DB_PATH):
+def get_db(db_path: str | Path | None = None):
     conn = get_connection(db_path)
     try:
         yield conn

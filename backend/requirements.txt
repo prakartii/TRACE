@@ -10,3 +10,6 @@ httpx==0.28.1
 opencv-python==4.10.0.84
 ultralytics==8.3.40
 supervision==0.25.1
+# Optional: the grounded assistant's phrasing layer. When absent (or no
+# ANTHROPIC_API_KEY), the assistant returns the deterministic retrieval answer.
+anthropic>=0.69.0

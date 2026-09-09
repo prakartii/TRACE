@@ -84,6 +84,13 @@ def compute_stability_score(
     - mass_order (20% weight): Proper tiering (heavy at base, light on top).
     - orientation_alignment (20% weight): Conformance to SKU required aspect ratio.
     - overhang_penalty (-25% penalty): Cantilever protrusion extending past support boundaries.
+
+    Also reported (not an independent score term):
+    - tipping_estimate (ARCHITECTURE.md §5.1): mass_class_weight x normalized COG
+      offset, a comparative tipping-tendency indicator. It shares its input (the
+      COG offset) with `centering`, which already penalizes it in the score;
+      folding it in again would double-count, so it is surfaced for
+      explainability only.
     """
     w_target = max(1e-4, target_footprint.x2 - target_footprint.x1)
     h_target = max(1e-4, target_footprint.y2 - target_footprint.y1)
@@ -144,6 +151,19 @@ def compute_stability_score(
     else:
         orientation_alignment = 100.0
 
+    # 5b. Tipping-moment estimate (ARCHITECTURE.md §5.1). Ordinal mass weight
+    #     (light 1 / medium 2 / heavy 3, normalized) x normalized COG offset
+    #     (the complement of `centering`). Reported for explainability only —
+    #     not a term in `final_score` below, which already docks the same COG
+    #     offset through `centering`.
+    if is_base_tier:
+        tipping_estimate = 0.0
+    else:
+        _mw = _MASS_RANK.get(target_product.mass_class, 2) if target_product else 2
+        mass_weight_norm = _mw / 3.0
+        cog_offset_norm = max(0.0, min(1.0, 1.0 - centering / 100.0))
+        tipping_estimate = round(mass_weight_norm * cog_offset_norm * 100.0, 1)
+
     # 5. Overhang Penalty
     if is_base_tier:
         overhang_penalty = 0.0
@@ -173,6 +193,7 @@ def compute_stability_score(
         mass_order=mass_order,
         orientation_alignment=orientation_alignment,
         overhang_penalty=overhang_penalty,
+        tipping_estimate=tipping_estimate,
     )
 
     limitations = [

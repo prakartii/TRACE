@@ -7,10 +7,13 @@ FastAPI, JSON, or the frontend.
 
 from __future__ import annotations
 
+import numpy as np
+
 from backend.contracts.models import PerceptionFrameResult
 from backend.perception.adapter import tracked_objects_to_entities
 from backend.perception.config import DEFAULT_CONFIG, PerceptionConfig
 from backend.perception.detector import YoloDetector
+from backend.perception.redaction import redact_person_faces
 from backend.perception.sampling import resolve_sampling_policy
 from backend.perception.tracker import ObjectTracker
 from backend.video.source import Frame, VideoSource
@@ -59,6 +62,26 @@ class PerceptionPipeline:
             source_fps=source_fps,
             sampling_mode=sampling_mode,
         )
+
+    def redact_frame_image(self, image: np.ndarray) -> tuple[np.ndarray, int]:
+        """Return ``(redacted_copy, region_count)`` for a decoded BGR frame
+        (Responsible AI — CLAUDE.md §22). ``region_count`` is how many head
+        regions were actually obscured — 0 means no person was detected, which
+        the caller must not report as "faces blurred".
+
+        Runs a single detection pass to locate person boxes; TRACE's own
+        reasoning never needs a face. A no-op (count 0) when redaction is off.
+        """
+        cfg = self._config.redaction
+        if not cfg.enabled:
+            return image.copy(), 0
+        detections = self._detector.detect(image)
+        person_boxes = [
+            (d.x1, d.y1, d.x2, d.y2)
+            for d in detections
+            if d.class_name == "person"
+        ]
+        return redact_person_faces(image, person_boxes, cfg), len(person_boxes)
 
     def process_video(
         self,

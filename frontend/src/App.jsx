@@ -12,6 +12,9 @@ import SupervisorSettings from './screens/SupervisorSettings.jsx'
 import WhatIfReplay from './screens/WhatIfReplay.jsx'
 import Dashboard from './screens/Dashboard.jsx'
 import ScenarioCoverage from './screens/ScenarioCoverage.jsx'
+import AiAssistant from './screens/AiAssistant.jsx'
+import ResponsibleAI from './screens/ResponsibleAI.jsx'
+import { OPERATOR_SCREENS } from './lib/roles.js'
 import { InterventionProvider, useIntervention } from './context/InterventionContext.jsx'
 import InterventionBanner from './components/intervention/InterventionBanner.jsx'
 import InterventionModal from './components/intervention/InterventionModal.jsx'
@@ -24,9 +27,10 @@ const SCREENS = [
   'Action Center',
   'What-If Simulation',
   'Live View',
+  'Assistant',
 ]
 
-const SECONDARY_SCREENS = ['Settings']
+const SECONDARY_SCREENS = ['Responsible AI', 'Settings']
 
 function useBackendStatus() {
   const [status, setStatus] = useState('checking')
@@ -47,40 +51,51 @@ function useBackendStatus() {
 
 function AppContent() {
   const backendStatus = useBackendStatus()
-  const { activeScreen, navigateTo } = useLiveViewContext()
+  const { activeScreen, navigateTo, role } = useLiveViewContext()
   const { selectedAlert, setSelectedAlert } = useIntervention()
+
+  const isOperator = role === 'operator'
+  const visibleScreens = isOperator ? SCREENS.filter((s) => OPERATOR_SCREENS.includes(s)) : SCREENS
+  const visibleSecondary = isOperator ? [] : SECONDARY_SCREENS
+  // If the operator view hides the active screen, fall back to Live View.
+  const effectiveScreen =
+    isOperator && !OPERATOR_SCREENS.includes(activeScreen) ? 'Live View' : activeScreen
 
   return (
     <div className="min-h-screen bg-paper text-ink selection:bg-signal selection:text-ink">
       <Header backendStatus={backendStatus} />
       <div className="mx-auto flex max-w-[1240px]">
         <NavRail
-          screens={SCREENS}
-          secondaryScreens={SECONDARY_SCREENS}
-          active={activeScreen}
+          screens={visibleScreens}
+          secondaryScreens={visibleSecondary}
+          active={effectiveScreen}
           onSelect={navigateTo}
         />
         <main className="min-w-0 flex-1 border-l border-line px-8 py-7">
           <InterventionBanner onOpenDetail={setSelectedAlert} />
 
-          {activeScreen === 'Dashboard' ? (
+          {effectiveScreen === 'Dashboard' ? (
             <Dashboard />
-          ) : activeScreen === 'Scenario Coverage' || activeScreen === 'Operational Intelligence' ? (
+          ) : effectiveScreen === 'Scenario Coverage' || effectiveScreen === 'Operational Intelligence' ? (
             <ScenarioCoverage />
-          ) : activeScreen === 'Incidents' || activeScreen === 'Event Feed' ? (
+          ) : effectiveScreen === 'Incidents' || effectiveScreen === 'Event Feed' ? (
             <EventFeed />
-          ) : activeScreen === 'Incident Replay' ? (
+          ) : effectiveScreen === 'Incident Replay' ? (
             <IncidentReplay />
-          ) : activeScreen === 'Action Center' || activeScreen === 'Safe Action Planner' ? (
+          ) : effectiveScreen === 'Action Center' || effectiveScreen === 'Safe Action Planner' ? (
             <PlannerView />
-          ) : activeScreen === 'What-If Simulation' || activeScreen === 'What-If Replay' || activeScreen === 'What-If' ? (
+          ) : effectiveScreen === 'What-If Simulation' || effectiveScreen === 'What-If Replay' || effectiveScreen === 'What-If' ? (
             <WhatIfReplay />
-          ) : activeScreen === 'Live View' ? (
+          ) : effectiveScreen === 'Live View' ? (
             <LiveView />
-          ) : activeScreen === 'Settings' ? (
+          ) : effectiveScreen === 'Assistant' || effectiveScreen === 'AI Assistant' ? (
+            <AiAssistant />
+          ) : effectiveScreen === 'Responsible AI' ? (
+            <ResponsibleAI />
+          ) : effectiveScreen === 'Settings' ? (
             <SupervisorSettings />
           ) : (
-            <PlaceholderScreen name={activeScreen} />
+            <PlaceholderScreen name={effectiveScreen} />
           )}
         </main>
       </div>

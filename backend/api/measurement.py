@@ -73,7 +73,16 @@ def get_event_outcome(
     event_id: int,
     db: sqlite3.Connection = Depends(get_db),
 ) -> OutcomeMeasurement:
-    """Retrieves an existing outcome measurement for an event, or evaluates a baseline if unverified."""
+    """Retrieves an event's outcome measurement, or computes an unsaved baseline.
+
+    Reading an outcome must not create one. This used to persist the baseline
+    it computed, so simply opening an incident in Incident Replay wrote an
+    `outcome_unclear` row: browsing four incidents took the prevention panel
+    from 3 evaluated outcomes to 7, and the unclear bucket from 1 to 5. §15
+    forbids inflating prevention numbers, and an outcome nobody verified is
+    not an evaluated outcome — the ledger must only record what POST
+    /events/{id}/verify actually measured.
+    """
     event = get_event_by_id(db, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail=f"Event #{event_id} not found in ledger.")
@@ -83,16 +92,13 @@ def get_event_outcome(
     if stored is not None:
         return stored
 
-    # 2. If unverified, evaluate baseline 3-condition status (no post-action data yet)
-    measurement = evaluate_prevention(
+    # 2. Unverified: return the baseline 3-condition status without recording it.
+    return evaluate_prevention(
         event=event,
         post_event_data=None,
         response_window_sec=DEFAULT_RESPONSE_WINDOW_SEC,
         human_review_status=event.review_status,
     )
-    # Save baseline so it is indexed
-    saved = save_outcome_measurement(measurement, db)
-    return saved
 
 
 @router.post("/events/{event_id}/verify", response_model=OutcomeMeasurement)

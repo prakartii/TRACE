@@ -34,6 +34,7 @@ from backend.lenses.environmental import CONFIGURED_ZONES, evaluate_environmenta
 from backend.lenses.structural import evaluate_structural
 from backend.planner.actions import plan_action
 from backend.risk.config import DEFAULT_RISK_CONFIG
+from backend.rules.engine import apply_custom_rules_to_findings
 from backend.video.registry import VideoRegistry
 from backend.world_model.manifest import get_manifest_for_source
 from backend.world_model.scene_graph import WorldModel
@@ -129,6 +130,10 @@ def get_findings(
             zones=zones,
         )
     )
+    # Supervisor rules are applied before planning so an escalated band and any
+    # operator directive reach the recommendation and the event store (§17).
+    apply_custom_rules_to_findings(findings, db)
+
     for f in findings:
         if f.planner_recommendation is None:
             f.planner_recommendation = plan_action(

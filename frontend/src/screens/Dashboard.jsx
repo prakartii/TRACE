@@ -1,17 +1,10 @@
 import { useEffect, useState, useMemo } from 'react'
-import {
-  ArrowRight,
-  ArrowUpRight,
-  Crosshair,
-  FlaskConical,
-  Layers,
-  ShieldCheck,
-  TriangleAlert,
-  Video,
-} from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Crosshair, Download, FlaskConical } from 'lucide-react'
 import { listEvents } from '../api/events.js'
 import { getPreventionSummary } from '../api/measurement.js'
 import { listVideos } from '../api/videos.js'
+import LearningInsights from '../components/LearningInsights.jsx'
+import { incidentsCsvUrl, shiftSummaryMdUrl } from '../api/reports.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import {
   getScenarioConfig,
@@ -21,11 +14,7 @@ import {
   formatTimestamp,
   resolveIncidentTitle,
 } from '../lib/scenarios.js'
-import {
-  formatConfidence,
-  formatEntityName,
-  humanizeExplanation,
-} from '../lib/format.js'
+import { humanizeExplanation } from '../lib/format.js'
 
 const BAND_STYLE = {
   Critical: 'border-danger/40 bg-danger/10 text-danger',
@@ -128,7 +117,10 @@ export default function Dashboard() {
     { Critical: 0, High: 0, Medium: 0, Low: 0 }
   )
 
-  const activeFeedsCount = videos.length > 0 ? videos.length : 7
+  const activeFeedsCount = videos.length
+  const distinctScenarioCount = new Set(events.map((e) => e.scenario).filter(Boolean)).size
+  const preventedDisplay =
+    summary?.prevented_count != null ? summary.prevented_count : loading ? '…' : '—'
 
   return (
     <div className="flex flex-col gap-8 pb-12">
@@ -174,6 +166,20 @@ export default function Dashboard() {
               <FlaskConical size={15} />
               what-if simulator
             </button>
+            <a
+              href={incidentsCsvUrl()}
+              className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+            >
+              <Download size={15} />
+              incidents CSV
+            </a>
+            <a
+              href={shiftSummaryMdUrl()}
+              className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong"
+            >
+              <Download size={15} />
+              shift summary
+            </a>
           </div>
         </div>
 
@@ -197,13 +203,13 @@ export default function Dashboard() {
               <div className="flex items-baseline justify-between px-4 py-3">
                 <dt className="text-small text-ink-soft">hazards prevented</dt>
                 <dd className="font-display text-display-md font-semibold tabular-nums text-ok">
-                  {summary?.prevented_count ?? 12}
+                  {preventedDisplay}
                 </dd>
               </div>
               <div className="flex items-baseline justify-between px-4 py-3">
-                <dt className="text-small text-ink-soft">recorded incidents</dt>
+                <dt className="text-small text-ink-soft">recent incidents</dt>
                 <dd className="font-display text-display-md font-semibold tabular-nums text-ink">
-                  {events.length > 0 ? `${events.length}+` : '30+'}
+                  {loading ? '…' : events.length}
                 </dd>
               </div>
             </dl>
@@ -288,13 +294,14 @@ export default function Dashboard() {
           </div>
           <div className="bg-surface p-5 sm:col-span-2">
             <span className="text-label font-medium text-ink-faint">
-              decision latency
+              scenario coverage
             </span>
             <p className="mt-2 font-display text-display-lg font-semibold tabular-nums text-ink">
-              2.2<span className="text-title">s</span>
+              {loading ? '…' : distinctScenarioCount}
+              <span className="text-title"> / 14</span>
             </p>
             <p className="mt-1 text-caption text-ink-soft">
-              from optical trigger to recommended action
+              distinct scenario types present in the current log
             </p>
           </div>
           <div className="bg-surface p-5 sm:col-span-1">
@@ -302,7 +309,7 @@ export default function Dashboard() {
               verified
             </span>
             <p className="mt-2 font-display text-display-lg font-semibold tabular-nums text-ok">
-              {summary?.prevented_count ?? 12}
+              {preventedDisplay}
             </p>
             <p className="mt-1 text-caption text-ink-soft">prevented, on video</p>
           </div>
@@ -438,7 +445,6 @@ export default function Dashboard() {
                 ev.scenario,
                 ev.entity_id
               )
-              const entityName = formatEntityName(ev.entity_id)
 
               return (
                 <div key={ev.event_id} className="flex flex-col gap-3 bg-surface p-4">
@@ -489,6 +495,8 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+
+      <LearningInsights />
     </div>
   )
 }

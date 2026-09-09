@@ -526,7 +526,10 @@ def sync_canonical_events(conn: sqlite3.Connection) -> None:
                 (target_event_id, json.dumps([]), rec.action, 0.46, rec_json),
             )
 
-    # 3. Ensure outcome measurement exists for the PREVENTED case (Event #75)
+    # 3. Ensure outcome measurement exists for the PREVENTED case (Event #75).
+    #    Seeded rows use evaluated_at = 0 so the retention purge never ages the
+    #    demo's headline "prevented" record out — repair any earlier stale value.
+    cur.execute("UPDATE outcome_measurements SET evaluated_at = 0.0 WHERE event_id = 75 AND evaluated_at > 0")
     cur.execute("SELECT outcome_id FROM outcome_measurements WHERE event_id = 75")
     if not cur.fetchone():
         three_cond = {
@@ -567,7 +570,7 @@ def sync_canonical_events(conn: sqlite3.Connection) -> None:
                 75, 'ac99ff34e1bd2c13', 3.0, 6.2, 5.0,
                 'prevented', 1, 1, 1,
                 ?, 'Carton cantilever overhang resolved by corrective repositioning within 3.2s; subsequent optical frames verify 100% stable base support.',
-                '{}', '[]', 1788800000.0, 'outcome:event_75:win_5.00'
+                '{}', '[]', 0.0, 'outcome:event_75:win_5.00'
             )
             """,
             (json.dumps(three_cond),),

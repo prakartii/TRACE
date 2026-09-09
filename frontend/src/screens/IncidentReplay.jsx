@@ -7,6 +7,7 @@ import { getEntities, getScene, getWhatIf, listVideos, streamUrl } from '../api/
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
 import PerceptionOverlay from '../components/video/PerceptionOverlay.jsx'
+import FaceRedactionOverlay from '../components/video/FaceRedactionOverlay.jsx'
 import SceneOverlay from '../components/video/SceneOverlay.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
 import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
@@ -21,7 +22,11 @@ import {
   DEMO_PRESETS,
   formatTimestamp,
   formatTimestampContext,
+  formatEvidenceKey,
+  formatEvidenceValue,
+  telemetryEntries,
 } from '../lib/scenarios.js'
+import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
 import {
   formatConfidence,
   formatScore,
@@ -290,7 +295,7 @@ export default function IncidentReplay() {
   const selectedVideo = resolveVideoRecord(videos, targetVideoId)
   const videoNotFound = Boolean(targetVideoId && !videosLoading && !selectedVideo)
 
-  const perception = useOverlayData(getEntities, overlayEnabled, selectedVideo?.id, currentTime, modelName)
+  const perception = useOverlayData(getEntities, true, selectedVideo?.id, currentTime, modelName)
   const scene = useOverlayData(getScene, sceneEnabled, selectedVideo?.id, currentTime, modelName)
 
   useEffect(() => {
@@ -337,7 +342,7 @@ export default function IncidentReplay() {
   const handleTimeUpdate = (event) => {
     const t = event.currentTarget.currentTime
     setCurrentTime(t)
-    if (overlayEnabled) perception.fetchThrottled(t)
+    perception.fetchThrottled(t)
     if (sceneEnabled) scene.fetchThrottled(t)
   }
 
@@ -519,8 +524,14 @@ export default function IncidentReplay() {
     config.whyItMatters ||
     'Corrective repositioning stabilizes footprint contact and mitigates tipping load.'
 
-  const isVerifiedPrevented =
-    outcomeMeasurement?.classification === 'prevented' || incidentEvent?.event_id === 75
+  // Only the recorded outcome may call something "prevented" — never the event id
+  // (CLAUDE.md §15: all three conditions must actually hold).
+  const isVerifiedPrevented = outcomeMeasurement?.classification === 'prevented'
+
+  // The real 3-condition check, in condition order (ARCHITECTURE.md §13 beat 3).
+  const threeConditions = Object.values(outcomeMeasurement?.three_condition_check || {})
+    .filter((c) => c && typeof c === 'object' && c.condition_number)
+    .sort((a, b) => a.condition_number - b.condition_number)
 
   return (
     <div className="flex flex-col gap-6 pb-12">
@@ -625,7 +636,7 @@ export default function IncidentReplay() {
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
             <div className="flex flex-wrap items-center gap-2.5">
               <span className={`border px-2.5 py-1 text-caption font-medium ${BAND_STYLE[incidentEvent.band] || BAND_STYLE.High}`}>
-                {incidentEvent.band || 'High'} risk
+                {incidentEvent.band || '—'} risk
               </span>
               <span className="font-display text-display-md font-semibold text-ink">{title}</span>
               <span className="text-caption text-ink-soft">camera: {videoInfo.cameraName}</span>
@@ -668,10 +679,10 @@ export default function IncidentReplay() {
             <div className="bg-paper p-3.5">
               <span className="text-label font-medium text-ink-faint">2. how serious</span>
               <p className="mt-1 font-display text-display-md font-semibold tabular-nums text-danger">
-                {formatScore(incidentEvent.score, 72)} <span className="text-title text-ink-faint">/ 100</span>
+                {formatScore(incidentEvent.score)} <span className="text-title text-ink-faint">/ 100</span>
               </p>
               <p className="text-caption text-ink-soft">
-                {incidentEvent.lens || 'structural'} lens · {incidentEvent.band || 'High'} band
+                {incidentEvent.lens || '—'} lens · {incidentEvent.band || '—'} band
               </p>
             </div>
             <div className="bg-paper p-3.5">
@@ -845,6 +856,18 @@ export default function IncidentReplay() {
                 onPause={() => setPlaying(false)}
                 onEnded={() => setPlaying(false)}
               >
+                {/* Responsible AI: personnel faces obscured by default,
+                    independent of the detection-box debug toggle. Fails closed
+                    to a full-frame blur while detections are unavailable. */}
+                <FaceRedactionOverlay
+                  entities={perception.data?.entities}
+                  frame={perception.data}
+                  degraded={!perception.data || !!perception.error}
+                  sourceWidth={selectedVideo?.metadata?.width || 1280}
+                  sourceHeight={selectedVideo?.metadata?.height || 720}
+                  displayWidth={videoBoxSize.width}
+                  displayHeight={videoBoxSize.height}
+                />
                 {overlayEnabled && perception.data && (
                   <PerceptionOverlay
                     entities={perception.data.entities}
@@ -879,6 +902,11 @@ export default function IncidentReplay() {
                 </span>
                 <span>tracked: {perception.data?.entities?.length || 0} entities · {scene.data?.edges?.length || 0} relations</span>
               </div>
+              <p className="border border-line border-t-0 bg-surface px-3 py-1 font-mono text-[10px] text-ink-faint">
+                Responsible AI: faces obscured — server-side on the exported still frame (fails
+                closed), presentation-layer here with a full-frame fallback when detections are
+                unavailable.
+              </p>
             </div>
           ) : (
             <div className="border border-line bg-surface p-8 text-center">
@@ -924,7 +952,7 @@ export default function IncidentReplay() {
               <div className="mt-3 grid grid-cols-2 gap-px bg-line">
                 <Telemetry label="tracked target" value={formatEntityName(incidentEvent?.entity_id)} note="target entity" />
                 <Telemetry label="risk lens" value={incidentEvent?.lens || 'operational'} note="safety dimension" />
-                <Telemetry label="risk score" value={`${formatScore(incidentEvent?.score, 72)} / 100`} note="severity index" tone="danger" />
+                <Telemetry label="risk score" value={`${formatScore(incidentEvent?.score)} / 100`} note="severity index" tone="danger" />
                 <Telemetry label="confidence" value={confidenceScore} note="visual certainty" tone="ok" />
               </div>
             )}
@@ -945,18 +973,57 @@ export default function IncidentReplay() {
             </div>
 
             <div className="p-3.5">
-              {isVerifiedPrevented ? (
-                <div className="flex flex-col gap-2 border border-ok/40 bg-ok/5 p-3">
-                  <span className="font-medium text-ok">prevention confirmed by subsequent video</span>
-                  <p className="text-caption text-ink-soft">
-                    TRACE observed the risk, detected the corrective action, and confirmed the safer
-                    state in subsequent frames.
-                  </p>
-                  <div className="flex flex-col gap-1 border-t border-ok/20 pt-1.5 font-mono text-caption text-ok">
-                    <span>1 · risk predicted ({Math.round(outcomeMeasurement?.initial_risk_score ?? 72)})</span>
-                    <span>2 · corrective action observed within {verificationWindow.toFixed(1)}s</span>
-                    <span>3 · safe state confirmed (post-action {Math.round(outcomeMeasurement?.outcome_risk_score ?? 0)})</span>
-                  </div>
+              {outcomeMeasurement ? (
+                <div
+                  className={`flex flex-col gap-2 border p-3 ${
+                    isVerifiedPrevented ? 'border-ok/40 bg-ok/5' : 'border-line bg-paper'
+                  }`}
+                >
+                  <span className={`font-medium ${isVerifiedPrevented ? 'text-ok' : 'text-ink'}`}>
+                    {isVerifiedPrevented
+                      ? 'prevention confirmed by subsequent video'
+                      : `outcome recorded: ${OUTCOME_BADGES[outcomeMeasurement.classification]?.label || outcomeMeasurement.classification}`}
+                  </span>
+                  {outcomeMeasurement.explanation && (
+                    <p className="text-caption text-ink-soft">{outcomeMeasurement.explanation}</p>
+                  )}
+
+                  {/* The real 3-condition check — CLAUDE.md §15. All three must hold
+                      before anything may be classified "Prevented". */}
+                  {threeConditions.length > 0 ? (
+                    <div className="flex flex-col gap-1.5 border-t border-line pt-2">
+                      {threeConditions.map((c) => (
+                        <div key={c.condition_number} className="flex items-start gap-2 text-caption">
+                          <span
+                            className={`mt-px font-mono font-semibold ${
+                              c.satisfied ? 'text-ok' : 'text-ink-faint'
+                            }`}
+                          >
+                            {c.satisfied ? '✓' : '✕'} {c.condition_number}
+                          </span>
+                          <span>
+                            <span className="font-medium text-ink">{c.name}</span>
+                            {c.description && (
+                              <span className="text-ink-soft"> — {c.description}</span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                      <span className="mt-0.5 font-mono text-caption text-ink-faint">
+                        response window {Number(outcomeMeasurement.response_window_sec ?? verificationWindow).toFixed(1)}s
+                        {outcomeMeasurement.initial_score != null &&
+                          ` · risk ${Math.round(outcomeMeasurement.initial_score)}`}
+                        {outcomeMeasurement.outcome_score != null &&
+                          ` → ${Math.round(outcomeMeasurement.outcome_score)}`}
+                        {outcomeMeasurement.human_review_status &&
+                          ` · human review: ${outcomeMeasurement.human_review_status}`}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="border-t border-line pt-2 text-caption text-ink-faint">
+                      No per-condition record was stored for this outcome.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
@@ -1046,7 +1113,7 @@ export default function IncidentReplay() {
               <div className="mt-2 grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
                 <ObservedCard label="tracked target" value={formatEntityName(incidentEvent?.entity_id)} note={`class: ${incidentEvent?.entity_id?.toLowerCase().includes('person') ? 'person' : 'box / cargo'}`} />
                 <ObservedCard label="detection confidence" value={confidenceScore} note="model: real-time optical" tone="ok" />
-                <ObservedCard label="tracking continuity" value={`${evidence.persistence_frames || 12} frames (${((evidence.persistence_frames || 12) / 30).toFixed(2)}s)`} note="bytetrack persistence" />
+                <ObservedCard label="tracking continuity" value={evidence.persistence_frames ? `${evidence.persistence_frames} frames` : 'not recorded'} note="bytetrack persistence" />
                 <ObservedCard label="evidence window" value={formatTimestampContext(targetTimestamp).evidenceWindow} note={`moment: ${formatTimestamp(targetTimestamp)}`} />
               </div>
             </div>
@@ -1076,8 +1143,8 @@ export default function IncidentReplay() {
                 ) : incidentEvent?.lens === 'environmental' ? (
                   <>
                     <InferredCard title="1. calibrated zone boundary intersection" value="Hazard zone active" tone="signal" desc={`Calibrated zone polygon intersection: ${humanizeExplanation(evidence.zone_id || 'dock_09_threshold_gap', incidentEvent?.scenario)}`} />
-                    <InferredCard title="2. persistence & exposure duration" value={`${evidence.persistence_frames || 8} consecutive frames`} desc="Sustained presence inside the fall/slip perimeter rules out momentary noise." />
-                    <InferredCard title="3. zone severity multiplier" value={`${evidence.severity_multiplier || 1.5}x multiplier`} tone="danger" desc="Facility risk rating applied to the unbarricaded dock edge or wet floor zone." />
+                    <InferredCard title="2. persistence & exposure duration" value={evidence.persistence_frames ? `${evidence.persistence_frames} consecutive frames` : 'not recorded'} desc="Sustained presence inside the fall/slip perimeter rules out momentary noise." />
+                    <InferredCard title="3. zone severity multiplier" value={evidence.severity_multiplier ? `${evidence.severity_multiplier}x multiplier` : 'not recorded'} tone="danger" desc="Facility risk rating applied to the unbarricaded dock edge or wet floor zone." />
                     <InferredCard title="4. structural stacking metric" value="Not modeled" muted desc="Cantilever deck support is unmodeled for environmental zone ingress events." />
                   </>
                 ) : incidentEvent?.lens === 'behaviour' ? (
@@ -1109,38 +1176,36 @@ export default function IncidentReplay() {
                 deterministically into an audited 0–100 severity index without opaque heuristics.
               </p>
 
-              {isStructuralScenario ? (
-                <FactorBlock
-                  formula="risk = w_support · (1 − S) + w_overhang · O + w_centroid · C + w_mass · M"
-                  score={`${formatScore(incidentEvent?.score, 72)} / 100 (${incidentEvent?.band || 'High'} band)`}
-                  factors={[
-                    { label: 'support coverage', value: supportCoverage, contrib: 'weight 0.35' },
-                    { label: 'cantilever overhang', value: overhangRatio, contrib: 'weight 0.25', tone: 'signal' },
-                    { label: 'centroid offset', value: '14.2cm', contrib: 'weight 0.20' },
-                    { label: 'mass ordering', value: '1.50x', contrib: 'weight 0.20' },
-                  ]}
-                />
-              ) : incidentEvent?.lens === 'environmental' ? (
-                <FactorBlock
-                  formula="risk = baseZoneSeverity · hazardMultiplier · persistenceFactor"
-                  score={`${formatScore(incidentEvent?.score, 72)} / 100 (${incidentEvent?.band || 'High'} band)`}
-                  factors={[
-                    { label: 'base zone severity', value: '40.0 pts', contrib: 'dock edge baseline' },
-                    { label: 'hazard multiplier', value: `${evidence.severity_multiplier || 1.5}x`, contrib: 'unbarricaded ledge', tone: 'signal' },
-                    { label: 'persistence factor', value: '1.2x', contrib: `${evidence.persistence_frames || 8} frames` },
-                  ]}
-                />
-              ) : (
-                <FactorBlock
-                  formula="risk = baseKinematicRisk · handlingPenalty · confidenceWeight"
-                  score={`${formatScore(incidentEvent?.score, 68)} / 100 (${incidentEvent?.band || 'High'} band)`}
-                  factors={[
-                    { label: 'kinematic baseline', value: '45.0 pts', contrib: 'motion & load' },
-                    { label: 'handling violation', value: '1.4x', contrib: 'stepping / drag / orientation', tone: 'signal' },
-                    { label: 'confidence weight', value: confidenceScore, contrib: 'detection certainty' },
-                  ]}
-                />
-              )}
+              {/* Factor breakdown rendered from the finding's OWN recorded evidence and
+                  factor weights. Nothing here is synthesised — if the detector did not
+                  record a factor, it is not shown (CLAUDE.md §30). */}
+              <FactorBlock
+                score={
+                  incidentEvent?.score != null
+                    ? `${formatScore(incidentEvent.score)} / 100${incidentEvent?.band ? ` (${incidentEvent.band} band)` : ''}`
+                    : 'not recorded'
+                }
+                factors={[
+                  ...telemetryEntries(evidence).map(([k, v]) => ({
+                    label: formatEvidenceKey(k),
+                    value: formatEvidenceValue(k, v),
+                    contrib: 'recorded evidence',
+                    tone: /ratio|overhang|severity|multiplier/i.test(k) ? 'signal' : undefined,
+                  })),
+                  ...Object.entries(incidentEvent?.factor_breakdown || {}).map(([k, v]) => ({
+                    label: formatEvidenceKey(k),
+                    value: formatEvidenceValue(k, v),
+                    contrib: 'factor weight',
+                  })),
+                ]}
+              />
+              {telemetryEntries(evidence).length === 0 &&
+                Object.keys(incidentEvent?.factor_breakdown || {}).length === 0 && (
+                  <p className="mt-2 text-caption text-ink-faint">
+                    No factor breakdown was recorded for this finding.
+                  </p>
+                )}
+              <SupervisorRuleNotice evidence={evidence} className="mt-2" />
             </div>
 
             <div className="border-l-2 border-line-strong bg-paper p-3 text-caption leading-relaxed text-ink-soft">
@@ -1350,7 +1415,8 @@ function InferredCard({ title, value, desc, tone, muted }) {
   )
 }
 
-function FactorBlock({ formula, score, factors }) {
+function FactorBlock({ score, factors }) {
+  if (!factors.length) return null
   return (
     <div className="mt-2 flex flex-col gap-2 bg-paper p-3">
       <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4">
@@ -1363,8 +1429,7 @@ function FactorBlock({ formula, score, factors }) {
         ))}
       </div>
       <div className="mt-1 border-t border-line pt-2 font-mono text-caption">
-        <div className="border border-line bg-surface px-2 py-1 text-ink-soft">formula: {formula}</div>
-        <div className="mt-1 px-1 text-ink-soft">
+        <div className="px-1 text-ink-soft">
           composite score: <span className="font-medium text-ink">{score}</span>
         </div>
       </div>

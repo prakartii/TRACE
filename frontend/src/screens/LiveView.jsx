@@ -7,6 +7,7 @@ import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
 import LiveAnalysisSummary from '../components/video/LiveAnalysisSummary.jsx'
 import MetadataPanel from '../components/video/MetadataPanel.jsx'
 import PerceptionOverlay from '../components/video/PerceptionOverlay.jsx'
+import FaceRedactionOverlay from '../components/video/FaceRedactionOverlay.jsx'
 import SceneOverlay from '../components/video/SceneOverlay.jsx'
 import VideoLibrary from '../components/video/VideoLibrary.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
@@ -14,7 +15,7 @@ import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
 
 export default function LiveView() {
-  const { setLiveState } = useLiveViewContext()
+  const { setLiveState, navigateTo } = useLiveViewContext()
 
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -41,7 +42,9 @@ export default function LiveView() {
   const videoRef = useRef(null)
   const modelName = pilotModelEnabled ? 'pilot' : 'stock'
 
-  const perception = useOverlayData(getEntities, overlayEnabled, selectedId, currentTime, modelName)
+  // Always fetched: personnel boxes feed the by-default face redaction overlay,
+  // independent of the `overlayEnabled` detection-box debug toggle.
+  const perception = useOverlayData(getEntities, true, selectedId, currentTime, modelName)
   const scene = useOverlayData(getScene, sceneEnabled, selectedId, currentTime, modelName)
   const findings = useOverlayData(getFindings, findingsEnabled, selectedId, currentTime, modelName)
 
@@ -147,7 +150,7 @@ export default function LiveView() {
     setCurrentTime(newTime)
     setWhatIfSimulation(null)
     setWhatIfError(null)
-    if (overlayEnabled) perception.fetchImmediate(newTime)
+    perception.fetchImmediate(newTime)
     if (sceneEnabled) scene.fetchImmediate(newTime)
     if (findingsEnabled) findings.fetchImmediate(newTime)
   }
@@ -182,7 +185,7 @@ export default function LiveView() {
                 setWhatIfSimulation(null)
                 setWhatIfError(null)
               }
-              if (overlayEnabled) perception.fetchThrottled(t)
+              perception.fetchThrottled(t)
               if (sceneEnabled) scene.fetchThrottled(t)
               if (findingsEnabled) findings.fetchThrottled(t)
             }}
@@ -190,6 +193,17 @@ export default function LiveView() {
             onPause={() => setPlaying(false)}
             onEnded={() => setPlaying(false)}
           >
+            {/* Responsible AI: personnel faces obscured by default, independent
+                of the detection-box debug toggle. Fails closed to a full-frame
+                blur while detections are unavailable. */}
+            <FaceRedactionOverlay
+              entities={entities}
+              degraded={!perception.data || !!perception.error}
+              sourceWidth={selectedVideo.metadata.width}
+              sourceHeight={selectedVideo.metadata.height}
+              displayWidth={videoBoxSize.width}
+              displayHeight={videoBoxSize.height}
+            />
             {overlayEnabled && (
               <PerceptionOverlay
                 entities={entities}
@@ -222,6 +236,14 @@ export default function LiveView() {
           <div className="flex h-64 items-center justify-center border border-line bg-surface text-small text-ink-soft">
             {loading ? 'Loading…' : 'No video selected.'}
           </div>
+        )}
+
+        {selectedVideo && (
+          <p className="border border-line border-t-0 bg-surface px-3 py-1.5 font-mono text-[10px] text-ink-faint">
+            Responsible AI: personnel faces are obscured. The exported still frame is redacted
+            server-side (fails closed); this streamed view redacts at the presentation layer and
+            falls back to a full-frame blur when detections are unavailable.
+          </p>
         )}
 
         {/* controls */}
@@ -369,6 +391,9 @@ export default function LiveView() {
             selectedCandidateId={selectedCandidateId}
             onSelectCandidate={setSelectedCandidateId}
             onClose={() => setWhatIfSimulation(null)}
+            onOpenReplay={() =>
+              navigateTo('What-If Simulation', { videoId: selectedId, timestamp: currentTime })
+            }
           />
         )}
 

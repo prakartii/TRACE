@@ -552,3 +552,161 @@ class TestRulesAPI:
         assert data["severity_band"] == "High"
         assert data["action_text"] == "Escalate to supervisor"
         assert data["created_by"] == "auditor"
+
+
+# ===========================================================================
+# Runtime application (CLAUDE.md §17 — rules must not be decorative)
+# ===========================================================================
+
+class TestRulesChangeRuntimeBehaviour:
+    """Before this, `severity_band` and `action_text` were stored on the rule
+    and read back by nothing: the live findings pipeline never consulted
+    `backend/rules` at all, so a configured rule could not change conformance,
+    planner constraints, or risk severity. §17 forbids exactly that."""
+
+    @staticmethod
+    def _finding(scenario, lens, band, score=55.0):
+        from backend.contracts.models import (
+            ConfidenceLevel,
+            EventType,
+            FindingStatus,
+            RiskEvent,
+        )
+
+        return RiskEvent(
+            timestamp=1.0,
+            event_type=EventType.RISK,
+            lens=lens,
+            entity_id="bayA:box_1",
+            score=score,
+            band=band,
+            confidence=ConfidenceLevel.MEDIUM,
+            status=FindingStatus.SUPPORTED,
+            scenario=scenario,
+            explanation="x",
+        )
+
+    def test_matching_rule_raises_the_band_and_attaches_the_directive(self, rule_db):
+        from backend.contracts.models import RiskBand, RiskLens
+        from backend.rules.db import create_custom_rule
+        from backend.rules.engine import apply_custom_rules_to_findings
+
+        create_custom_rule(
+            rule_db,
+            name="No heavy on light",
+            description="",
+            lens="structural",
+            severity_band="Critical",
+            enabled=True,
+            action_text="Do not place heavy SKU on light carton.",
+            condition={"field": "scenario", "operator": "==", "value": "heavy_on_light_stacking"},
+        )
+        f = self._finding("heavy_on_light_stacking", RiskLens.STRUCTURAL, RiskBand.MEDIUM)
+        apply_custom_rules_to_findings([f], rule_db)
+
+        assert f.band == RiskBand.CRITICAL
+        assert f.recommended_action == "Do not place heavy SKU on light carton."
+
+    def test_escalation_is_attributed_never_silent(self, rule_db):
+        from backend.contracts.models import RiskBand, RiskLens
+        from backend.rules.db import create_custom_rule
+        from backend.rules.engine import (
+            CUSTOM_RULE_EVIDENCE_KEY,
+            apply_custom_rules_to_findings,
+        )
+
+        create_custom_rule(
+            rule_db, name="Bay policy", description="", lens="structural",
+            severity_band="Critical", enabled=True, action_text=None,
+            condition={"field": "lens", "operator": "==", "value": "structural"},
+        )
+        f = self._finding("box_overhang", RiskLens.STRUCTURAL, RiskBand.MEDIUM)
+        apply_custom_rules_to_findings([f], rule_db)
+
+        applied = f.evidence[CUSTOM_RULE_EVIDENCE_KEY]
+        assert applied[0]["rule_name"] == "Bay policy"
+        assert applied[0]["band_raised_from"] == "Medium"
+        assert applied[0]["band_raised_to"] == "Critical"
+        assert "INFERRED" in applied[0]["basis"]
+
+    def test_a_rule_can_never_lower_a_band(self, rule_db):
+        """An operator policy must not suppress a detection the lenses made."""
+        from backend.contracts.models import RiskBand, RiskLens
+        from backend.rules.db import create_custom_rule
+        from backend.rules.engine import (
+            CUSTOM_RULE_EVIDENCE_KEY,
+            apply_custom_rules_to_findings,
+        )
+
+        create_custom_rule(
+            rule_db, name="Downgrade attempt", description="", lens="structural",
+            severity_band="Low", enabled=True, action_text=None,
+            condition={"field": "lens", "operator": "==", "value": "structural"},
+        )
+        f = self._finding("box_overhang", RiskLens.STRUCTURAL, RiskBand.CRITICAL, score=90.0)
+        apply_custom_rules_to_findings([f], rule_db)
+
+        assert f.band == RiskBand.CRITICAL
+        assert "band_raised_to" not in f.evidence[CUSTOM_RULE_EVIDENCE_KEY][0]
+
+    def test_rule_never_touches_epistemic_status_or_confidence(self, rule_db):
+        from backend.contracts.models import (
+            ConfidenceLevel,
+            FindingStatus,
+            RiskBand,
+            RiskLens,
+        )
+        from backend.rules.db import create_custom_rule
+        from backend.rules.engine import apply_custom_rules_to_findings
+
+        create_custom_rule(
+            rule_db, name="Escalate", description="", lens="structural",
+            severity_band="Critical", enabled=True, action_text=None,
+            condition={"field": "lens", "operator": "==", "value": "structural"},
+        )
+        f = self._finding("box_overhang", RiskLens.STRUCTURAL, RiskBand.LOW)
+        before = (f.status, f.confidence, f.epistemic_level, f.score)
+        apply_custom_rules_to_findings([f], rule_db)
+
+        assert (f.status, f.confidence, f.epistemic_level, f.score) == before
+        assert f.status == FindingStatus.SUPPORTED
+        assert f.confidence == ConfidenceLevel.MEDIUM
+
+    def test_non_matching_and_disabled_rules_leave_findings_untouched(self, rule_db):
+        from backend.contracts.models import RiskBand, RiskLens
+        from backend.rules.db import create_custom_rule
+        from backend.rules.engine import apply_custom_rules_to_findings
+
+        create_custom_rule(
+            rule_db, name="Behaviour only", description="", lens="behaviour",
+            severity_band="Critical", enabled=True, action_text="x",
+            condition={"field": "lens", "operator": "==", "value": "behaviour"},
+        )
+        create_custom_rule(
+            rule_db, name="Disabled catch-all", description="", lens="structural",
+            severity_band="Critical", enabled=False, action_text="y",
+            condition={"field": "lens", "operator": "==", "value": "structural"},
+        )
+        f = self._finding("box_overhang", RiskLens.STRUCTURAL, RiskBand.MEDIUM)
+        apply_custom_rules_to_findings([f], rule_db)
+
+        assert f.band == RiskBand.MEDIUM
+        assert f.evidence == {}
+        assert f.recommended_action is None
+
+    def test_no_rules_configured_is_a_no_op(self, rule_db):
+        from backend.contracts.models import RiskBand, RiskLens
+        from backend.rules.engine import apply_custom_rules_to_findings
+
+        f = self._finding("box_overhang", RiskLens.STRUCTURAL, RiskBand.MEDIUM)
+        apply_custom_rules_to_findings([f], rule_db)
+        assert f.band == RiskBand.MEDIUM and f.evidence == {}
+
+    def test_findings_pipeline_calls_the_rule_engine(self):
+        """The seam must stay wired: a lens-only pipeline is the regression."""
+        import inspect
+
+        from backend.api import findings as findings_mod
+
+        src = inspect.getsource(findings_mod.get_findings)
+        assert "apply_custom_rules_to_findings" in src

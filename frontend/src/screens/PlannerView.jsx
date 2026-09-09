@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react'
 import { ArrowRight, FlaskConical, Zap } from 'lucide-react'
 import { listEvents, getEvent } from '../api/events.js'
 import { getActionPlan } from '../api/actions.js'
-import { getEventOutcome } from '../api/measurement.js'
 import { listVideos } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle, DEMO_PRESETS } from '../lib/scenarios.js'
-import { formatConfidence, formatPercentage, formatEntityName } from '../lib/format.js'
+import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS, formatEvidenceKey, formatEvidenceValue, telemetryEntries } from '../lib/scenarios.js'
+import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
+import { formatConfidence, formatEntityName } from '../lib/format.js'
 
 const REFERENCE_SCENARIOS = [
   {
@@ -158,13 +158,12 @@ export default function PlannerView() {
           video_id: preset.videoId,
           timestamp: preset.timestamp,
           scenario: preset.scenario,
-          band: 'High',
         })
       }
     }
   }
 
-  const severity = activeEvent?.band || 'High'
+  const severity = activeEvent?.band || '—'
   const isCritical = severity === 'Critical'
   const isHigh = severity === 'High'
 
@@ -173,28 +172,25 @@ export default function PlannerView() {
     ? (activeEvent.planner_recommendation?.risk_title || config.title)
     : 'Carton is extending beyond its supporting base'
 
-  const detectedTime = activeEvent ? formatTimestamp(activeEvent.timestamp) : '00:36.7'
-  const rawSeconds = activeEvent?.timestamp !== undefined ? `${activeEvent.timestamp.toFixed(1)}s` : '36.7s'
-  const riskScore = activeEvent?.score ? Math.round(activeEvent.score) : 72
+  const detectedTime = activeEvent ? formatTimestamp(activeEvent.timestamp) : '—'
+  const rawSeconds = activeEvent?.timestamp !== undefined ? `${activeEvent.timestamp.toFixed(1)}s` : '—'
+  const riskScore = activeEvent?.score != null ? Math.round(activeEvent.score) : null
 
   const evidence = activeEvent?.evidence || {}
-  const supportCoverage = evidence.overlap_ratio !== undefined
-    ? formatPercentage(evidence.overlap_ratio, '40.4%')
-    : evidence.support_ratio !== undefined
-      ? formatPercentage(evidence.support_ratio, '40.4%')
-      : '40.4%'
 
-  const overhangVal = evidence.overhang_ratio !== undefined
-    ? formatPercentage(evidence.overhang_ratio, '46.2%')
-    : '46.2%'
 
-  const massVal = evidence.mass_ordering !== undefined
-    ? String(evidence.mass_ordering)
-    : evidence.mass_ratio !== undefined
-      ? formatPercentage(evidence.mass_ratio, '70%')
-      : '70%'
 
-  const confVal = formatConfidence(activeEvent?.confidence, '69%')
+  const confVal = formatConfidence(activeEvent?.confidence)
+
+  // Up to three real evidence values from this finding, whatever its scenario records.
+  const evidenceMetrics = telemetryEntries(evidence)
+    .slice(0, 3)
+    .map(([key, value]) => ({
+      key,
+      label: formatEvidenceKey(key),
+      value: formatEvidenceValue(key, value),
+      tone: /ratio|overhang|severity|multiplier|distance/i.test(key) ? 'signal' : undefined,
+    }))
 
   const actionHeadline = activeEvent?.planner_recommendation?.action?.split('.')[0] ||
     activeEvent?.recommended_action?.split('.')[0] ||
@@ -344,7 +340,7 @@ export default function PlannerView() {
           <div className="flex flex-col items-end">
             <span className="text-label font-medium text-ink-faint">risk score</span>
             <span className="font-display text-display-xl font-semibold tabular-nums text-ink">
-              {riskScore}
+              {riskScore ?? '—'}
               <span className="text-title text-ink-faint">/100</span>
             </span>
           </div>
@@ -358,37 +354,22 @@ export default function PlannerView() {
             step 2 · what is likely to happen (inferred &amp; predicted)
           </span>
         </div>
+        {/* Rendered from the finding's OWN recorded evidence keys. Evidence keys
+            differ per scenario (a dock-edge finding records distance_to_edge, an
+            overhang finding records overhang_ratio), so mapping fixed labels onto
+            them silently mislabels or blanks real data — CLAUDE.md §30. */}
         <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4">
-          {activeEvent?.lens === 'environmental' ? (
-            <>
-              <Metric label="perimeter boundary" value={evidence.zone_id || 'Dock Edge Hazard Zone'} note="calibrated hazard zone" tone="signal" />
-              <Metric label="exposure duration" value={`${evidence.persistence_frames || 12} frames`} note="sustained intrusion" />
-              <Metric label="severity rating" value={evidence.severity_multiplier ? `${evidence.severity_multiplier}x` : '1.5x'} note="facility zone rating" tone="signal" />
-              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
-            </>
-          ) : activeEvent?.lens === 'behaviour' ? (
-            <>
-              <Metric label="kinematics" value={`${(evidence.box_total_displacement || 0.24).toFixed(2)}m`} note="displacement translation" tone="signal" />
-              <Metric label="worker proximity" value={`${Math.round((evidence.sustained_proximity_fraction || 1.0) * 100)}%`} note="handling contact" />
-              <Metric label="motion signature" value={activeEvent?.scenario?.includes('step') ? 'Foot Contact' : activeEvent?.scenario?.includes('strap') ? 'Strap Grip' : activeEvent?.scenario?.includes('drop') ? 'Drop Shock' : activeEvent?.scenario?.includes('drag') ? 'Friction Drag' : 'Handling'} note="kinematic profile" tone="signal" />
-              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
-            </>
-          ) : activeEvent?.lens === 'conformance' ? (
-            <>
-              <Metric label="manifest axis" value={evidence.required_orientation || 'Upright'} note="required orientation" tone="signal" />
-              <Metric label="aspect deviation" value={evidence.observed_aspect_ratio ? evidence.observed_aspect_ratio.toFixed(2) : '3.12'} note="observed vs manifest" />
-              <Metric label="dispatch schedule" value={evidence.required_sequence || 'Manifest order'} note="staging sequence" />
-              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
-            </>
-          ) : (
-            <>
-              <Metric label="support coverage" value={supportCoverage} note="threshold ≥ 50%" />
-              <Metric label="cantilever overhang" value={overhangVal} note="unsupported span" tone="signal" />
-              <Metric label="mass ordering" value={massVal} note="tier mass ratio" />
-              <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
-            </>
-          )}
+          {evidenceMetrics.map((m) => (
+            <Metric key={m.key} label={m.label} value={m.value} note="recorded evidence" tone={m.tone} />
+          ))}
+          <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
         </div>
+        {evidenceMetrics.length === 0 && (
+          <div className="border-t border-line px-4 py-2 text-caption text-ink-faint">
+            No supporting evidence values were recorded for this finding.
+          </div>
+        )}
+        <SupervisorRuleNotice evidence={evidence} className="border-x-0 border-b-0" />
         <div className="border-t border-line px-4 py-3 text-small text-ink-soft">
           {safePlan?.reason || whyActionText || 'These optical measurements indicate elevated operational risk requiring corrective intervention.'}
         </div>
