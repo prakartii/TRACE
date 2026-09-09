@@ -146,19 +146,37 @@ export default function StructuralView() {
     }
   }
 
+  // Continuous 60 FPS update loop while playing for buttery smooth synchronization
+  useEffect(() => {
+    if (!isPlaying) return
+    let frameId
+    const updateLoop = () => {
+      if (videoRef.current && !videoRef.current.paused) {
+        setCurrentTime(videoRef.current.currentTime)
+      }
+      frameId = requestAnimationFrame(updateLoop)
+    }
+    frameId = requestAnimationFrame(updateLoop)
+    return () => cancelAnimationFrame(frameId)
+  }, [isPlaying])
+
   // Play / Pause toggle controls
   const togglePlay = () => {
     if (!videoRef.current) return
-    if (isPlaying) {
-      videoRef.current.pause()
+    if (videoRef.current.paused) {
+      videoRef.current.play().catch(() => {})
+      setIsPlaying(true)
     } else {
-      videoRef.current.play()
+      videoRef.current.pause()
+      setIsPlaying(false)
     }
   }
 
   // Scrubbing & stepping
+  const maxDuration = Math.max(duration || selectedVideo?.metadata?.duration || 10, 0.1)
+
   const handleSeek = (timeSec) => {
-    const clamped = Math.max(0, Math.min(duration || 10, timeSec))
+    const clamped = Math.max(0, Math.min(maxDuration, timeSec))
     setCurrentTime(clamped)
     if (videoRef.current) {
       videoRef.current.currentTime = clamped
@@ -169,19 +187,90 @@ export default function StructuralView() {
     handleSeek(currentTime + delta)
   }
 
-  // Find nearest snapshot to current playback time (zero network latency!)
+  // Frame-by-frame linear interpolation: glides entities smoothly across the 2D floor at 60 FPS
   const activeSnapshot = useMemo(() => {
     if (!scenes || scenes.length === 0) return null
-    let best = scenes[0]
-    let minDiff = Math.abs(currentTime - best.timestamp)
-    for (let i = 1; i < scenes.length; i++) {
-      const diff = Math.abs(currentTime - scenes[i].timestamp)
-      if (diff < minDiff) {
-        best = scenes[i]
-        minDiff = diff
+    if (scenes.length === 1) return scenes[0]
+
+    // Find the surrounding scene snapshots
+    let before = scenes[0]
+    let after = scenes[scenes.length - 1]
+
+    for (let i = 0; i < scenes.length; i++) {
+      if (scenes[i].timestamp <= currentTime) {
+        before = scenes[i]
+      }
+      if (scenes[i].timestamp >= currentTime) {
+        after = scenes[i]
+        break
       }
     }
-    return best
+
+    // Continuity protection: If either frame has zero detections (e.g. motion blur), bridge it
+    if (!before.nodes?.length && after.nodes?.length) before = after
+    if (!after.nodes?.length && before.nodes?.length) after = before
+    if (!before.nodes?.length && !after.nodes?.length) {
+      const nonEmpty = scenes.filter((s) => s.nodes?.length > 0)
+      if (nonEmpty.length > 0) {
+        before = nonEmpty.reduce((closest, curr) =>
+          Math.abs(curr.timestamp - currentTime) < Math.abs(closest.timestamp - currentTime)
+            ? curr
+            : closest
+        )
+        after = before
+      }
+    }
+
+    if (before === after) return before
+
+    const delta = after.timestamp - before.timestamp
+    if (delta <= 0.001) return before
+
+    const alpha = Math.max(0, Math.min(1, (currentTime - before.timestamp) / delta))
+
+    // Smoothly interpolate positions and footprints of matching nodes
+    const afterNodesMap = new Map((after.nodes || []).map((n) => [n.entity_id, n]))
+    const interpolatedNodes = (before.nodes || []).map((bNode) => {
+      const aNode = afterNodesMap.get(bNode.entity_id)
+      if (!aNode) return bNode
+
+      const bPos = bNode.position || [0.5, 0.5]
+      const aPos = aNode.position || bPos
+      const pos = [
+        bPos[0] + (aPos[0] - bPos[0]) * alpha,
+        bPos[1] + (aPos[1] - bPos[1]) * alpha,
+      ]
+
+      let fp = bNode.footprint
+      if (bNode.footprint && aNode.footprint) {
+        fp = {
+          x1: bNode.footprint.x1 + (aNode.footprint.x1 - bNode.footprint.x1) * alpha,
+          y1: bNode.footprint.y1 + (aNode.footprint.y1 - bNode.footprint.y1) * alpha,
+          x2: bNode.footprint.x2 + (aNode.footprint.x2 - bNode.footprint.x2) * alpha,
+          y2: bNode.footprint.y2 + (aNode.footprint.y2 - bNode.footprint.y2) * alpha,
+        }
+      }
+
+      return {
+        ...bNode,
+        position: pos,
+        footprint: fp,
+      }
+    })
+
+    // Include any nodes that only appeared in `after`
+    for (const aNode of after.nodes || []) {
+      if (!interpolatedNodes.some((n) => n.entity_id === aNode.entity_id)) {
+        interpolatedNodes.push(aNode)
+      }
+    }
+
+    return {
+      ...before,
+      timestamp: currentTime,
+      nodes: interpolatedNodes,
+      edges: before.edges?.length ? before.edges : after.edges,
+    }
   }, [scenes, currentTime])
 
   // Resolve manifest & filter hazard zones strictly for the active bay
@@ -499,13 +588,15 @@ export default function StructuralView() {
 
               <div
                 ref={videoContainerRef}
-                className="relative aspect-[16/9] w-full border-2 border-line bg-black overflow-hidden flex items-center justify-center rounded-xs"
+                onClick={togglePlay}
+                className="relative aspect-[16/9] w-full border-2 border-line bg-black overflow-hidden flex items-center justify-center rounded-xs cursor-pointer group select-none"
               >
                 {selectedId && (
                   <video
                     ref={videoRef}
                     src={streamUrl(selectedId)}
                     playsInline
+                    muted
                     preload="auto"
                     className="h-full w-full object-contain"
                     onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
@@ -526,13 +617,64 @@ export default function StructuralView() {
                   enabled={true}
                 />
 
-                <div className="absolute top-2 left-2 border border-ok/40 bg-black/70 px-2 py-0.5 text-[10px] font-mono text-paper font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                <div className="absolute top-2 left-2 border border-ok/40 bg-black/70 px-2 py-0.5 text-[10px] font-mono text-paper font-semibold uppercase tracking-wider flex items-center gap-1.5 pointer-events-none">
                   <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                   {scenarioInfo?.cameraName || 'CCTV'} · SYNCED
                 </div>
+
+                {/* Center Play Overlay when Paused */}
+                {!isPlaying && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none transition-opacity">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-paper/95 text-ink shadow-lg group-hover:scale-110 transition-transform">
+                      <Play size={22} className="ml-1 fill-ink" />
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <p className="text-caption text-ink-faint pt-1">
+              {/* Synchronized Camera Video Controls Bar */}
+              <div className="flex items-center gap-2 border border-line bg-paper px-2.5 py-1.5 shadow-xs">
+                <button
+                  type="button"
+                  onClick={togglePlay}
+                  className="flex h-7 w-7 items-center justify-center border border-ink bg-ink text-paper hover:bg-ink-soft cursor-pointer transition-colors"
+                  title={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isPlaying ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleStep(-0.5)}
+                  className="flex h-7 w-7 items-center justify-center border border-line bg-paper text-ink hover:border-ink cursor-pointer transition-colors"
+                  title="Step Back -0.5s"
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleStep(0.5)}
+                  className="flex h-7 w-7 items-center justify-center border border-line bg-paper text-ink hover:border-ink cursor-pointer transition-colors"
+                  title="Step Forward +0.5s"
+                >
+                  <ChevronRight size={12} />
+                </button>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(duration || selectedVideo?.metadata?.duration || 1, 0.1)}
+                  step={0.05}
+                  value={currentTime}
+                  onChange={(e) => handleSeek(parseFloat(e.target.value))}
+                  className="flex-1 accent-ink cursor-pointer h-1.5 bg-neutral-200"
+                />
+
+                <span className="font-mono text-[11px] font-semibold text-ink whitespace-nowrap">
+                  {fmt(currentTime)} <span className="text-ink-faint">/ {fmt(duration || selectedVideo?.metadata?.duration || 0)}</span>
+                </span>
+              </div>
+
+              <p className="text-caption text-ink-faint pt-0.5">
                 Visual Verification: The 2D map on the left updates smoothly on every frame alongside the CCTV video on the right.
               </p>
             </div>

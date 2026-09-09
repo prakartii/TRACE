@@ -30,7 +30,9 @@ slow, first-time) CPU inference.
 from __future__ import annotations
 
 import bisect
+import json
 import threading
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -39,7 +41,7 @@ from backend.api.videos import get_registry
 from backend.contracts.models import PerceptionFrameResult
 from backend.perception.config import DEFAULT_CONFIG, PILOT_CONFIG
 from backend.perception.pipeline import PerceptionPipeline
-from backend.video.registry import VideoRegistry
+from backend.video.registry import DEFAULT_VIDEO_DIR, VideoRegistry
 
 router = APIRouter(prefix="/api/videos", tags=["perception"])
 
@@ -84,6 +86,10 @@ def find_nearest_result(
     return after
 
 
+_CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / ".perception_cache"
+_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
 def get_cached_results(
     video_id: str,
     registry: VideoRegistry,
@@ -101,16 +107,34 @@ def get_cached_results(
     if cached is not None:
         return cached
 
+    # Check disk cache for instant startup (canonical challenge videos only)
+    is_canonical = getattr(registry, "video_dir", None) == DEFAULT_VIDEO_DIR
+    cache_file = _CACHE_DIR / f"{model_name}_{canonical_id}.json"
+    if is_canonical and cache_file.exists():
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            results = [PerceptionFrameResult.model_validate(item) for item in data]
+            with _cache_lock:
+                _cache[cache_key] = results
+            return results
+        except Exception:
+            pass
+
     source = registry.open_source(canonical_id)
     try:
         results = pipeline.process_video(source)
     finally:
         source.close()
 
-    # Note: two concurrent first-requests for the same uncached
-    # (model, video) pair can each trigger a full (redundant) pass — last
-    # write wins here. Not worth a per-key lock/future for a demo-scale,
-    # single-user app.
+    # Save to disk cache for fast instant reuse
+    if is_canonical:
+        try:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump([r.model_dump(mode="json") for r in results], f)
+        except Exception:
+            pass
+
     with _cache_lock:
         _cache[cache_key] = results
     return results
