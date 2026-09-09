@@ -121,7 +121,7 @@ def route(question: str) -> Route:
         return Route("false_positives", [q.false_positives])
 
     # shift handover briefing / daily report ----------------------------------
-    if _kw(t, "briefing", "handover", "daily report", "morning report", "executive summary", "daily summary"):
+    if _kw(t, "briefing", "handover", "daily report", "morning report", "executive summary", "daily summary", "shift safety", "shift briefing"):
         return Route("shift_briefing", [q.shift_briefing])
 
     # active alerts & interventions ------------------------------------------

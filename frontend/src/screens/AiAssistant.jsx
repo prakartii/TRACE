@@ -15,6 +15,7 @@ import {
   ListFilter,
   Bot,
   User,
+  ChevronDown,
 } from 'lucide-react'
 import { askAssistant, getAssistantSuggestions } from '../api/assistant.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
@@ -236,6 +237,8 @@ export default function AiAssistant() {
 
 function AssistantBubble({ msg, onFollowUp, navigateTo }) {
   const [showGrounding, setShowGrounding] = useState(false)
+  const [showCards, setShowCards] = useState(false)
+  const [selectedCardFilter, setSelectedCardFilter] = useState('all')
 
   if (msg.error) {
     return (
@@ -294,17 +297,63 @@ function AssistantBubble({ msg, onFollowUp, navigateTo }) {
           </div>
         )}
 
-        {/* Render Interactive Event Cards if present */}
+        {/* Render Interactive Event Cards in Dropdown */}
         {cards.length > 0 && (
-          <div className="mt-4 space-y-2.5 border-t border-line pt-3">
-            <div className="text-caption font-semibold uppercase tracking-wider text-ink-soft">
-              Related Event Records ({cards.length})
-            </div>
-            <div className="grid grid-cols-1 gap-2.5">
-              {cards.map((card) => (
-                <EventCard key={card.event_id} card={card} navigateTo={navigateTo} />
-              ))}
-            </div>
+          <div className="mt-3.5 border-t border-line pt-2.5">
+            <button
+              type="button"
+              onClick={() => setShowCards((prev) => !prev)}
+              aria-expanded={showCards}
+              className="group flex w-full items-center justify-between rounded-xs border border-line bg-surface px-3 py-2 text-left transition-all hover:border-line-strong hover:bg-paper"
+            >
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-xs bg-ink/10 font-mono text-[11px] font-bold text-ink">
+                  {cards.length}
+                </span>
+                <span className="text-caption font-bold uppercase tracking-wider text-ink">
+                  Related Event Records
+                </span>
+                <span className="text-[11px] text-ink-faint">
+                  — {showCards ? 'Click to collapse' : 'Click to inspect incident replay & footage'}
+                </span>
+              </div>
+              <ChevronDown
+                size={14}
+                className={`text-ink-soft transition-transform duration-200 group-hover:text-ink ${
+                  showCards ? 'rotate-180 text-ink' : ''
+                }`}
+              />
+            </button>
+
+            {showCards && (
+              <div className="mt-2.5 space-y-2 border-l-2 border-line pl-2 pt-1 animate-in fade-in duration-150">
+                {cards.length > 1 && (
+                  <div className="flex items-center justify-between gap-2 border border-line bg-surface p-2 text-caption rounded-xs">
+                    <span className="font-semibold text-ink-soft text-[11px]">Filter by record:</span>
+                    <select
+                      value={selectedCardFilter}
+                      onChange={(e) => setSelectedCardFilter(e.target.value)}
+                      className="border border-line bg-paper px-2 py-0.5 text-caption text-ink focus:outline-none rounded-xs font-medium"
+                    >
+                      <option value="all">View all ({cards.length} records)</option>
+                      {cards.map((c) => (
+                        <option key={c.event_id} value={String(c.event_id)}>
+                          #{c.event_id} · [{c.severity}] {c.scenario_title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-2">
+                  {(selectedCardFilter === 'all'
+                    ? cards
+                    : cards.filter((c) => String(c.event_id) === selectedCardFilter)
+                  ).map((card) => (
+                    <EventCard key={card.event_id} card={card} navigateTo={navigateTo} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -323,9 +372,13 @@ function AssistantBubble({ msg, onFollowUp, navigateTo }) {
             <button
               type="button"
               onClick={() => setShowGrounding((v) => !v)}
-              className="font-medium underline hover:text-ink text-ink-soft"
+              className="inline-flex items-center gap-1 font-medium underline hover:text-ink text-ink-soft transition-colors"
             >
-              {showGrounding ? 'Hide audit trace' : 'View audit trace'}
+              <span>{showGrounding ? 'Hide audit trace' : 'View audit trace'}</span>
+              <ChevronDown
+                size={12}
+                className={`transition-transform duration-200 ${showGrounding ? 'rotate-180' : ''}`}
+              />
             </button>
           )}
         </div>
