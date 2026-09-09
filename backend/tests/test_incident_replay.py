@@ -162,12 +162,12 @@ def test_video_frame_timestamp_bounds(client, mock_registry):
     duration = video.metadata.duration
 
     # Valid within bounds
-    res_valid = client.get(f"/api/videos/{video.id}/frame?timestamp={duration / 2:.2f}")
+    res_valid = client.get(f"/api/videos/{video.id}/frame?timestamp={duration / 2:.2f}&redact=false")
     assert res_valid.status_code == 200
     assert res_valid.headers["content-type"] == "image/jpeg"
 
     # Out of bounds
-    res_invalid = client.get(f"/api/videos/{video.id}/frame?timestamp={duration + 10.0:.2f}")
+    res_invalid = client.get(f"/api/videos/{video.id}/frame?timestamp={duration + 10.0:.2f}&redact=false")
     assert res_invalid.status_code == 422
     assert "outside video duration" in res_invalid.json()["detail"]
 
