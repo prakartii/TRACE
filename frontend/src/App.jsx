@@ -10,9 +10,7 @@ import Incidents from './screens/Incidents.jsx'
 import IncidentDetail from './screens/IncidentDetail.jsx'
 import Patterns from './screens/Patterns.jsx'
 import Assistant from './screens/Assistant.jsx'
-import SupervisorSettings from './screens/SupervisorSettings.jsx'
-import ResponsibleAI from './screens/ResponsibleAI.jsx'
-import PlannerView from './screens/PlannerView.jsx'
+import Settings from './screens/Settings.jsx'
 
 
 export default function App() {
@@ -30,11 +28,9 @@ export default function App() {
               <Route path="incidents/:id/what-if" element={<IncidentDetail />} />
               <Route path="patterns" element={<Patterns />} />
               <Route path="assistant" element={<Assistant />} />
-              <Route path="settings" element={<SupervisorSettings />} />
+              <Route path="settings" element={<Navigate to="/settings/rules" replace />} />
+              <Route path="settings/:section" element={<Settings />} />
 
-              {/* migrating — folded into Incidents / Patterns / Settings in phase 2–3 */}
-              <Route path="responsible-ai" element={<ResponsibleAI />} />
-              <Route path="planner" element={<PlannerView />} />
 
               <Route path="*" element={<Navigate to="/monitor" replace />} />
             </Route>

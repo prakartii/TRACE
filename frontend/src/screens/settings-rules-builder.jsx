@@ -31,8 +31,8 @@ const EMPTY_RULE = {
 const BAND_COLORS = {
   Low: 'text-ok bg-ok/10 border-ok/40',
   Medium: 'text-steel bg-steel/10 border-steel/40',
-  High: 'text-[#8a5f00] bg-signal/10 border-signal/40',
-  Critical: 'text-danger bg-danger/10 border-danger/40',
+  High: 'text-high bg-high/10 border-high/40',
+  Critical: 'text-crit bg-crit/10 border-crit/40',
 }
 
 const LENS_LABELS = {
@@ -46,7 +46,7 @@ function StatusBadge({ enabled }) {
   return (
     <span
       className={`border px-1.5 py-0.5 text-label font-medium ${
-        enabled ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line bg-paper text-ink-faint'
+        enabled ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line bg-bg text-mute'
       }`}
     >
       {enabled ? 'enabled' : 'disabled'}
@@ -56,7 +56,7 @@ function StatusBadge({ enabled }) {
 
 function BandBadge({ band }) {
   if (!band) return null
-  const cls = BAND_COLORS[band] || 'border-line bg-paper text-ink-soft'
+  const cls = BAND_COLORS[band] || 'border-line bg-bg text-dim'
   return <span className={`border px-1.5 py-0.5 text-label font-medium ${cls}`}>{band}</span>
 }
 
@@ -64,17 +64,17 @@ function Alert({ type, text }) {
   const cls =
     type === 'success'
       ? 'border-ok/40 bg-ok/10 text-ok'
-      : 'border-danger bg-danger/5 text-danger'
+      : 'border-crit bg-crit/5 text-crit'
   return <div className={`border p-2 text-caption ${cls}`}>{text}</div>
 }
 
 function ConditionSummary({ condition }) {
-  if (!condition) return <span className="italic text-ink-faint">no condition</span>
+  if (!condition) return <span className="italic text-mute">no condition</span>
 
   if (condition.logic) {
     const parts = (condition.conditions || []).map((c, i) => (
       <span key={i}>
-        {i > 0 && <span className="mx-1 font-medium text-ink-faint">{condition.logic}</span>}
+        {i > 0 && <span className="mx-1 font-medium text-mute">{condition.logic}</span>}
         <ConditionSummary condition={c} />
       </span>
     ))
@@ -85,7 +85,7 @@ function ConditionSummary({ condition }) {
   return (
     <span className="font-mono text-caption">
       <span className="text-steel">{field}</span>
-      <span className="mx-1 text-ink-faint">{operator}</span>
+      <span className="mx-1 text-mute">{operator}</span>
       <span className="font-medium text-ink">{String(value)}</span>
     </span>
   )
@@ -114,7 +114,7 @@ function SimpleConditionRow({ condition, onChange, schema, disabled }) {
     onChange({ ...condition, value: parsed })
   }
 
-  const selectCls = 'border border-line bg-surface p-1.5 font-mono text-caption text-ink focus:border-ink'
+  const selectCls = 'border border-line bg-raised p-1.5 font-mono text-caption text-ink focus:border-ink'
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -157,7 +157,7 @@ function SimpleConditionRow({ condition, onChange, schema, disabled }) {
       )}
 
       {fieldInfo.description && (
-        <span className="max-w-[180px] truncate text-caption italic text-ink-faint">{fieldInfo.description}</span>
+        <span className="max-w-[180px] truncate text-caption italic text-mute">{fieldInfo.description}</span>
       )}
     </div>
   )
@@ -196,12 +196,12 @@ function CompoundConditionEditor({ condition, onChange, schema, disabled }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <span className="text-caption text-ink-soft">condition type</span>
+        <span className="text-caption text-dim">condition type</span>
         <button
           type="button"
           disabled={disabled}
           onClick={isCompound ? switchToSimple : switchToCompound}
-          className="border border-line px-2 py-0.5 text-caption text-ink-soft hover:bg-paper disabled:opacity-50"
+          className="border border-line px-2 py-0.5 text-caption text-dim hover:bg-bg disabled:opacity-50"
         >
           {isCompound ? 'switch to simple' : 'switch to compound (and/or)'}
         </button>
@@ -210,12 +210,12 @@ function CompoundConditionEditor({ condition, onChange, schema, disabled }) {
       {isCompound ? (
         <div className="flex flex-col gap-2 border-l-2 border-steel/40 pl-3">
           <div className="flex items-center gap-2">
-            <span className="text-caption text-ink-soft">combine with</span>
+            <span className="text-caption text-dim">combine with</span>
             <select
               disabled={disabled}
               value={condition.logic}
               onChange={(e) => onChange({ ...condition, logic: e.target.value })}
-              className="border border-line bg-surface p-1 font-medium text-caption text-ink focus:border-ink"
+              className="border border-line bg-raised p-1 font-medium text-caption text-ink focus:border-ink"
             >
               <option value="AND">AND (all must match)</option>
               <option value="OR">OR (any must match)</option>
@@ -224,17 +224,17 @@ function CompoundConditionEditor({ condition, onChange, schema, disabled }) {
 
           {condition.conditions.map((sub, idx) => (
             <div key={idx} className="flex items-center gap-2">
-              <span className="w-8 text-right text-caption text-ink-faint">{idx + 1}.</span>
+              <span className="w-8 text-right text-caption text-mute">{idx + 1}.</span>
               <SimpleConditionRow condition={sub} onChange={(c) => updateSubCondition(idx, c)} schema={schema} disabled={disabled} />
               {condition.conditions.length > 2 && (
-                <button type="button" disabled={disabled} onClick={() => removeSubCondition(idx)} className="px-1 text-caption text-ink-faint hover:text-danger" title="Remove this condition">
+                <button type="button" disabled={disabled} onClick={() => removeSubCondition(idx)} className="px-1 text-caption text-mute hover:text-crit" title="Remove this condition">
                   <Trash2 size={13} />
                 </button>
               )}
             </div>
           ))}
 
-          <button type="button" disabled={disabled} onClick={addSubCondition} className="self-start border border-line px-2 py-0.5 text-caption text-ink-soft hover:bg-paper disabled:opacity-50">
+          <button type="button" disabled={disabled} onClick={addSubCondition} className="self-start border border-line px-2 py-0.5 text-caption text-dim hover:bg-bg disabled:opacity-50">
             + add condition
           </button>
         </div>
@@ -271,15 +271,15 @@ function RuleForm({ initialRule, schema, onSave, onCancel, saving }) {
     }
   }
 
-  const labelCls = 'mb-1 block text-caption text-ink-soft'
-  const inputCls = 'w-full border border-line bg-surface p-1.5 text-small text-ink focus:border-ink'
+  const labelCls = 'mb-1 block text-caption text-dim'
+  const inputCls = 'w-full border border-line bg-raised p-1.5 text-body text-ink focus:border-ink'
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {msg && <Alert type={msg.type} text={msg.text} />}
 
       <div>
-        <label className={labelCls}>rule name <span className="text-danger">*</span></label>
+        <label className={labelCls}>rule name <span className="text-crit">*</span></label>
         <input type="text" required maxLength={120} placeholder="e.g. high-risk behaviour escalation" value={form.name} onChange={(e) => update('name', e.target.value)} className={inputCls} />
       </div>
 
@@ -333,15 +333,15 @@ function RuleForm({ initialRule, schema, onSave, onCancel, saving }) {
 
       <div className="flex items-center gap-2">
         <input type="checkbox" id="rule-enabled" checked={form.enabled} onChange={(e) => update('enabled', e.target.checked)} className="accent-ink" />
-        <label htmlFor="rule-enabled" className="text-caption text-ink-soft">rule enabled</label>
-        <span className="text-caption text-ink-faint">(disabled rules are saved but not applied)</span>
+        <label htmlFor="rule-enabled" className="text-caption text-dim">rule enabled</label>
+        <span className="text-caption text-mute">(disabled rules are saved but not applied)</span>
       </div>
 
       <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="border border-ink bg-ink px-4 py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft disabled:opacity-60">
+        <button type="submit" disabled={saving} className="border border-ink bg-ink px-4 py-1.5 text-body font-medium text-paper transition-colors hover:bg-ink-soft disabled:opacity-60">
           {saving ? 'saving…' : 'save rule'}
         </button>
-        <button type="button" onClick={onCancel} disabled={saving} className="border border-line px-4 py-1.5 text-small text-ink-soft transition-colors hover:bg-paper">
+        <button type="button" onClick={onCancel} disabled={saving} className="border border-line px-4 py-1.5 text-body text-dim transition-colors hover:bg-bg">
           cancel
         </button>
       </div>
@@ -356,39 +356,39 @@ function EvaluationPanel({ result, onClose }) {
   return (
     <div className="flex flex-col gap-3 border border-steel/40 bg-steel/5 p-4">
       <div className="flex items-center justify-between">
-        <div className="text-small font-medium text-steel">evaluation result</div>
-        <button onClick={onClose} className="text-caption text-ink-faint hover:text-ink">close</button>
+        <div className="text-body font-medium text-steel">evaluation result</div>
+        <button onClick={onClose} className="text-caption text-mute hover:text-ink">close</button>
       </div>
 
       <div className="flex gap-6">
         <div>
-          <div className="font-display text-display-md font-semibold tabular-nums text-steel">{matched_count}</div>
-          <div className="text-caption text-ink-soft">matched events</div>
+          <div className="text-[20px] font-semibold tabular-nums text-steel">{matched_count}</div>
+          <div className="text-caption text-dim">matched events</div>
         </div>
         <div>
-          <div className="font-display text-display-md font-semibold tabular-nums text-ink">{total_evaluated}</div>
-          <div className="text-caption text-ink-soft">total evaluated</div>
+          <div className="text-[20px] font-semibold tabular-nums text-ink">{total_evaluated}</div>
+          <div className="text-caption text-dim">total evaluated</div>
         </div>
         <div>
-          <div className="font-display text-display-md font-semibold tabular-nums text-ink">
+          <div className="text-[20px] font-semibold tabular-nums text-ink">
             {total_evaluated > 0 ? `${((matched_count / total_evaluated) * 100).toFixed(1)}%` : '—'}
           </div>
-          <div className="text-caption text-ink-soft">match rate</div>
+          <div className="text-caption text-dim">match rate</div>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="border border-signal/40 bg-signal/10 px-1.5 py-0.5 text-label font-medium text-[#8a5f00]">{epistemic_label}</span>
-        <span className="text-caption italic text-ink-soft">{notice}</span>
+        <span className="border border-high/40 bg-high/10 px-1.5 py-0.5 text-label font-medium text-high">{epistemic_label}</span>
+        <span className="text-caption italic text-dim">{notice}</span>
       </div>
 
       {sample_matches && sample_matches.length > 0 && (
         <div>
-          <div className="mb-1 text-caption font-medium text-ink-soft">sample matching events (up to 10)</div>
+          <div className="mb-1 text-caption font-medium text-dim">sample matching events (up to 10)</div>
           <div className="overflow-x-auto">
             <table className="w-full border border-line text-left text-caption">
               <thead>
-                <tr className="border-b border-line bg-surface text-label text-ink-faint">
+                <tr className="border-b border-line bg-raised text-label text-mute">
                   <th className="px-2 py-1 font-medium">id</th>
                   <th className="px-2 py-1 font-medium">lens</th>
                   <th className="px-2 py-1 font-medium">score</th>
@@ -400,16 +400,16 @@ function EvaluationPanel({ result, onClose }) {
               </thead>
               <tbody className="divide-y divide-line">
                 {sample_matches.map((e) => (
-                  <tr key={e.event_id} className="hover:bg-surface">
-                    <td className="px-2 py-1 font-mono text-ink-faint">#{e.event_id}</td>
-                    <td className="px-2 py-1 capitalize text-ink-soft">{e.lens}</td>
+                  <tr key={e.event_id} className="hover:bg-raised">
+                    <td className="px-2 py-1 font-mono text-mute">#{e.event_id}</td>
+                    <td className="px-2 py-1 capitalize text-dim">{e.lens}</td>
                     <td className="px-2 py-1 font-mono font-medium text-ink">{e.score ?? '—'}</td>
                     <td className="px-2 py-1">
                       <BandBadge band={e.band} />
                     </td>
-                    <td className="max-w-[160px] truncate px-2 py-1 font-mono text-ink-faint">{e.scenario || '—'}</td>
-                    <td className="px-2 py-1 font-mono text-ink-faint">{e.video_id || '—'}</td>
-                    <td className="px-2 py-1 font-mono text-ink-faint">{e.timestamp != null ? `${Number(e.timestamp).toFixed(1)}s` : '—'}</td>
+                    <td className="max-w-[160px] truncate px-2 py-1 font-mono text-mute">{e.scenario || '—'}</td>
+                    <td className="px-2 py-1 font-mono text-mute">{e.video_id || '—'}</td>
+                    <td className="px-2 py-1 font-mono text-mute">{e.timestamp != null ? `${Number(e.timestamp).toFixed(1)}s` : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -418,7 +418,7 @@ function EvaluationPanel({ result, onClose }) {
         </div>
       )}
 
-      {matched_count === 0 && <p className="text-caption italic text-ink-soft">No current events match this rule's condition.</p>}
+      {matched_count === 0 && <p className="text-caption italic text-dim">No current events match this rule's condition.</p>}
     </div>
   )
 }
@@ -427,22 +427,22 @@ function RuleCard({ rule, onEdit, onDelete, onEvaluate, evaluating }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   return (
-    <div className={`flex flex-col gap-3 border p-4 ${rule.enabled ? 'border-line bg-surface' : 'border-line bg-paper'}`}>
+    <div className={`flex flex-col gap-3 border p-4 ${rule.enabled ? 'border-line bg-raised' : 'border-line bg-bg'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-title font-semibold text-ink">{rule.name || 'Unnamed rule'}</span>
+            <span className="text-section font-semibold text-ink">{rule.name || 'Unnamed rule'}</span>
             <StatusBadge enabled={rule.enabled} />
             {rule.severity_band && <BandBadge band={rule.severity_band} />}
             {rule.lens && (
-              <span className="border border-line bg-paper px-1.5 py-0.5 text-label text-ink-soft">
+              <span className="border border-line bg-bg px-1.5 py-0.5 text-label text-dim">
                 {LENS_LABELS[rule.lens] || rule.lens}
               </span>
             )}
           </div>
-          {rule.description && <p className="text-caption text-ink-soft">{rule.description}</p>}
+          {rule.description && <p className="text-caption text-dim">{rule.description}</p>}
         </div>
-        <span className="shrink-0 font-mono text-caption tabular-nums text-ink-faint">#{rule.rule_id}</span>
+        <span className="shrink-0 font-mono text-caption tabular-nums text-mute">#{rule.rule_id}</span>
       </div>
 
       <div className="border border-steel/40 bg-steel/5 p-2">
@@ -453,7 +453,7 @@ function RuleCard({ rule, onEdit, onDelete, onEvaluate, evaluating }) {
       {rule.action_text && (
         <div className="border border-ok/40 bg-ok/5 p-2">
           <div className="mb-1 text-label font-medium text-ok">then</div>
-          <p className="text-caption text-ink-soft">{rule.action_text}</p>
+          <p className="text-caption text-dim">{rule.action_text}</p>
         </div>
       )}
 
@@ -461,20 +461,20 @@ function RuleCard({ rule, onEdit, onDelete, onEvaluate, evaluating }) {
         <button onClick={() => onEvaluate(rule.rule_id)} disabled={evaluating} className="border border-steel/40 px-2.5 py-1 text-caption font-medium text-steel transition-colors hover:bg-steel/10 disabled:opacity-50">
           {evaluating ? 'testing…' : 'test rule'}
         </button>
-        <button onClick={() => onEdit(rule)} className="border border-line px-2.5 py-1 text-caption text-ink-soft transition-colors hover:bg-paper">
+        <button onClick={() => onEdit(rule)} className="border border-line px-2.5 py-1 text-caption text-dim transition-colors hover:bg-bg">
           edit
         </button>
         {confirmDelete ? (
           <div className="ml-auto inline-flex items-center gap-1.5">
-            <button onClick={() => onDelete(rule.rule_id)} className="bg-danger px-1.5 py-0.5 text-label font-medium text-paper hover:opacity-90">
+            <button onClick={() => onDelete(rule.rule_id)} className="bg-crit px-1.5 py-0.5 text-label font-medium text-paper hover:opacity-90">
               confirm delete
             </button>
-            <button onClick={() => setConfirmDelete(false)} className="bg-paper px-1.5 py-0.5 text-label text-ink-soft hover:bg-line">
+            <button onClick={() => setConfirmDelete(false)} className="bg-bg px-1.5 py-0.5 text-label text-dim hover:bg-line">
               cancel
             </button>
           </div>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} className="ml-auto text-caption text-ink-faint transition-colors hover:text-danger">
+          <button onClick={() => setConfirmDelete(true)} className="ml-auto text-caption text-mute transition-colors hover:text-crit">
             delete
           </button>
         )}
@@ -483,7 +483,7 @@ function RuleCard({ rule, onEdit, onDelete, onEvaluate, evaluating }) {
   )
 }
 
-export default function CustomRuleBuilder() {
+export default function RuleBuilder() {
   const [rules, setRules] = useState([])
   const [schema, setSchema] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -585,20 +585,20 @@ export default function CustomRuleBuilder() {
   }
 
   if (loading) {
-    return <div className="p-4 text-small text-ink-soft">loading custom rules…</div>
+    return <div className="p-4 text-body text-dim">loading custom rules…</div>
   }
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-title font-semibold text-ink">custom rule builder</h2>
-          <p className="mt-1 max-w-lg text-caption text-ink-soft">
+          <h2 className="text-section font-semibold text-ink">custom rule builder</h2>
+          <p className="mt-1 max-w-lg text-caption text-dim">
             Define operational safety rules using structured conditions grounded in real TRACE event
             data. Rules are evaluated deterministically — no code execution.
           </p>
         </div>
-        <button onClick={openCreateForm} className="inline-flex shrink-0 items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft">
+        <button onClick={openCreateForm} className="inline-flex shrink-0 items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-body font-medium text-paper transition-colors hover:bg-ink-soft">
           <Plus size={14} />
           new rule
         </button>
@@ -608,8 +608,8 @@ export default function CustomRuleBuilder() {
       {formSuccess && <Alert type="success" text={formSuccess} />}
 
       {showForm && (
-        <div className="border border-line bg-surface p-4">
-          <h3 className="mb-4 text-small font-semibold text-ink">
+        <div className="border border-line bg-raised p-4">
+          <h3 className="mb-4 text-body font-semibold text-ink">
             {editingRule ? `edit rule: ${editingRule.name}` : 'create new rule'}
           </h3>
           <RuleForm
@@ -637,8 +637,8 @@ export default function CustomRuleBuilder() {
 
       {rules.length === 0 ? (
         <div className="border border-dashed border-line-strong p-8 text-center">
-          <p className="text-title font-medium text-ink">no custom rules configured yet.</p>
-          <p className="mt-1 text-caption text-ink-soft">Click "new rule" to create your first operational safety rule.</p>
+          <p className="text-section font-medium text-ink">no custom rules configured yet.</p>
+          <p className="mt-1 text-caption text-dim">Click "new rule" to create your first operational safety rule.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -669,21 +669,21 @@ export default function CustomRuleBuilder() {
       )}
 
       {schema && (
-        <details className="text-small">
-          <summary className="cursor-pointer text-caption text-ink-faint select-none hover:text-ink">
+        <details className="text-body">
+          <summary className="cursor-pointer text-caption text-mute select-none hover:text-ink">
             supported condition fields & operators
           </summary>
-          <div className="mt-2 flex flex-col gap-2 border border-line bg-surface p-3">
+          <div className="mt-2 flex flex-col gap-2 border border-line bg-raised p-3">
             {schema.supported_fields.map((f) => {
               const info = schema.field_details[f] || {}
               return (
                 <div key={f} className="flex items-start gap-3">
                   <span className="w-24 shrink-0 font-mono font-medium text-steel">{f}</span>
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-caption text-ink-soft">{info.description}</span>
-                    {info.allowed_values && <span className="text-caption text-ink-faint">values: {info.allowed_values.join(', ')}</span>}
-                    {info.range && <span className="text-caption text-ink-faint">range: {info.range[0]}–{info.range[1]}</span>}
-                    <span className="text-caption text-ink-faint">operators: {(info.allowed_operators || []).join('  ')}</span>
+                    <span className="text-caption text-dim">{info.description}</span>
+                    {info.allowed_values && <span className="text-caption text-mute">values: {info.allowed_values.join(', ')}</span>}
+                    {info.range && <span className="text-caption text-mute">range: {info.range[0]}–{info.range[1]}</span>}
+                    <span className="text-caption text-mute">operators: {(info.allowed_operators || []).join('  ')}</span>
                   </div>
                 </div>
               )

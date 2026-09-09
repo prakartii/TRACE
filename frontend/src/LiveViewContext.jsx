@@ -44,10 +44,10 @@ function screenToPath(screen, target) {
     case 'Scenario Coverage':
       return '/patterns'
     case 'Responsible AI':
-      return '/responsible-ai'
+      return '/settings/governance'
     case 'Action Center':
     case 'Safe Action Planner':
-      return '/planner'
+      return '/monitor'
     default:
       return '/monitor'
   }

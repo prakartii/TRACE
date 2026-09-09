@@ -7,7 +7,7 @@ import { useIntervention } from '../context/InterventionContext.jsx'
 import InterventionBanner from '../components/intervention/InterventionBanner.jsx'
 import InterventionModal from '../components/intervention/InterventionModal.jsx'
 import { spokenTextFor } from '../lib/voiceAlerts.js'
-import { MIGRATING_NAV, OPERATOR_PATHS, PRIMARY_NAV } from './nav.js'
+import { OPERATOR_PATHS, PRIMARY_NAV } from './nav.js'
 
 function useBackendStatus() {
   const [status, setStatus] = useState('checking')
@@ -90,7 +90,7 @@ function VoiceControl({ voice, bannerAlert }) {
 
 export default function AppShell() {
   const backend = useBackendStatus()
-  const { role, setRole } = useLiveViewContext()
+  const { role } = useLiveViewContext()
   const { activeCount, connectionStatus, bannerAlert, selectedAlert, setSelectedAlert, voice } =
     useIntervention()
 
@@ -131,14 +131,6 @@ export default function AppShell() {
 
           <VoiceControl voice={voice} bannerAlert={bannerAlert} />
 
-          <button
-            type="button"
-            onClick={() => setRole(isOperator ? 'supervisor' : 'operator')}
-            title="View mode (presentation filter, not enforced access)"
-            className="font-mono text-caption text-dim hover:text-ink"
-          >
-            view: <span className="font-semibold text-ink">{role}</span>
-          </button>
 
           <span className="flex items-center gap-1.5" title={`backend ${backend}`}>
             <span
@@ -158,7 +150,6 @@ export default function AppShell() {
             <>
               <div className="border-t border-line" />
               <NavGroup items={[{ label: 'Settings', path: '/settings', icon: SettingsIcon }]} />
-              <NavGroup label="Migrating" items={MIGRATING_NAV} />
             </>
           )}
         </nav>
