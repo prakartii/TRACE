@@ -7,16 +7,21 @@ FastAPI, JSON, or the frontend.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 
 from backend.contracts.models import PerceptionFrameResult
 from backend.perception.adapter import tracked_objects_to_entities
 from backend.perception.config import DEFAULT_CONFIG, PerceptionConfig
 from backend.perception.detector import YoloDetector
+from backend.perception.pose import PersonPose, YoloPoseEstimator
 from backend.perception.redaction import redact_person_faces
 from backend.perception.sampling import resolve_sampling_policy
 from backend.perception.tracker import ObjectTracker
 from backend.video.source import Frame, VideoSource
+
+logger = logging.getLogger("trace.perception")
 
 
 class PerceptionPipeline:
@@ -27,9 +32,22 @@ class PerceptionPipeline:
         self,
         config: PerceptionConfig = DEFAULT_CONFIG,
         detector: YoloDetector | None = None,
+        pose_estimator: YoloPoseEstimator | None = None,
     ):
         self._config = config
         self._detector = detector or YoloDetector(config)
+        self._pose_estimator = pose_estimator if pose_estimator is not None else YoloPoseEstimator(config)
+
+    def _estimate_poses(self, image: np.ndarray) -> list[PersonPose]:
+        """Run pose estimation, degrading to ``[]`` on any failure — pose is an
+        enhancement, never a reason to fail the core loop."""
+        if not self._config.pose_enabled:
+            return []
+        try:
+            return self._pose_estimator.estimate(image)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Pose estimation unavailable, skipping: %s", exc)
+            return []
 
     def process_frame(
         self,
@@ -46,11 +64,13 @@ class PerceptionPipeline:
         calls that share the same tracker instance."""
         detections = self._detector.detect(frame.image)
         tracked = tracker.update(detections)
+        pose_persons = self._estimate_poses(frame.image)
         entities = tracked_objects_to_entities(
             tracked,
             source_id=frame.source_id,
             timestamp=frame.timestamp,
             model_identity=self._config.model_identity,
+            pose_persons=pose_persons,
         )
         return PerceptionFrameResult(
             source_id=frame.source_id,

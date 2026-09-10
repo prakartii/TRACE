@@ -72,6 +72,9 @@ def _write_resolved_dataset_yaml() -> Path:
         "  0: person\n"
         "  1: box\n"
         "  2: pallet\n"
+        "  3: trolley\n"
+        "  4: forklift\n"
+        "  5: vehicle_bed\n"
     )
     tmp = Path(tempfile.gettempdir()) / "trace_pilot_dataset_resolved.yaml"
     tmp.write_text(content)

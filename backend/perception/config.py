@@ -16,6 +16,8 @@ from backend.perception.redaction import DEFAULT_REDACTION, RedactionConfig
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STOCK_MODEL_PATH = REPO_ROOT / "models" / "yolov8n.pt"
 PILOT_MODEL_PATH = REPO_ROOT / "models" / "trace_pilot_v1.pt"
+PILOT_V2_MODEL_PATH = REPO_ROOT / "models" / "trace_pilot_v2.pt"
+POSE_MODEL_PATH = REPO_ROOT / "models" / "yolov8n-pose.pt"
 DEFAULT_MODEL_PATH = STOCK_MODEL_PATH  # backwards-compat alias, used below
 
 # Identifies which model produced a given detection/Entity — never
@@ -26,6 +28,7 @@ DEFAULT_MODEL_PATH = STOCK_MODEL_PATH  # backwards-compat alias, used below
 # string — keep the two in sync when adding a model.
 STOCK_COCO_IDENTITY = "stock-coco-yolov8n"
 TRACE_PILOT_IDENTITY = "trace-pilot-v1"
+TRACE_PILOT_V2_IDENTITY = "trace-pilot-v2"
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,13 @@ class PerceptionConfig:
     model_path: Path = DEFAULT_MODEL_PATH
     model_identity: str = STOCK_COCO_IDENTITY
     device: str = "cpu"
+
+    # Pose estimation (Layer 1 enhancement). Optional and degradable — when
+    # disabled, or the weights are absent, entities simply carry no keypoints
+    # and the core detection loop is unaffected. Off by default so the stock
+    # (test) pipeline stays dependency-light; enabled on the pilot config.
+    pose_enabled: bool = False
+    pose_model_path: Path = POSE_MODEL_PATH
 
     confidence_threshold: float = 0.25
     iou_threshold: float = 0.45
@@ -89,9 +99,21 @@ DEFAULT_CONFIG = PerceptionConfig()
 PILOT_CONFIG = PerceptionConfig(
     model_path=PILOT_MODEL_PATH,
     model_identity=TRACE_PILOT_IDENTITY,
+    pose_enabled=True,
     confidence_threshold=0.15,
     track_activation_threshold=0.15,
     secondary_confidence_threshold=0.08,
     default_sample_fps=5.0,
     max_samples_per_run=500,
+)
+
+# v2 vocabulary (person + box + pallet + trolley + forklift + vehicle_bed).
+# Not yet trained — defined here so the class vocabulary and downstream maps
+# (adapter) are ready the moment a labelled v2 dataset exists. See
+# training/README.md "v2 classes" for the honesty note: no weights imply no
+# detection, and mapping must never claim otherwise.
+PILOT_V2_CONFIG = PerceptionConfig(
+    model_path=PILOT_V2_MODEL_PATH,
+    model_identity=TRACE_PILOT_V2_IDENTITY,
+    pose_enabled=True,
 )

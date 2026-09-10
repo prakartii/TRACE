@@ -21,6 +21,7 @@ class EntityClass(str, Enum):
     TROLLEY = "trolley"
     PERSON = "person"
     VEHICLE_BED = "vehicle_bed"
+    FORKLIFT = "forklift"
 
 
 class MassClass(str, Enum):

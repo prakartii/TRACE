@@ -49,6 +49,7 @@ from backend.risk.config import DEFAULT_RISK_CONFIG, RiskConfig
 from backend.world_model.geometry import euclidean_distance
 from backend.world_model.temporal import (
     TrackHistory,
+    TrackSample,
     acceleration_sequence,
     average_speed,
     build_track_histories,
@@ -188,6 +189,21 @@ BEHAVIOUR_SCENARIOS_CATALOG: list[BehaviourScenarioInfo] = [
             "Precursor evidence only; no physical movement observed",
         ],
         recommended_action="Verify worker clearance and ensure ergonomic lifting technique before moving package.",
+    ),
+    BehaviourScenarioInfo(
+        scenario_id="forklift_pedestrian_proximity",
+        name="Forklift Near Pedestrian",
+        lens=RiskLens.BEHAVIOUR,
+        required_signals=["proximity", "forklift_track"],
+        description="Powered forklift moving within a hazardous distance of a pedestrian.",
+        epistemic_status=FindingStatus.PROBABLE,
+        confidence=ConfidenceLevel.MEDIUM,
+        risk_band=RiskBand.HIGH,
+        limitations=[
+            "Requires a trained forklift detection class; integration-ready only",
+            "No forklift in the current pilot vocabulary (box/pallet/person)",
+        ],
+        recommended_action="Halt forklift travel; maintain pedestrian exclusion zone and verify operator line of sight.",
     ),
 ]
 
@@ -563,13 +579,64 @@ def recognize_straps_as_handles(
     return None
 
 
+def _ankles_on_carton(person_sample: TrackSample, box_footprint: Optional[BoundingBox]) -> bool:
+    """True when a person's ankle keypoints rest on/just above the box's top
+    edge, within the box's horizontal span — direct skeleton evidence of standing
+    on the carton. Keypoints are normalized [0,1]; a missing keypoint (0,0) never
+    matches a box away from the frame origin, so it is implicitly filtered."""
+    if not person_sample.keypoints or len(person_sample.keypoints) < 17:
+        return False
+    if box_footprint is None:
+        return False
+    for idx in (15, 16):  # COCO left/right ankle
+        ax, ay = person_sample.keypoints[idx]
+        if ax == 0.0 and ay == 0.0:
+            continue
+        within_x = (box_footprint.x1 - 0.05) <= ax <= (box_footprint.x2 + 0.05)
+        near_top = (box_footprint.y1 - 0.12) <= ay <= (box_footprint.y1 + 0.06)
+        if within_x and near_top:
+            return True
+    return False
+
+
 def recognize_stepping_on_carton(
     box_history: TrackHistory,
     person_history: TrackHistory,
     sustained: bool,
 ) -> Optional[dict[str, Any]]:
     """Scenario 6: Detects worker elevated with feet atop carton upper boundary.
-    Distinguishes sustained stepping / elevation from momentary 1-frame crossing occlusion."""
+    Distinguishes sustained stepping / elevation from momentary 1-frame crossing occlusion.
+
+    When pose keypoints are available, uses the worker's ankle keypoints directly —
+    ankles resting on/just above the box's top edge within its horizontal span is
+    direct visual evidence of standing on the carton (OBSERVED), not a 2D bbox-overlap
+    guess (INFERRED). Falls back to the bbox heuristic when no pose signal exists."""
+    # Pose-based confirmation (COCO 15/16 = left/right ankle).
+    timestamps_box = {s.timestamp: s for s in box_history.samples}
+    pose_confirmed = any(
+        _ankles_on_carton(s_p, timestamps_box[s_p.timestamp].footprint)
+        for s_p in person_history.samples
+        if s_p.timestamp in timestamps_box
+    )
+    if pose_confirmed:
+        return {
+            "scenario": "stepping_on_carton_precursor",
+            "explanation": (
+                "Worker's ankle keypoints are positioned directly on the carton's upper "
+                "surface, confirming body weight is applied to the packaging. Standing on "
+                "cartons crushes contents and creates a fall hazard."
+            ),
+            "evidence": {
+                "feet_on_carton_surface": True,
+                "pose_confirmed": True,
+            },
+            "band": RiskBand.HIGH,
+            "epistemic_level": EpistemicLevel.OBSERVED,
+            "limitations": [
+                "keypoints_are_2d_projection_not_metric_force",
+            ],
+        }
+
     # Check across common samples to ensure persistence or elevation
     timestamps_box = {s.timestamp: s for s in box_history.samples}
     common_pairs = [
@@ -706,6 +773,60 @@ def recognize_solo_heavy_handling(
 # Master Behaviour Recognition Pipeline
 # ---------------------------------------------------------------------------
 
+def recognize_forklift_pedestrian_proximity(
+    persons: list[TrackHistory],
+    forklifts: list[TrackHistory],
+    kinematics_by_id: dict[str, KinematicProfile],
+    timestamp: float,
+    config: RiskConfig,
+) -> list[RiskEvent]:
+    """Forklift-pedestrian interaction (integration-ready). Only fires when a
+    FORKLIFT entity is present in the world model — no current detector produces
+    one, so this is honest plumbing for when a trained forklift class lands."""
+    if not forklifts:
+        return []
+    threshold = getattr(config, "behaviour_proximity_threshold", 0.15)
+    findings: list[RiskEvent] = []
+    for forklift in forklifts:
+        fk_kin = kinematics_by_id.get(forklift.entity_id)
+        moving = fk_kin is not None and fk_kin.total_displacement >= 0.03
+        if not moving:
+            continue
+        for person in persons:
+            shared = common_sample_count(person, forklift)
+            if shared < 2:
+                continue
+            proximity = sustained_proximity_fraction(person, forklift, threshold)
+            if proximity < 0.30:
+                continue
+            findings.append(
+                RiskEvent(
+                    timestamp=timestamp,
+                    event_type=EventType.BEHAVIOUR,
+                    lens=RiskLens.BEHAVIOUR,
+                    entity_id=forklift.entity_id,
+                    confidence=ConfidenceLevel.MEDIUM,
+                    status=FindingStatus.PROBABLE,
+                    band=RiskBand.HIGH,
+                    scenario="forklift_pedestrian_proximity",
+                    entities=[forklift.entity_id, person.entity_id],
+                    evidence={
+                        "sustained_proximity_fraction": proximity,
+                        "common_sample_count": shared,
+                        "forklift_displacement": fk_kin.total_displacement,
+                    },
+                    explanation=(
+                        "Powered forklift moving within hazardous distance of a pedestrian. "
+                        "Maintain an exclusion zone around moving equipment."
+                    ),
+                    recommended_action=recommended_action("forklift_pedestrian_proximity", FindingStatus.PROBABLE),
+                    limitations=["requires_trained_forklift_class_integration_ready"],
+                    epistemic_level=EpistemicLevel.INFERRED,
+                )
+            )
+    return findings
+
+
 def recognize_all_behaviours(
     frame_results: list[PerceptionFrameResult],
     *,
@@ -721,12 +842,20 @@ def recognize_all_behaviours(
     histories = build_track_histories(frame_results, frame_width, frame_height)
     persons = [h for h in histories.values() if h.entity_class == EntityClass.PERSON]
     boxes = [h for h in histories.values() if h.entity_class == EntityClass.BOX]
+    forklifts = [h for h in histories.values() if h.entity_class == EntityClass.FORKLIFT]
 
     kinematics_by_id: dict[str, KinematicProfile] = {
         h.entity_id: compute_kinematics(h) for h in histories.values()
     }
 
+    findings: list[RiskEvent] = []
+    findings.extend(
+        recognize_forklift_pedestrian_proximity(persons, forklifts, kinematics_by_id, timestamp, config)
+    )
+
     if not boxes:
+        if findings:
+            return findings, kinematics_by_id
         insufficient = RiskEvent(
             timestamp=timestamp,
             event_type=EventType.BEHAVIOUR,
@@ -746,8 +875,6 @@ def recognize_all_behaviours(
             epistemic_level=EpistemicLevel.INFERRED,
         )
         return [insufficient], kinematics_by_id
-
-    findings: list[RiskEvent] = []
 
     for person in persons:
         for box in boxes:

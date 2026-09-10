@@ -206,3 +206,100 @@ class LocalMP4VideoSource(VideoSource):
         if self._cap is not None:
             self._cap.release()
             self._cap = None
+
+
+class RTSPVideoSource(VideoSource):
+    """Decodes a live RTSP/HLS/HTTP camera URL with OpenCV.
+
+    Same `VideoSource` contract as `LocalMP4VideoSource`, so perception and the
+    API layer can treat a live camera and a file identically. Differences:
+      - ``metadata()`` may report ``fps == 0.0`` / ``frame_count is None`` when
+        the stream doesn't advertise timing (live feeds often don't).
+      - ``iter_frames`` is not the right interface for a live stream (there is
+        no end); a streaming client should drive ``get_frame``/`read_next`` in
+        its own loop instead.
+    """
+
+    def __init__(self, source_id: str, url: str):
+        self.source_id = source_id
+        self._url = url
+        self._cap: Optional[cv2.VideoCapture] = None
+        self._metadata: Optional[VideoMetadata] = None
+
+    def open(self) -> None:
+        if self._cap is not None:
+            return
+        cap = cv2.VideoCapture(self._url)
+        if not cap.isOpened():
+            cap.release()
+            raise VideoDecodeError(
+                f"Could not open live source '{self.source_id}' ({self._url})"
+            )
+        self._cap = cap
+
+    def _ensure_open(self) -> "cv2.VideoCapture":
+        if self._cap is None:
+            self.open()
+        assert self._cap is not None
+        return self._cap
+
+    def metadata(self) -> VideoMetadata:
+        if self._metadata is not None:
+            return self._metadata
+        cap = self._ensure_open()
+        fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_count_raw = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_count = frame_count_raw if frame_count_raw > 0 else None
+        duration = (frame_count_raw / fps) if fps > 0 and frame_count_raw > 0 else 0.0
+        self._metadata = VideoMetadata(
+            duration=round(duration, 3),
+            width=width,
+            height=height,
+            fps=round(fps, 3),
+            frame_count=frame_count,
+            codec=_decode_fourcc(int(cap.get(cv2.CAP_PROP_FOURCC))),
+            has_audio=None,  # not probed for live streams
+        )
+        return self._metadata
+
+    def read_next(self) -> Optional[Frame]:
+        """Blocking read of the next frame — the interface a live-streaming
+        loop uses instead of `iter_frames` (which assumes a finite file)."""
+        cap = self._ensure_open()
+        meta = self.metadata()
+        ok, image = cap.read()
+        if not ok or image is None:
+            return None
+        return Frame(
+            image=image,
+            timestamp=cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0 if meta.fps > 0 else 0.0,
+            source_id=self.source_id,
+            frame_index=int(cap.get(cv2.CAP_PROP_POS_FRAMES)),
+            width=meta.width,
+            height=meta.height,
+        )
+
+    def get_frame(self, timestamp: float) -> Frame:
+        # Live streams aren't seekable; grabbing "nearest to timestamp" is not
+        # meaningful. Reading a frame at a specific instant is the caller's loop.
+        frame = self.read_next()
+        if frame is None:
+            raise VideoDecodeError(f"No frame available from live source '{self.source_id}'")
+        return frame
+
+    def iter_frames(
+        self,
+        start_time: float = 0.0,
+        end_time: Optional[float] = None,
+        frame_step: int = 1,
+    ) -> Iterator[Frame]:
+        # Live streams are unbounded; yielding here would never terminate.
+        # The intended live path is read_next() driven by a streaming loop.
+        return iter(())
+
+    def close(self) -> None:
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None

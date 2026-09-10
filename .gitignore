@@ -55,3 +55,6 @@ CLAUDE.md
 README.md
 data/trace.db
 scratch/
+
+# Playwright MCP browser-inspection artifacts
+.playwright-mcp/
