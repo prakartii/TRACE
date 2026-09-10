@@ -31,7 +31,11 @@ class-scope decision for why trolley was excluded from the pilot).
 from __future__ import annotations
 
 from backend.contracts.models import BoundingBox, Entity, EntityClass
-from backend.perception.config import STOCK_COCO_IDENTITY, TRACE_PILOT_IDENTITY
+from backend.perception.config import (
+    STOCK_COCO_IDENTITY,
+    TRACE_PILOT_IDENTITY,
+    TRACE_PILOT_V2_IDENTITY,
+)
 from backend.perception.pose import PersonPose
 from backend.perception.tracker import TrackedObject
 
@@ -48,9 +52,24 @@ TRACE_PILOT_CLASS_MAP: dict[str, EntityClass] = {
     "pallet": EntityClass.PALLET,
 }
 
+# Target vocabulary for the v2 fine-tune (adds trolley / forklift / vehicle_bed).
+# NOT yet trained — no weights exist, so no detector can produce these class
+# names yet. The map exists so the contract is defined; mapping a name to an
+# EntityClass is not a claim that a trained model detects it (see training/
+# README.md "v2 classes").
+TRACE_PILOT_V2_CLASS_MAP: dict[str, EntityClass] = {
+    "person": EntityClass.PERSON,
+    "box": EntityClass.BOX,
+    "pallet": EntityClass.PALLET,
+    "trolley": EntityClass.TROLLEY,
+    "forklift": EntityClass.FORKLIFT,
+    "vehicle_bed": EntityClass.VEHICLE_BED,
+}
+
 CLASS_MAP_BY_MODEL_IDENTITY: dict[str, dict[str, EntityClass]] = {
     STOCK_COCO_IDENTITY: STOCK_COCO_CLASS_MAP,
     TRACE_PILOT_IDENTITY: TRACE_PILOT_CLASS_MAP,
+    TRACE_PILOT_V2_IDENTITY: TRACE_PILOT_V2_CLASS_MAP,
 }
 
 # Backwards-compatible name some existing tests/call sites reference —

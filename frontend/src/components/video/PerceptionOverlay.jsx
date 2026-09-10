@@ -16,6 +16,7 @@ const CLASS_COLOR = {
   pallet: '#4d7c0f', // muted olive — wood pallet base
   trolley: '#0369a1', // blue — cart / trolley
   vehicle_bed: '#475569', // slate — vehicle bed
+  forklift: '#B23A22', // danger red — powered equipment
 }
 const DEFAULT_COLOR = '#71717a'
 

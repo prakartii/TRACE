@@ -10,3 +10,6 @@ names:
   0: person
   1: box
   2: pallet
+  3: trolley
+  4: forklift
+  5: vehicle_bed

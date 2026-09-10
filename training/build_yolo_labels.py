@@ -36,7 +36,7 @@ DATA_DIR = REPO_ROOT / "data" / "pilot_annotations"
 IMAGES_DIR = DATA_DIR / "images"
 LABELS_DIR = DATA_DIR / "labels"
 
-CLASS_IDS = {"person": 0, "box": 1, "pallet": 2}
+CLASS_IDS = {"person": 0, "box": 1, "pallet": 2, "trolley": 3, "forklift": 4, "vehicle_bed": 5}
 PERSON_LABEL_CONFIDENCE_FLOOR = 0.5  # well above the 0.25 production threshold
 
 

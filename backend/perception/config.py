@@ -16,6 +16,7 @@ from backend.perception.redaction import DEFAULT_REDACTION, RedactionConfig
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STOCK_MODEL_PATH = REPO_ROOT / "models" / "yolov8n.pt"
 PILOT_MODEL_PATH = REPO_ROOT / "models" / "trace_pilot_v1.pt"
+PILOT_V2_MODEL_PATH = REPO_ROOT / "models" / "trace_pilot_v2.pt"
 POSE_MODEL_PATH = REPO_ROOT / "models" / "yolov8n-pose.pt"
 DEFAULT_MODEL_PATH = STOCK_MODEL_PATH  # backwards-compat alias, used below
 
@@ -27,6 +28,7 @@ DEFAULT_MODEL_PATH = STOCK_MODEL_PATH  # backwards-compat alias, used below
 # string — keep the two in sync when adding a model.
 STOCK_COCO_IDENTITY = "stock-coco-yolov8n"
 TRACE_PILOT_IDENTITY = "trace-pilot-v1"
+TRACE_PILOT_V2_IDENTITY = "trace-pilot-v2"
 
 
 @dataclass(frozen=True)
@@ -99,5 +101,16 @@ DEFAULT_CONFIG = PerceptionConfig()
 PILOT_CONFIG = PerceptionConfig(
     model_path=PILOT_MODEL_PATH,
     model_identity=TRACE_PILOT_IDENTITY,
+    pose_enabled=True,
+)
+
+# v2 vocabulary (person + box + pallet + trolley + forklift + vehicle_bed).
+# Not yet trained — defined here so the class vocabulary and downstream maps
+# (adapter) are ready the moment a labelled v2 dataset exists. See
+# training/README.md "v2 classes" for the honesty note: no weights imply no
+# detection, and mapping must never claim otherwise.
+PILOT_V2_CONFIG = PerceptionConfig(
+    model_path=PILOT_V2_MODEL_PATH,
+    model_identity=TRACE_PILOT_V2_IDENTITY,
     pose_enabled=True,
 )
