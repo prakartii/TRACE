@@ -856,6 +856,13 @@ class InterventionFeedResponse(BaseModel):
 
 class AssistantAskRequest(BaseModel):
     question: str
+    # Currently-open video in the caller's UI (e.g. LiveView's selected
+    # camera/upload). Used as a grounding hint only: a "this video" /
+    # "this footage" question resolves against it instead of the assistant
+    # keyword-guessing a canonical demo video (CLAUDE.md video-ingestion
+    # honesty rule — a newly uploaded video must be answerable by id, not
+    # only by name-matching against the fixed canonical camera labels).
+    video_id: Optional[str] = None
 
 
 class AssistantGrounding(BaseModel):

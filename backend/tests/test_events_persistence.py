@@ -307,12 +307,14 @@ def test_persistence_failure_gracefully_preserves_findings_response(tmp_path, mo
     app.dependency_overrides[get_registry] = lambda: registry
     app.dependency_overrides[perception_api.get_pipeline_registry] = lambda: {"stock": pipeline, "pilot": pipeline}
 
-    # Simulate DB failure during persist_findings
-    import backend.api.findings as findings_mod
+    # Simulate DB failure during persist_findings (now called from
+    # backend.video.ingest.analyze_frame, the shared per-frame pipeline both
+    # the findings endpoint and bulk video ingestion call).
+    import backend.video.ingest as ingest_mod
     def broken_persist(*args, **kwargs):
         raise sqlite3.OperationalError("Simulated disk I/O failure")
 
-    monkeypatch.setattr(findings_mod, "persist_findings", broken_persist)
+    monkeypatch.setattr(ingest_mod, "persist_findings", broken_persist)
     try:
         client = TestClient(app)
         video_id = client.get("/api/videos").json()[0]["id"]

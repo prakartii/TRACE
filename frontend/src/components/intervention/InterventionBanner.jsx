@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, ShieldAlert, Volume2, X } from 'lucide-react'
 import { useIntervention } from '../../context/InterventionContext.jsx'
-import { spokenTextFor } from '../../lib/voiceAlerts.js'
 import { humanizeAction, humanizeTitle } from '../../lib/format.js'
 
 export default function InterventionBanner({ onOpenDetail }) {
@@ -120,9 +119,7 @@ export default function InterventionBanner({ onOpenDetail }) {
           {voice?.supported && (
             <button
               type="button"
-              onClick={() =>
-                voice.speak(spokenTextFor(bannerAlert, voice.lang), { force: true })
-              }
+              onClick={() => voice.speak(bannerAlert, { force: true })}
               title={`Speak this alert${voice.enabled ? '' : ' (voice alerts off)'}`}
               className="rounded-md border border-line-strong bg-paper p-1 text-ink shadow-xs transition-all hover:bg-paper-subtle active:scale-95 cursor-pointer"
             >

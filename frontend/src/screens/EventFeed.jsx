@@ -7,7 +7,7 @@ import { listVideos } from '../api/videos.js'
 import { getScenarioConfig, getVideoScenarioInfo, resolveIncidentTitle, formatEventRef } from '../lib/scenarios.js'
 import { formatConfidence, formatEntityName, formatScore, humanizeExplanation, humanizeAction, humanizeTitle } from '../lib/format.js'
 import { useIntervention } from '../context/InterventionContext.jsx'
-import WorkflowNav from '../components/WorkflowNav.jsx'
+import { useLiveViewContext } from '../LiveViewContext.jsx'
 
 
 const STATUS_STYLE = {
@@ -543,24 +543,28 @@ export default function EventFeed() {
                         : 'border-line hover:border-line-strong hover:bg-paper'
                     }`}
                   >
-                    {/* Top Row: Severity + Location + Time */}
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                    {/* Top Row: Severity Badge & Prevented Status */}
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         {bandCls && (
-                          <span className={`border px-2 py-0.5 text-label font-bold uppercase tracking-wider ${bandCls}`}>
+                          <span className={`border px-2.5 py-0.5 text-label font-bold uppercase tracking-wider ${bandCls}`}>
                             {ev.band} Risk
                           </span>
                         )}
-                        <span className="font-semibold text-caption text-ink">{videoInfo.cameraName}</span>
-                        <span className="font-mono text-caption text-ink-soft">
-                          @{formatTimestamp(ev.timestamp)}
-                        </span>
+                        {ev.event_type === 'prevented' && (
+                          <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label font-medium text-ok">
+                            Prevented
+                          </span>
+                        )}
                       </div>
-                      {ev.event_type === 'prevented' && (
-                        <span className="border border-ok/40 bg-ok/10 px-1.5 py-0.5 text-label font-medium text-ok">
-                          Prevented
-                        </span>
-                      )}
+                      <span className="font-mono text-caption text-ink-faint">
+                        #{ev.event_id}
+                      </span>
+                    </div>
+
+                    {/* Camera Bay Location with Clear Breathing Room */}
+                    <div className="mt-2 text-caption font-semibold text-ink">
+                      {videoInfo.cameraName}
                     </div>
 
                     {/* Hazard Title & One-Line Reason */}
@@ -647,30 +651,25 @@ export default function EventFeed() {
             {!detailLoading && !detailError && selectedEvent && (
               <div className="flex flex-col gap-4 p-4">
                 {/* Hazard Overview */}
-                <div className="border border-line bg-paper p-3.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`border px-2 py-0.5 text-label font-bold uppercase tracking-wider ${
-                          BAND_STYLE[selectedEvent.band] || BAND_STYLE.Low
-                        }`}
-                      >
-                        {selectedEvent.band || 'High'} Risk
-                      </span>
-                      <span className="text-caption font-semibold text-ink">
-                        {getVideoName(selectedEvent.video_id, selectedEvent.scenario)}
-                      </span>
-                    </div>
+                <div className="border border-line bg-paper p-4">
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`border px-2.5 py-1 text-label font-bold uppercase tracking-wider ${
+                        BAND_STYLE[selectedEvent.band] || BAND_STYLE.Low
+                      }`}
+                    >
+                      {selectedEvent.band || 'High'} Risk
+                    </span>
                     <span className="text-caption text-ink-soft">
                       Certainty: <strong className="text-ink">{formatConfidence(selectedEvent.confidence)}</strong>
                     </span>
                   </div>
+                  <div className="mt-2.5 text-caption font-medium text-ink-soft">
+                    Location: <span className="font-semibold text-ink">{getVideoName(selectedEvent.video_id, selectedEvent.scenario)}</span>
+                  </div>
                   <h2 className="mt-2 text-lg font-bold text-ink leading-snug">
                     {humanizeTitle(actionPlan?.title || resolveIncidentTitle(selectedEvent), selectedEvent.scenario)}
                   </h2>
-                  <span className="mt-1 block font-mono text-[11px] text-ink-faint">
-                    Detected at {formatTimestamp(selectedEvent.timestamp)}
-                  </span>
                 </div>
 
                 {/* 3. Operational Impact: Why It Matters */}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, Video } from 'lucide-react'
-import { getEntities, getFindings, getSamplingPolicy, getScene, getWhatIf, listVideos, streamUrl, uploadVideo } from '../api/videos.js'
+import { Loader2, ShieldCheck, Upload, Video } from 'lucide-react'
+import { getAnalyzeStatus, getEntities, getFindings, getSamplingPolicy, getScene, getWhatIf, listVideos, streamUrl, uploadVideo } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import FindingsPanel from '../components/video/FindingsPanel.jsx'
 import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
@@ -12,8 +12,21 @@ import VideoLibrary from '../components/video/VideoLibrary.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
 import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
-import { getVideoScenarioInfo } from '../lib/scenarios.js'
-import WorkflowNav from '../components/WorkflowNav.jsx'
+import { getScenarioConfig, getVideoScenarioInfo } from '../lib/scenarios.js'
+
+// Conceptual stages of the real backend sweep (perception -> four risk
+// lenses -> planner -> incident persistence, backend/video/ingest.py).
+// The backend only reports processing/complete/failed as a whole — there is
+// no per-stage signal — so this list is a truthful description of what the
+// pipeline is actually doing while we wait, cycled for visual feedback.
+// It never claims a fake completion percentage or a specific stage as done.
+const INGEST_STAGES = [
+  'Reading footage',
+  'Detecting activity',
+  'Understanding behaviour',
+  'Assessing safety',
+  'Building incident timeline',
+]
 
 function formatTime(sec) {
   if (typeof sec !== 'number' || isNaN(sec)) return '00:00.0'
@@ -48,6 +61,8 @@ export default function LiveView() {
   const [selectedCandidateId, setSelectedCandidateId] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
+  const [ingestStatus, setIngestStatus] = useState(null) // status payload for the most recently uploaded video
+  const [ingestStageIdx, setIngestStageIdx] = useState(0)
 
   const videoRef = useRef(null)
   const modelName = pilotModelEnabled ? 'pilot' : 'stock'
@@ -136,6 +151,7 @@ export default function LiveView() {
     if (!file) return
     setUploading(true)
     setUploadError(null)
+    setIngestStatus(null)
     try {
       const uploaded = await uploadVideo(file)
       const refreshed = await listVideos()
@@ -144,12 +160,46 @@ export default function LiveView() {
       setPlaying(false)
       setCurrentTime(0)
       setWhatIfSimulation(null)
+      setIngestStatus({ status: 'processing', video_id: uploaded.id })
     } catch (err) {
       setUploadError(err.message || 'Upload failed')
     } finally {
       setUploading(false)
     }
   }
+
+  // Poll the real backend ingestion sweep (backend/video/ingest.py) kicked
+  // off on upload. No fake percentages — only the genuine processing /
+  // complete / failed status and, once complete, the real scenario/event
+  // counts it found.
+  useEffect(() => {
+    if (!ingestStatus || ingestStatus.status !== 'processing') return undefined
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const s = await getAnalyzeStatus(ingestStatus.video_id)
+        if (!cancelled) setIngestStatus(s)
+      } catch {
+        /* transient — keep polling */
+      }
+    }
+    poll()
+    const interval = setInterval(poll, 2500)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [ingestStatus?.video_id, ingestStatus?.status])
+
+  // Cosmetic cycling through the real pipeline stages while processing —
+  // not tied to a fabricated completion fraction (CLAUDE.md honesty rule).
+  useEffect(() => {
+    if (!ingestStatus || ingestStatus.status !== 'processing') return undefined
+    const t = setInterval(() => {
+      setIngestStageIdx((i) => (i + 1) % INGEST_STAGES.length)
+    }, 1400)
+    return () => clearInterval(t)
+  }, [ingestStatus?.status])
 
   useEffect(() => {
     const el = videoRef.current
@@ -445,14 +495,65 @@ export default function LiveView() {
           />
           <Upload size={15} className="text-ink-soft" />
           <span className="text-caption font-medium text-ink">
-            {uploading ? 'Ingesting footage…' : 'Add camera footage'}
+            {uploading ? 'Uploading…' : 'Add camera footage'}
           </span>
           <span className="text-caption text-ink-faint">
-            Drop in an MP4 — detection &amp; risk analysis run automatically
+            Drop in an MP4 — TRACE runs the full detection &amp; risk sweep automatically
           </span>
         </label>
         {uploadError && (
           <p className="mt-2 border border-danger bg-danger/5 p-2 text-caption text-danger">{uploadError}</p>
+        )}
+
+        {ingestStatus?.status === 'processing' && (
+          <div className="mt-2 border border-line bg-paper p-3">
+            <div className="flex items-center gap-2 text-caption font-bold uppercase tracking-wider text-ink">
+              <Loader2 size={13} className="animate-spin text-accent" />
+              Processing Video
+            </div>
+            <ul className="mt-2 space-y-1">
+              {INGEST_STAGES.map((stage, i) => (
+                <li
+                  key={stage}
+                  className={`flex items-center gap-1.5 text-caption ${
+                    i === ingestStageIdx ? 'font-semibold text-ink' : 'text-ink-faint'
+                  }`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${i === ingestStageIdx ? 'bg-accent' : 'bg-line-strong'}`} />
+                  {stage}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {ingestStatus?.status === 'complete' && (
+          <div className="mt-2 border border-ok/40 bg-ok/5 p-3">
+            <div className="flex items-center gap-2 text-caption font-bold uppercase tracking-wider text-ok">
+              <ShieldCheck size={13} />
+              Analysis Complete
+            </div>
+            <p className="mt-1 text-caption text-ink">
+              {ingestStatus.events_found > 0
+                ? `${ingestStatus.events_found} safety event${ingestStatus.events_found === 1 ? '' : 's'} detected across ${ingestStatus.scenarios?.length ?? 0} scenario${ingestStatus.scenarios?.length === 1 ? '' : 's'}.`
+                : (ingestStatus.message || 'No supported safety scenario detected in this video.')}
+            </p>
+            {ingestStatus.scenarios?.length > 0 && (
+              <ul className="mt-1.5 space-y-0.5">
+                {ingestStatus.scenarios.slice(0, 6).map((s) => (
+                  <li key={s.scenario} className="text-caption text-ink-soft">
+                    · {getScenarioConfig(s.scenario).title} ({s.band}, {s.count})
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {ingestStatus?.status === 'failed' && (
+          <div className="mt-2 border border-danger bg-danger/5 p-3 text-caption text-danger">
+            Analysis failed: {ingestStatus.error || 'unknown error'}
+          </div>
         )}
       </div>
     </div>

@@ -7,14 +7,12 @@ import {
   ArrowRight,
   Eye,
   RotateCcw,
-  CheckCircle2,
   AlertTriangle,
   Info,
   Clock,
   Video,
   ListFilter,
   Bot,
-  User,
   ChevronDown,
 } from 'lucide-react'
 import { askAssistant, getAssistantSuggestions } from '../api/assistant.js'
@@ -31,7 +29,7 @@ const CATEGORY_PROMPTS = [
 ]
 
 export default function AiAssistant() {
-  const { navigateTo } = useLiveViewContext()
+  const { navigateTo, liveState } = useLiveViewContext()
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -59,7 +57,7 @@ export default function AiAssistant() {
     setMessages((m) => [...m, { role: 'user', text: q, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }])
     setLoading(true)
     try {
-      const res = await askAssistant(q)
+      const res = await askAssistant(q, liveState?.selectedId ?? null)
       setMessages((m) => [
         ...m,
         {
@@ -264,6 +262,38 @@ function AssistantBubble({ msg, onFollowUp, navigateTo }) {
   const metrics = msg.metrics || []
   const followups = msg.suggested_followups?.length ? msg.suggested_followups : (msg.suggestions || [])
 
+  // Plain conversation (a "hi", a "thanks") gets a plain reply — no audit
+  // footer, no metrics grid, nothing that makes small talk look like a
+  // database report.
+  if (msg.intent === 'greetings' || msg.intent === 'small_talk') {
+    return (
+      <div className="flex flex-col gap-2 max-w-[75%]">
+        <div className="flex items-start gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-paper">
+            <Bot size={13} />
+          </span>
+          <div className="rounded-2xl rounded-tl-sm border border-line bg-paper px-3.5 py-2 text-small leading-relaxed text-ink shadow-xs">
+            {msg.answer}
+          </div>
+        </div>
+        {followups.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 pl-8">
+            {followups.map((f, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => onFollowUp(f)}
+                className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-caption text-ink hover:border-ink hover:bg-paper transition-all cursor-pointer"
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-3 max-w-[90%]">
       {/* Main Response Box */}
@@ -344,7 +374,7 @@ function AssistantBubble({ msg, onFollowUp, navigateTo }) {
                       <option value="all">View all ({cards.length} records)</option>
                       {cards.map((c) => (
                         <option key={c.event_id} value={String(c.event_id)}>
-                          #{c.event_id} · [{c.severity}] {c.scenario_title}
+                          #{c.event_id} · [{c.band}] {c.title}
                         </option>
                       ))}
                     </select>
@@ -441,7 +471,7 @@ function EventCard({ card, navigateTo }) {
     medium: 'bg-amber-500/10 text-amber-600 border-amber-500/30',
     low: 'bg-ok/10 text-ok border-ok/30',
   }
-  const sevStyle = severityColors[card.severity?.toLowerCase()] || severityColors.medium
+  const sevStyle = severityColors[card.band?.toLowerCase()] || severityColors.medium
 
   return (
     <div className="border border-line bg-surface p-3 transition-colors hover:border-line-strong">
@@ -449,14 +479,14 @@ function EventCard({ card, navigateTo }) {
         <div className="flex items-center gap-2">
           <span className="font-mono text-caption font-bold text-ink">#{card.event_id}</span>
           <span className={`border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${sevStyle}`}>
-            {card.severity}
+            {card.band}
           </span>
-          <span className="text-caption font-semibold text-ink">{card.scenario_title}</span>
+          <span className="text-caption font-semibold text-ink">{card.title}</span>
         </div>
         <div className="flex items-center gap-2 text-caption text-ink-faint">
           <span className="inline-flex items-center gap-1">
             <Video size={11} />
-            {card.camera_name || card.camera_id}
+            {card.camera_name || card.video_id}
           </span>
           <span>·</span>
           <span className="inline-flex items-center gap-1">
@@ -485,7 +515,7 @@ function EventCard({ card, navigateTo }) {
           onClick={() =>
             navigateTo('Incident Replay', {
               eventId: card.event_id,
-              videoId: card.camera_id,
+              videoId: card.video_id,
               timestamp: card.timestamp,
             })
           }
@@ -498,7 +528,7 @@ function EventCard({ card, navigateTo }) {
           type="button"
           onClick={() =>
             navigateTo('Live View', {
-              videoId: card.camera_id,
+              videoId: card.video_id,
               timestamp: card.timestamp,
             })
           }
@@ -512,125 +542,59 @@ function EventCard({ card, navigateTo }) {
   )
 }
 
+// Labels the backend's answer templates sometimes prefix a sentence with.
+// Rendered as a natural inline lead-in ("Recommended: ...") rather than a
+// separate boxed card per label — a person relaying this over radio
+// wouldn't put a different colored box around every clause.
+const INLINE_LABELS = [
+  [/^(Supervisor tip|Recommended supervisor focus|Safety Protocol|Safety Rule|Shift Safety Summary|Shift Safety Handover Briefing|Executive Summary|Safety Briefing|High Risk Summary|Stability Formula & Safety Checks|Active Interventions|Main issue today|Primary operational hazard|Primary Hazard|Risk Description):?\s*/i, null],
+]
+
+// The one line type that genuinely deserves a visual accent: something the
+// supervisor needs to physically go and do right now.
+const ACTION_RE = /^(Action required|Immediate action):?\s*(.*)$/i
+
 function renderFormattedAnswer(text) {
   if (!text) return null
 
-  // If the response is a single block of text containing embedded section markers,
-  // split them into separate lines so each section can be highlighted in its own card.
-  const normalized = text
-    .replace(
-      /(Supervisor tip:|Supervisor Tip:|Recommended supervisor focus:|Recommended Supervisor Focus:|Action required:|Action Required:|Immediate action:|Immediate Action:)/gi,
-      '\n$1'
-    )
-    .replace(
-      /(Shift Safety Summary:|Shift Safety Handover Briefing:|Executive Summary:|Safety Briefing:)/gi,
-      '\n$1'
-    )
-    .replace(
-      /(Main issue today:|Primary operational hazard:|Primary Hazard:)/gi,
-      '\n$1'
-    )
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+  // A short answer (the common case) should just read as one paragraph, not
+  // a stack of single-line blocks — only split into a list when the answer
+  // actually contains numbered/bulleted items.
+  const looksLikeList = lines.some((l) => /^(\d+[.)]|[•\-*])\s/.test(l))
 
-  const lines = normalized.split('\n').map((l) => l.trim()).filter(Boolean)
+  if (!looksLikeList) {
+    const actionLine = lines.find((l) => ACTION_RE.test(l))
+    const prose = lines.filter((l) => l !== actionLine).map((l) => l.replace(INLINE_LABELS[0][0], ''))
+    return (
+      <div className="space-y-2.5">
+        <p className="text-small leading-relaxed text-ink">{formatInline(prose.join(' '))}</p>
+        {actionLine && (
+          <div className="flex items-start gap-2 border-l-2 border-signal pl-2.5 py-0.5">
+            <span className="text-small font-semibold text-ink leading-relaxed">
+              {formatInline(actionLine.replace(ACTION_RE, '$2'))}
+            </span>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-1.5">
       {lines.map((line, idx) => {
-        // 1. Supervisor Action Tips / Recommendations
-        const tipMatch = line.match(
-          /^(Supervisor tip|Supervisor Tip|Recommended supervisor focus|Recommended Supervisor Focus|Action required|Action Required|Immediate action|Immediate Action):?\s*(.*)$/i
-        )
-        if (tipMatch) {
-          const isAction = /action/i.test(tipMatch[1])
+        const actionMatch = line.match(ACTION_RE)
+        if (actionMatch) {
           return (
-            <div
-              key={idx}
-              className={`flex items-start gap-2.5 rounded-xs border p-3 text-ink shadow-xs ${
-                isAction ? 'border-amber-400/80 bg-amber-500/15' : 'border-emerald-500/50 bg-emerald-500/10'
-              }`}
-            >
-              <ShieldAlert size={16} className={`mt-0.5 shrink-0 ${isAction ? 'text-amber-700' : 'text-emerald-700'}`} />
-              <div className="flex-1">
-                <div className={`text-[10px] font-bold uppercase tracking-wider ${isAction ? 'text-amber-900' : 'text-emerald-900'}`}>
-                  {isAction ? 'Immediate Action Required' : 'Supervisor Action Tip & Recommendation'}
-                </div>
-                <div className="mt-0.5 text-small font-medium text-ink leading-relaxed">
-                  {formatInline(tipMatch[2])}
-                </div>
-              </div>
+            <div key={idx} className="flex items-start gap-2 border-l-2 border-signal pl-2.5 py-0.5">
+              <span className="text-small font-semibold text-ink leading-relaxed">
+                {formatInline(actionMatch[2])}
+              </span>
             </div>
           )
         }
 
-        // 2. Safety Protocol Card
-        const protocolMatch = line.match(/^(Safety Protocol|Safety Rule):?\s*(.*)$/i)
-        if (protocolMatch) {
-          return (
-            <div key={idx} className="rounded-xs border border-sky-400/60 bg-sky-500/10 p-3 shadow-xs">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-sky-800 mb-0.5">
-                Warehouse Safety Standard & Protocol
-              </div>
-              <div className="text-small font-semibold text-ink">
-                {formatInline(protocolMatch[2])}
-              </div>
-            </div>
-          )
-        }
-
-        // 3. Shift Safety Summary / Executive Overview / High Risk Summary / Stability Formula
-        const summaryMatch = line.match(
-          /^(Shift Safety Summary|Shift Safety Handover Briefing|Executive Summary|Safety Briefing|High Risk Summary|Stability Formula & Safety Checks|Active Interventions):?\s*(.*)$/i
-        )
-        if (summaryMatch) {
-          const title = summaryMatch[1]
-          const isHighRisk = /high risk|active intervention/i.test(title)
-          return (
-            <div
-              key={idx}
-              className={`rounded-xs border p-3 shadow-xs ${
-                isHighRisk ? 'border-danger/30 bg-danger/5' : 'border-line bg-surface'
-              }`}
-            >
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-soft mb-1">
-                {isHighRisk ? (
-                  <AlertTriangle size={13} className="text-danger" />
-                ) : (
-                  <CheckCircle2 size={13} className="text-ok" />
-                )}
-                <span>{title}</span>
-              </div>
-              {summaryMatch[2] && (
-                <div className="text-small text-ink leading-relaxed font-medium">
-                  {formatInline(summaryMatch[2])}
-                </div>
-              )}
-            </div>
-          )
-        }
-
-        // 4. Primary Hazard / Main Issue
-        const hazardMatch = line.match(
-          /^(Main issue today|Primary operational hazard|Primary Hazard|Risk Description):?\s*(.*)$/i
-        )
-        if (hazardMatch) {
-          return (
-            <div
-              key={idx}
-              className="flex items-start gap-2 rounded-xs border border-amber-300/40 bg-amber-500/5 p-2.5 text-small"
-            >
-              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-600" />
-              <div>
-                <span className="font-semibold text-amber-800 uppercase tracking-wider text-[10px]">
-                  {hazardMatch[1]}:{' '}
-                </span>
-                <span className="text-ink font-medium">{formatInline(hazardMatch[2])}</span>
-              </div>
-            </div>
-          )
-        }
-
-        // 5. Numbered steps (e.g. "1. Check dock boundary...")
-        const numMatch = line.match(/^(\d+)[\.\)]\s*(.*)$/)
+        const numMatch = line.match(/^(\d+)[.)]\s*(.*)$/)
         if (numMatch) {
           return (
             <div key={idx} className="flex items-start gap-2.5 pl-1 py-0.5">
@@ -642,7 +606,6 @@ function renderFormattedAnswer(text) {
           )
         }
 
-        // 6. Bullet points
         if (line.startsWith('•') || line.startsWith('- ') || line.startsWith('* ')) {
           const content = line.replace(/^[•\-*]\s*/, '')
           return (
@@ -653,10 +616,9 @@ function renderFormattedAnswer(text) {
           )
         }
 
-        // 7. Regular narrative paragraph
         return (
           <p key={idx} className="text-small leading-relaxed text-ink">
-            {formatInline(line)}
+            {formatInline(line.replace(INLINE_LABELS[0][0], ''))}
           </p>
         )
       })}

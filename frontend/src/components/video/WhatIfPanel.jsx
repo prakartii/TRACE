@@ -172,7 +172,7 @@ export default function WhatIfPanel({
           <div className="flex items-center justify-between border-b border-danger/20 pb-2">
             <span className="text-small font-medium text-danger">current state: high risk</span>
             <span className="font-mono text-small font-semibold text-danger">
-              {current?.stability_score ? current.stability_score.toFixed(0) : 40} / 100 stability
+              {current?.stability_score != null ? `${current.stability_score.toFixed(0)} / 100 stability` : 'stability score unavailable'}
             </span>
           </div>
 

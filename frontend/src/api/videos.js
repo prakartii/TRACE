@@ -8,9 +8,10 @@ export async function listVideos(options = {}) {
   return videos.filter((v) => !v.duplicate_of)
 }
 
-// Ingest a new MP4 into the monitored set. Detection, tracking and risk
-// analysis run automatically the moment the returned source is selected —
-// no separate processing step is required.
+// Ingest a new MP4 into the monitored set. A full detection -> risk ->
+// incident sweep is kicked off in the background on the server the moment
+// this returns (backend/video/ingest.py) — poll getAnalyzeStatus(id) for
+// progress rather than assuming events exist immediately.
 export async function uploadVideo(file) {
   const form = new FormData()
   form.append('file', file)
@@ -26,6 +27,24 @@ export async function uploadVideo(file) {
     } catch (_) {}
     throw new Error(msg)
   }
+  return res.json()
+}
+
+// Current/last status of the background ingestion sweep for a video:
+// { status: 'not_started' | 'processing' | 'complete' | 'failed', ... }.
+// Never fabricated — 'not_started' means this video has never been analyzed.
+export async function getAnalyzeStatus(id) {
+  const res = await fetch(`${API_BASE_URL}/api/videos/${id}/analyze/status`)
+  if (!res.ok) throw new Error(`Failed to load analysis status for ${id} (HTTP ${res.status})`)
+  return res.json()
+}
+
+// (Re-)triggers the full detection -> risk -> incident sweep for a video.
+// Idempotent — safe to call again; re-analysis updates existing incidents
+// rather than duplicating them.
+export async function analyzeVideo(id) {
+  const res = await fetch(`${API_BASE_URL}/api/videos/${id}/analyze`, { method: 'POST' })
+  if (!res.ok) throw new Error(`Failed to start analysis for ${id} (HTTP ${res.status})`)
   return res.json()
 }
 

@@ -527,9 +527,27 @@ def recommendation_for(conn: sqlite3.Connection, event_id: Optional[int] = None,
             suggested_followups=[f"Explain event #{eid}", "Give me a shift safety briefing"],
         )
 
-    summary = f"For event #{eid} TRACE recommended: {action}."
+    def _clean(s: str) -> str:
+        return (s or "").strip().rstrip(".").strip()
+
+    action_clean = _clean(action)
+    summary = f"For event #{eid}, TRACE recommends: {action_clean}."
     if steps:
-        summary += " Steps: " + "; ".join(steps[:4]) + "."
+        # Steps often repeat the headline action as their first entry — drop
+        # that duplicate so the summary doesn't say the same thing twice.
+        step_list = [_clean(s) for s in steps[:4] if s]
+        if step_list and step_list[0].lower() == action_clean.lower():
+            step_list = step_list[1:]
+        # Lowercase the first letter of each step after the first when
+        # joining mid-sentence with "then" — they're clauses, not new
+        # sentences, so a stray capital reads like a typo.
+        def _lower_first(s: str) -> str:
+            return (s[0].lower() + s[1:]) if s else s
+        joined = [step_list[0]] + [_lower_first(s) for s in step_list[1:]] if step_list else []
+        if len(joined) == 1:
+            summary += f" Next: {joined[0]}."
+        elif joined:
+            summary += " Then: " + ", then ".join(joined) + "."
 
     cards = list(ev.cards)
     for c in cards:
@@ -559,42 +577,44 @@ def recommendation_for(conn: sqlite3.Connection, event_id: Optional[int] = None,
 
 
 def greetings(conn: sqlite3.Connection) -> QueryResult:
-    total = conn.execute(f"SELECT COUNT(*) FROM events WHERE {EVIDENCE_BACKED_SQL}").fetchone()[0]
+    """A real "hi" deserves a real hello, not a statistics dump. No cards,
+    no metrics — just a short, human reply and a couple of things the
+    supervisor could ask next, the same way a colleague would open a chat."""
     high = conn.execute(f"SELECT COUNT(*) FROM events WHERE band IN ('High','Critical') AND {EVIDENCE_BACKED_SQL}").fetchone()[0]
-    prevented = conn.execute("SELECT COUNT(*) FROM outcome_measurements WHERE classification = 'prevented'").fetchone()[0]
-    near_misses = conn.execute("SELECT COUNT(*) FROM outcome_measurements WHERE classification = 'near_miss'").fetchone()[0]
-    
-    summary = (
-        "Hello! I am TRACE's Grounded AI Safety Assistant. I monitor warehouse operations across all calibrated camera feeds, "
-        "track physical stability in real time, enforce SKU conformance, and verify damage prevention before risky moves complete. "
-        "How can I assist you with today's shift?"
-    )
-    metrics = [
-        {"label": "Verified Findings", "value": total},
-        {"label": "High / Critical", "value": high},
-        {"label": "Prevented Incidents", "value": prevented},
-        {"label": "Near Misses", "value": near_misses},
-    ]
-    recent_high = _rows(
-        conn,
-        f"SELECT * FROM events WHERE band IN ('High','Critical') AND {EVIDENCE_BACKED_SQL} ORDER BY event_id DESC LIMIT 3"
-    )
-    cards = [_event_card(r) for r in recent_high]
+
+    if high > 0:
+        summary = (
+            f"Hi! There {'is' if high == 1 else 'are'} {high} high-risk event{'s' if high != 1 else ''} "
+            "on record right now. What would you like to know?"
+        )
+    else:
+        summary = "Hi! Nothing high-risk on record at the moment. What can I help you with?"
+
     followups = [
+        "What are the highest-risk events?",
         "Give me a shift safety briefing",
-        "Show me the High-risk events",
-        "How many events were prevented?",
-        "Explain how the Safe Action Planner works",
-        "What are the rules for heavy box handling?",
+        "What did TRACE find in this video?",
     ]
     return QueryResult(
         kind="greetings",
         summary=summary,
-        data={"total_events": total, "high_critical": high, "prevented": prevented},
-        source="TRACE Operational Intelligence",
-        cards=cards,
-        metrics=metrics,
+        data={},
+        source="conversation",
         suggested_followups=followups,
+    )
+
+
+def small_talk(conn: sqlite3.Connection, kind: str = "thanks") -> QueryResult:
+    """Thanks / goodbye — a plain acknowledgement, not a retrieval result."""
+    replies = {
+        "thanks": "You're welcome - let me know if anything else comes up.",
+        "bye": "Take care. I'll be here if you need anything.",
+    }
+    return QueryResult(
+        kind="small_talk",
+        summary=replies.get(kind, replies["thanks"]),
+        data={},
+        source="conversation",
     )
 
 
@@ -710,16 +730,31 @@ def active_interventions(conn: sqlite3.Connection) -> QueryResult:
     )
 
 
-def camera_events(conn: sqlite3.Connection, query: str = "") -> QueryResult:
+# Phrases that refer to whatever video the caller currently has open, not a
+# named camera/bay. Kept separate from the vague-heuristic terms below so a
+# genuinely deictic question never gets hijacked by a loose keyword match
+# against an unrelated canonical demo camera.
+_DEICTIC_VIDEO_TERMS = (
+    "this video", "this footage", "in this video", "find in this video",
+    "what did trace find", "current video", "current footage", "uploaded video",
+    "the video i", "the footage i",
+)
+
+
+def camera_events(
+    conn: sqlite3.Connection, query: str = "", context_video_id: Optional[str] = None
+) -> QueryResult:
     q_lower = (query or "").lower()
     matched_vid = None
     cam_name = "Selected Camera Feed"
+    is_deictic = any(term in q_lower for term in _DEICTIC_VIDEO_TERMS)
+
     for vid, name in labels.CAMERA_LABELS.items():
         if vid in q_lower or name.lower() in q_lower or (name.split("-")[0].strip().lower() in q_lower):
             matched_vid = vid
             cam_name = name
             break
-    if not matched_vid:
+    if not matched_vid and not is_deictic:
         for vid, name in labels.CAMERA_LABELS.items():
             if any(term in q_lower for term in ("dock", "cupboard", "camera 1")) and "dock" in name.lower():
                 matched_vid = vid; cam_name = name; break
@@ -735,6 +770,17 @@ def camera_events(conn: sqlite3.Connection, query: str = "") -> QueryResult:
                 matched_vid = vid; cam_name = name; break
             elif any(term in q_lower for term in ("furniture", "seating", "strap", "camera 7")) and "furniture" in name.lower():
                 matched_vid = vid; cam_name = name; break
+    # Nothing explicitly named in the question: ground against the video the
+    # caller actually has open (works for newly uploaded footage, which has
+    # no entry in the fixed canonical camera-name table) rather than
+    # defaulting to a fixed demo camera unrelated to what was asked.
+    if not matched_vid and context_video_id:
+        matched_vid = context_video_id
+        cam_name = (
+            labels.CAMERA_LABELS[context_video_id]
+            if context_video_id in labels.CAMERA_LABELS
+            else _source_label(context_video_id)
+        )
     if not matched_vid:
         matched_vid = "93e4b1963c6fcd97"
         cam_name = labels.CAMERA_LABELS[matched_vid]

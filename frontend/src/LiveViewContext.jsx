@@ -48,8 +48,11 @@ export function LiveViewProvider({ children }) {
   const SCREEN_ALIASES = {
     'Safe Action Planner': 'Action Center',
     'Event Feed': 'Incidents',
+    'Active Hazards': 'Incidents',
     'What-If Replay': 'What-If Simulation',
     'What-If': 'What-If Simulation',
+    'Safety Rules & Catalog': 'Scenario Coverage',
+    'Operational Intelligence': 'Scenario Coverage',
   }
 
   const navigateTo = (screen, target = null) => {

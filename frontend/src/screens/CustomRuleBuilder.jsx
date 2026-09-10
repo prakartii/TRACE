@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { ArrowRight, ListChecks, Plus, Trash2 } from 'lucide-react'
 import {
   createRule,
   deleteRule,
@@ -49,7 +49,7 @@ function StatusBadge({ enabled }) {
         enabled ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line bg-paper text-ink-faint'
       }`}
     >
-      {enabled ? 'enabled' : 'disabled'}
+      {enabled ? 'Active' : 'Paused'}
     </span>
   )
 }
@@ -195,30 +195,20 @@ function CompoundConditionEditor({ condition, onChange, schema, disabled }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <span className="text-caption text-ink-soft">condition type</span>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={isCompound ? switchToSimple : switchToCompound}
-          className="border border-line px-2 py-0.5 text-caption text-ink-soft hover:bg-paper disabled:opacity-50"
-        >
-          {isCompound ? 'switch to simple' : 'switch to compound (and/or)'}
-        </button>
-      </div>
+      {!isCompound && <SimpleConditionRow condition={condition} onChange={onChange} schema={schema} disabled={disabled} />}
 
       {isCompound ? (
         <div className="flex flex-col gap-2 border-l-2 border-steel/40 pl-3">
           <div className="flex items-center gap-2">
-            <span className="text-caption text-ink-soft">combine with</span>
+            <span className="text-caption text-ink-soft">Match</span>
             <select
               disabled={disabled}
               value={condition.logic}
               onChange={(e) => onChange({ ...condition, logic: e.target.value })}
               className="border border-line bg-surface p-1 font-medium text-caption text-ink focus:border-ink"
             >
-              <option value="AND">AND (all must match)</option>
-              <option value="OR">OR (any must match)</option>
+              <option value="AND">all of these</option>
+              <option value="OR">any of these</option>
             </select>
           </div>
 
@@ -227,19 +217,31 @@ function CompoundConditionEditor({ condition, onChange, schema, disabled }) {
               <span className="w-8 text-right text-caption text-ink-faint">{idx + 1}.</span>
               <SimpleConditionRow condition={sub} onChange={(c) => updateSubCondition(idx, c)} schema={schema} disabled={disabled} />
               {condition.conditions.length > 2 && (
-                <button type="button" disabled={disabled} onClick={() => removeSubCondition(idx)} className="px-1 text-caption text-ink-faint hover:text-danger" title="Remove this condition">
+                <button type="button" disabled={disabled} onClick={() => removeSubCondition(idx)} className="px-1 text-caption text-ink-faint hover:text-danger cursor-pointer" title="Remove this condition">
                   <Trash2 size={13} />
                 </button>
               )}
             </div>
           ))}
 
-          <button type="button" disabled={disabled} onClick={addSubCondition} className="self-start border border-line px-2 py-0.5 text-caption text-ink-soft hover:bg-paper disabled:opacity-50">
-            + add condition
-          </button>
+          <div className="flex items-center gap-3">
+            <button type="button" disabled={disabled} onClick={addSubCondition} className="border border-line px-2 py-0.5 text-caption text-ink-soft hover:bg-paper disabled:opacity-50 cursor-pointer">
+              + Add another condition
+            </button>
+            <button type="button" disabled={disabled} onClick={switchToSimple} className="text-caption text-ink-faint hover:text-ink disabled:opacity-50 cursor-pointer">
+              Use a single condition instead
+            </button>
+          </div>
         </div>
       ) : (
-        <SimpleConditionRow condition={condition} onChange={onChange} schema={schema} disabled={disabled} />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={switchToCompound}
+          className="self-start text-caption text-ink-faint hover:text-ink disabled:opacity-50 cursor-pointer"
+        >
+          + Match more than one condition
+        </button>
       )}
     </div>
   )
@@ -279,31 +281,28 @@ function RuleForm({ initialRule, schema, onSave, onCancel, saving }) {
       {msg && <Alert type={msg.type} text={msg.text} />}
 
       <div>
-        <label className={labelCls}>rule name <span className="text-danger">*</span></label>
-        <input type="text" required maxLength={120} placeholder="e.g. high-risk behaviour escalation" value={form.name} onChange={(e) => update('name', e.target.value)} className={inputCls} />
+        <label className={labelCls}>Rule name <span className="text-danger">*</span></label>
+        <input type="text" required maxLength={120} placeholder="e.g. Escalate repeated dock-edge exposure" value={form.name} onChange={(e) => update('name', e.target.value)} className={inputCls} />
       </div>
 
       <div>
-        <label className={labelCls}>description</label>
-        <textarea rows={2} maxLength={1000} placeholder="Describe the operational purpose of this rule" value={form.description} onChange={(e) => update('description', e.target.value)} className={`${inputCls} resize-none`} />
+        <label className={labelCls}>What is this rule for?</label>
+        <textarea rows={2} maxLength={1000} placeholder="A short note for other supervisors on why this rule exists" value={form.description} onChange={(e) => update('description', e.target.value)} className={`${inputCls} resize-none`} />
       </div>
 
       <div className="flex flex-col gap-3 border border-steel/40 bg-steel/5 p-3">
-        <div className="text-label font-medium text-steel">when</div>
-        <div>
-          <label className={`${labelCls} mb-2`}>condition</label>
-          <CompoundConditionEditor condition={form.condition} onChange={(c) => update('condition', c)} schema={schema} disabled={saving} />
-        </div>
+        <div className="text-label font-bold uppercase tracking-wider text-steel">If a detected event matches…</div>
+        <CompoundConditionEditor condition={form.condition} onChange={(c) => update('condition', c)} schema={schema} disabled={saving} />
       </div>
 
       <div className="flex flex-col gap-3 border border-ok/40 bg-ok/5 p-3">
-        <div className="text-label font-medium text-ok">then</div>
+        <div className="text-label font-bold uppercase tracking-wider text-ok">Then…</div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelCls}>target lens</label>
+            <label className={labelCls}>Applies to</label>
             <select value={form.lens || ''} onChange={(e) => update('lens', e.target.value || null)} className={inputCls}>
-              <option value="">any / not specified</option>
+              <option value="">Any risk lens</option>
               {Object.entries(LENS_LABELS).map(([val, label]) => (
                 <option key={val} value={val}>
                   {label}
@@ -313,9 +312,9 @@ function RuleForm({ initialRule, schema, onSave, onCancel, saving }) {
           </div>
 
           <div>
-            <label className={labelCls}>escalate to band</label>
+            <label className={labelCls}>Set risk level to</label>
             <select value={form.severity_band || ''} onChange={(e) => update('severity_band', e.target.value || null)} className={inputCls}>
-              <option value="">inherit from event</option>
+              <option value="">Keep the detected level</option>
               {['Low', 'Medium', 'High', 'Critical'].map((b) => (
                 <option key={b} value={b}>
                   {b}
@@ -326,23 +325,23 @@ function RuleForm({ initialRule, schema, onSave, onCancel, saving }) {
         </div>
 
         <div>
-          <label className={labelCls}>recommended action</label>
-          <textarea rows={2} maxLength={500} placeholder="e.g. Halt operation. Supervisor review required before continuing." value={form.action_text || ''} onChange={(e) => update('action_text', e.target.value)} className={`${inputCls} resize-none`} />
+          <label className={labelCls}>Tell the supervisor to</label>
+          <textarea rows={2} maxLength={500} placeholder="e.g. Halt the operation. Supervisor review required before continuing." value={form.action_text || ''} onChange={(e) => update('action_text', e.target.value)} className={`${inputCls} resize-none`} />
         </div>
       </div>
 
       <div className="flex items-center gap-2">
         <input type="checkbox" id="rule-enabled" checked={form.enabled} onChange={(e) => update('enabled', e.target.checked)} className="accent-ink" />
-        <label htmlFor="rule-enabled" className="text-caption text-ink-soft">rule enabled</label>
-        <span className="text-caption text-ink-faint">(disabled rules are saved but not applied)</span>
+        <label htmlFor="rule-enabled" className="text-caption text-ink-soft">Rule is active</label>
+        <span className="text-caption text-ink-faint">(paused rules are saved but don't affect live scoring)</span>
       </div>
 
       <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="border border-ink bg-ink px-4 py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft disabled:opacity-60">
-          {saving ? 'saving…' : 'save rule'}
+        <button type="submit" disabled={saving} className="border border-ink bg-ink px-4 py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft disabled:opacity-60 cursor-pointer">
+          {saving ? 'Saving…' : 'Save Rule'}
         </button>
-        <button type="button" onClick={onCancel} disabled={saving} className="border border-line px-4 py-1.5 text-small text-ink-soft transition-colors hover:bg-paper">
-          cancel
+        <button type="button" onClick={onCancel} disabled={saving} className="border border-line px-4 py-1.5 text-small text-ink-soft transition-colors hover:bg-paper cursor-pointer">
+          Cancel
         </button>
       </div>
     </form>
@@ -356,18 +355,18 @@ function EvaluationPanel({ result, onClose }) {
   return (
     <div className="flex flex-col gap-3 border border-steel/40 bg-steel/5 p-4">
       <div className="flex items-center justify-between">
-        <div className="text-small font-medium text-steel">evaluation result</div>
-        <button onClick={onClose} className="text-caption text-ink-faint hover:text-ink">close</button>
+        <div className="text-small font-bold uppercase tracking-wider text-steel">Test Result</div>
+        <button onClick={onClose} className="text-caption text-ink-faint hover:text-ink cursor-pointer">close</button>
       </div>
 
       <div className="flex gap-6">
         <div>
           <div className="text-xl font-semibold tabular-nums text-steel">{matched_count}</div>
-          <div className="text-caption text-ink-soft">matched events</div>
+          <div className="text-caption text-ink-soft">events matched</div>
         </div>
         <div>
           <div className="text-xl font-semibold tabular-nums text-ink">{total_evaluated}</div>
-          <div className="text-caption text-ink-soft">total evaluated</div>
+          <div className="text-caption text-ink-soft">events checked</div>
         </div>
         <div>
           <div className="text-xl font-semibold tabular-nums text-ink">
@@ -384,7 +383,7 @@ function EvaluationPanel({ result, onClose }) {
 
       {sample_matches && sample_matches.length > 0 && (
         <div>
-          <div className="mb-1 text-caption font-medium text-ink-soft">sample matching events (up to 10)</div>
+          <div className="mb-1 text-caption font-medium text-ink-soft">Sample matches (up to 10)</div>
           <div className="overflow-x-auto">
             <table className="w-full border border-line text-left text-caption">
               <thead>
@@ -446,36 +445,39 @@ function RuleCard({ rule, onEdit, onDelete, onEvaluate, evaluating }) {
       </div>
 
       <div className="border border-steel/40 bg-steel/5 p-2">
-        <div className="mb-1 text-label font-medium text-steel">when</div>
+        <div className="mb-1 text-label font-bold uppercase tracking-wider text-steel">If</div>
         <ConditionSummary condition={rule.condition} />
       </div>
 
       {rule.action_text && (
         <div className="border border-ok/40 bg-ok/5 p-2">
-          <div className="mb-1 text-label font-medium text-ok">then</div>
+          <div className="mb-1 flex items-center gap-1 text-label font-bold uppercase tracking-wider text-ok">
+            <ArrowRight size={11} />
+            Then
+          </div>
           <p className="text-caption text-ink-soft">{rule.action_text}</p>
         </div>
       )}
 
       <div className="flex items-center gap-2 border-t border-line pt-2">
-        <button onClick={() => onEvaluate(rule.rule_id)} disabled={evaluating} className="border border-steel/40 px-2.5 py-1 text-caption font-medium text-steel transition-colors hover:bg-steel/10 disabled:opacity-50">
-          {evaluating ? 'testing…' : 'test rule'}
+        <button onClick={() => onEvaluate(rule.rule_id)} disabled={evaluating} className="border border-steel/40 px-2.5 py-1 text-caption font-medium text-steel transition-colors hover:bg-steel/10 disabled:opacity-50 cursor-pointer">
+          {evaluating ? 'Testing…' : 'Test Against Real Events'}
         </button>
-        <button onClick={() => onEdit(rule)} className="border border-line px-2.5 py-1 text-caption text-ink-soft transition-colors hover:bg-paper">
-          edit
+        <button onClick={() => onEdit(rule)} className="border border-line px-2.5 py-1 text-caption text-ink-soft transition-colors hover:bg-paper cursor-pointer">
+          Edit
         </button>
         {confirmDelete ? (
           <div className="ml-auto inline-flex items-center gap-1.5">
-            <button onClick={() => onDelete(rule.rule_id)} className="bg-danger px-1.5 py-0.5 text-label font-medium text-paper hover:opacity-90">
-              confirm delete
+            <button onClick={() => onDelete(rule.rule_id)} className="bg-danger px-1.5 py-0.5 text-label font-medium text-paper hover:opacity-90 cursor-pointer">
+              Confirm Delete
             </button>
-            <button onClick={() => setConfirmDelete(false)} className="bg-paper px-1.5 py-0.5 text-label text-ink-soft hover:bg-line">
-              cancel
+            <button onClick={() => setConfirmDelete(false)} className="bg-paper px-1.5 py-0.5 text-label text-ink-soft hover:bg-line cursor-pointer">
+              Cancel
             </button>
           </div>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} className="ml-auto text-caption text-ink-faint transition-colors hover:text-danger">
-            delete
+          <button onClick={() => setConfirmDelete(true)} className="ml-auto text-caption text-ink-faint transition-colors hover:text-danger cursor-pointer">
+            Delete
           </button>
         )}
       </div>
@@ -585,22 +587,27 @@ export default function CustomRuleBuilder() {
   }
 
   if (loading) {
-    return <div className="p-4 text-small text-ink-soft">loading custom rules…</div>
+    return <div className="p-4 text-small text-ink-soft">Loading custom rules…</div>
   }
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-title font-semibold text-ink">custom rule builder</h2>
-          <p className="mt-1 max-w-lg text-caption text-ink-soft">
-            Define operational safety rules using structured conditions grounded in real TRACE event
-            data. Rules are evaluated deterministically — no code execution.
-          </p>
+        <div className="flex items-start gap-2.5">
+          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-ink text-paper">
+            <ListChecks size={14} />
+          </span>
+          <div>
+            <h2 className="text-title font-bold text-ink">Custom Safety Rules</h2>
+            <p className="mt-1 max-w-lg text-caption text-ink-soft">
+              Site-specific rules that apply on top of TRACE's built-in checks — test them against real
+              detected events before saving, and they take effect immediately, no restart needed.
+            </p>
+          </div>
         </div>
-        <button onClick={openCreateForm} className="inline-flex shrink-0 items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft">
+        <button onClick={openCreateForm} className="inline-flex shrink-0 items-center gap-1.5 border border-ink bg-ink px-3 py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft cursor-pointer">
           <Plus size={14} />
-          new rule
+          New Rule
         </button>
       </div>
 
@@ -609,8 +616,8 @@ export default function CustomRuleBuilder() {
 
       {showForm && (
         <div className="border border-line bg-surface p-4">
-          <h3 className="mb-4 text-small font-semibold text-ink">
-            {editingRule ? `edit rule: ${editingRule.name}` : 'create new rule'}
+          <h3 className="mb-4 text-small font-bold text-ink">
+            {editingRule ? `Edit Rule: ${editingRule.name}` : 'Create a New Rule'}
           </h3>
           <RuleForm
             initialRule={
@@ -637,8 +644,8 @@ export default function CustomRuleBuilder() {
 
       {rules.length === 0 ? (
         <div className="border border-dashed border-line-strong p-8 text-center">
-          <p className="text-title font-medium text-ink">no custom rules configured yet.</p>
-          <p className="mt-1 text-caption text-ink-soft">Click "new rule" to create your first operational safety rule.</p>
+          <p className="text-title font-semibold text-ink">No custom rules yet</p>
+          <p className="mt-1 text-caption text-ink-soft">Click "New Rule" to add your first site-specific safety rule.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -671,7 +678,7 @@ export default function CustomRuleBuilder() {
       {schema && (
         <details className="text-small">
           <summary className="cursor-pointer text-caption text-ink-faint select-none hover:text-ink">
-            supported condition fields & operators
+            What can a condition check?
           </summary>
           <div className="mt-2 flex flex-col gap-2 border border-line bg-surface p-3">
             {schema.supported_fields.map((f) => {
@@ -681,9 +688,9 @@ export default function CustomRuleBuilder() {
                   <span className="w-24 shrink-0 font-mono font-medium text-steel">{f}</span>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-caption text-ink-soft">{info.description}</span>
-                    {info.allowed_values && <span className="text-caption text-ink-faint">values: {info.allowed_values.join(', ')}</span>}
-                    {info.range && <span className="text-caption text-ink-faint">range: {info.range[0]}–{info.range[1]}</span>}
-                    <span className="text-caption text-ink-faint">operators: {(info.allowed_operators || []).join('  ')}</span>
+                    {info.allowed_values && <span className="text-caption text-ink-faint">Values: {info.allowed_values.join(', ')}</span>}
+                    {info.range && <span className="text-caption text-ink-faint">Range: {info.range[0]}–{info.range[1]}</span>}
+                    <span className="text-caption text-ink-faint">Operators: {(info.allowed_operators || []).join('  ')}</span>
                   </div>
                 </div>
               )

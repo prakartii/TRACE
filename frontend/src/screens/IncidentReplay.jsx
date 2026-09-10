@@ -14,7 +14,6 @@ import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
 import { useIntervention } from '../context/InterventionContext.jsx'
 import InterventionStatusChip from '../components/intervention/InterventionStatusChip.jsx'
-import WorkflowNav from '../components/WorkflowNav.jsx'
 
 import {
   getScenarioConfig,

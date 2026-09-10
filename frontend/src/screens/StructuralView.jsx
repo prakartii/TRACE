@@ -681,50 +681,9 @@ export default function StructuralView() {
                 )}
               </div>
 
-              {/* Synchronized Camera Video Controls Bar */}
-              <div className="flex items-center gap-2 border border-line bg-paper px-2.5 py-1.5 shadow-xs">
-                <button
-                  type="button"
-                  onClick={togglePlay}
-                  className="flex h-7 w-7 items-center justify-center border border-ink bg-ink text-paper hover:bg-ink-soft cursor-pointer transition-colors"
-                  title={isPlaying ? 'Pause' : 'Play'}
-                >
-                  {isPlaying ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleStep(-0.5)}
-                  className="flex h-7 w-7 items-center justify-center border border-line bg-paper text-ink hover:border-ink cursor-pointer transition-colors"
-                  title="Step Back -0.5s"
-                >
-                  <ChevronLeft size={12} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleStep(0.5)}
-                  className="flex h-7 w-7 items-center justify-center border border-line bg-paper text-ink hover:border-ink cursor-pointer transition-colors"
-                  title="Step Forward +0.5s"
-                >
-                  <ChevronRight size={12} />
-                </button>
-
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(duration || selectedVideo?.metadata?.duration || 1, 0.1)}
-                  step={0.05}
-                  value={currentTime}
-                  onChange={(e) => handleSeek(parseFloat(e.target.value))}
-                  className="flex-1 accent-ink cursor-pointer h-1.5 bg-neutral-200"
-                />
-
-                <span className="font-mono text-[11px] font-semibold text-ink whitespace-nowrap">
-                  {fmt(currentTime)} <span className="text-ink-faint">/ {fmt(duration || selectedVideo?.metadata?.duration || 0)}</span>
-                </span>
-              </div>
-
-              <p className="text-caption text-ink-faint pt-0.5">
-                Visual Verification: The 2D map on the left updates smoothly on every frame alongside the CCTV video on the right.
+              <p className="flex items-center gap-1.5 text-caption text-ink-faint pt-0.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-ok" />
+                Synced to the playback controls above — the 2D map and this camera always show the same instant.
               </p>
             </div>
           )}

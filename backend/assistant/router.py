@@ -26,6 +26,18 @@ class Route:
 
 _EVENT_ID_RE = re.compile(r"(?:event|incident|#)\s*#?\s*(\d{1,6})", re.I)
 
+# Small talk: the whole message (after stripping trailing punctuation), not
+# just a substring match — so "hi" is a greeting but "high risk events" is
+# not. A question that ends in "thanks" ("what's the highest risk, thanks?")
+# still routes on its actual content since these only match the ENTIRE text.
+_GREETING_RE = re.compile(
+    r"^(hi|hello|hey|hiya|yo|howdy|sup|good\s?morning|good\s?afternoon|good\s?evening|greetings)"
+    r"(\s?(there|team|trace|all|everyone))?[!.?, ]*$",
+    re.I,
+)
+_THANKS_RE = re.compile(r"^(thanks|thank\s?you|thx|ty|cheers|appreciate\s?it|much\s?appreciated)[!.?, ]*$", re.I)
+_BYE_RE = re.compile(r"^(bye|goodbye|good\s?night|see\s?you|see\s?ya|later|that'?s\s?all|that\s?is\s?all)[!.?, ]*$", re.I)
+
 
 def _kw(text: str, *needles: str) -> bool:
     return any(n in text for n in needles)
@@ -71,8 +83,19 @@ def _asks_to_rank_a_person(text: str) -> bool:
     return person and blame
 
 
-def route(question: str) -> Route:
+def route(question: str, video_id: str | None = None) -> Route:
     t = (question or "").lower().strip()
+
+    # Small talk short-circuits everything else — a "hi" should get a hi
+    # back, not a statistics dump (CLAUDE.md §21 UI intent: this is a
+    # conversation, not a report generator).
+    if _GREETING_RE.match(t):
+        return Route("greetings", [q.greetings])
+    if _THANKS_RE.match(t):
+        return Route("small_talk", [lambda c: q.small_talk(c, "thanks")])
+    if _BYE_RE.match(t):
+        return Route("small_talk", [lambda c: q.small_talk(c, "bye")])
+
     m = _EVENT_ID_RE.search(t)
     event_id = int(m.group(1)) if m else None
     kw = _entity_keyword(t)
@@ -141,7 +164,7 @@ def route(question: str) -> Route:
     if _kw(t, "camera 1", "camera 2", "camera 3", "camera 4", "camera 5", "camera 6", "camera 7",
            "camera", "loading dock", "staging deck", "transit aisle", "unloading bay", "racking area", "dispatch bay",
            "video", "in this video", "this video", "footage", "find in this video", "what did trace find"):
-        return Route("camera_events", [lambda c: q.camera_events(c, t)])
+        return Route("camera_events", [lambda c: q.camera_events(c, t, context_video_id=video_id)])
 
     # scenario explanations / protocols --------------------------------------
     if (_kw(t, "what is", "tell me about", "describe", "explain") and kw) or _kw(t, "14 scenario", "all scenarios", "scenarios"):

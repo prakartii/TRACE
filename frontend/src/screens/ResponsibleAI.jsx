@@ -26,7 +26,7 @@ import { getScenarioConfig } from '../lib/scenarios.js'
 import { humanizeTitle } from '../lib/format.js'
 
 export default function ResponsibleAI() {
-  const { role, setRole } = useLiveViewContext()
+  const { role } = useLiveViewContext()
   const [status, setStatus] = useState(null)
   const [retention, setRetention] = useState(null)
   const [queue, setQueue] = useState({ pending: [], confirmed: [], falsePos: [] })
@@ -443,23 +443,10 @@ export default function ResponsibleAI() {
 
             <div className="border border-line bg-paper p-3">
               <span className="font-bold text-ink block mb-1">Role View Mode Filter:</span>
-              <div className="flex items-center gap-2 mt-1 font-sans">
-                <span>Active view:</span>
-                {['supervisor', 'operator'].map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setRole(r)}
-                    className={`px-2 py-0.5 text-caption font-bold rounded-xs ${
-                      role === r ? 'bg-ink text-paper' : 'border border-line bg-surface text-ink-soft hover:text-ink'
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
               <p className="font-sans text-[11px] text-ink-faint mt-1">
-                Role mode filters available operational screens for demo inspection.
+                Currently viewing as <strong className="text-ink font-semibold capitalize">{role}</strong>.
+                Switch roles from the toggle in the top header — it filters which screens are visible
+                (Operator sees only the live workflow; Supervisor sees the full toolset).
               </p>
             </div>
           </div>

@@ -424,8 +424,8 @@ export default function PlannerView() {
                 </span>
                 <span className="text-caption font-semibold text-ok">Mandatory Supervisor Directive</span>
               </div>
-              <span className="font-mono text-caption text-ink-soft">
-                {bayInfo.cameraName} · t = {formatTimestamp(activeEvent?.timestamp)}
+              <span className="text-caption font-semibold text-ink-soft">
+                {bayInfo.cameraName}
               </span>
             </div>
 

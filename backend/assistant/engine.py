@@ -17,7 +17,7 @@ from backend.assistant import llm
 from backend.assistant.router import SUGGESTIONS, route
 
 
-def answer(conn: sqlite3.Connection, question: str) -> dict:
+def answer(conn: sqlite3.Connection, question: str, video_id: str | None = None) -> dict:
     q = (question or "").strip()
     if not q:
         return {
@@ -31,7 +31,7 @@ def answer(conn: sqlite3.Connection, question: str) -> dict:
             "suggestions": SUGGESTIONS,
         }
 
-    r = route(q)
+    r = route(q, video_id=video_id)
     results = [fn(conn) for fn in r.run]
 
     deterministic = " ".join(res.summary for res in results if res.summary).strip()

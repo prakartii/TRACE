@@ -8,14 +8,17 @@ reason to go through HTTP.
 from __future__ import annotations
 
 import shutil
+import sqlite3
 from pathlib import Path
 
 import cv2
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from backend.contracts.models import VideoSourceInfo
+from backend.db.db import get_db
 from backend.perception.sampling import resolve_sampling_policy
+from backend.video.ingest import get_ingestion_status, run_video_ingestion
 from backend.video.registry import VideoRegistry, make_source_id
 from backend.video.source import VideoDecodeError
 
@@ -57,6 +60,7 @@ def list_videos(
 
 @router.post("", response_model=VideoSourceInfo, status_code=201)
 def upload_video(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     registry: VideoRegistry = Depends(get_registry),
 ) -> VideoSourceInfo:
@@ -64,8 +68,12 @@ def upload_video(
 
     Saves the upload into the same directory the registry already scans,
     re-scans so the new file becomes a first-class source, then returns its
-    public record. Detection, tracking and risk analysis run on demand the
-    moment the frontend selects it — no separate processing step needed.
+    public record. A frame-by-frame findings pass still runs on demand the
+    moment the frontend scrubs the timeline (backend/api/findings.py) — but a
+    supervisor should not have to manually scrub an entire new clip before
+    TRACE has any incidents to show, so a full detection -> risk -> incident
+    sweep (backend/video/ingest.py) is also kicked off here in the
+    background; poll GET /api/videos/{id}/analyze/status for progress.
 
     A file that cannot be decoded as video is refused and deleted rather than
     left behind as a broken registry entry (CLAUDE.md honesty rule).
@@ -98,7 +106,46 @@ def upload_video(
             status_code=422,
             detail="Uploaded file could not be decoded as MP4 video and was discarded.",
         )
+
+    background_tasks.add_task(run_video_ingestion, record.id, model="pilot", registry=registry)
     return record.to_public()
+
+
+@router.post("/{video_id}/analyze")
+def analyze_video(
+    video_id: str,
+    background_tasks: BackgroundTasks,
+    registry: VideoRegistry = Depends(get_registry),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """(Re-)runs the full detection -> risk -> incident pipeline for a video
+    in the background. Idempotent: `persist_findings` dedups on
+    (canonical video, scenario, timestamp, entity), so re-analysis updates
+    existing incidents rather than duplicating them."""
+    record = _get_record_or_404(registry, video_id)
+    canonical_id = record.duplicate_of or record.id
+    existing = get_ingestion_status(db, canonical_id)
+    if existing and existing.get("status") == "processing":
+        return existing
+    background_tasks.add_task(run_video_ingestion, record.id, model="pilot", registry=registry)
+    return {"status": "processing", "video_id": video_id, "canonical_id": canonical_id}
+
+
+@router.get("/{video_id}/analyze/status")
+def analyze_video_status(
+    video_id: str,
+    registry: VideoRegistry = Depends(get_registry),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Current/last ingestion status for a video, for the upload-processing UI
+    to poll. `status: "not_started"` means this video has never been
+    analyzed (honest default — never fabricated as "complete")."""
+    record = _get_record_or_404(registry, video_id)
+    canonical_id = record.duplicate_of or record.id
+    status = get_ingestion_status(db, canonical_id)
+    if status is None:
+        return {"status": "not_started", "video_id": video_id, "canonical_id": canonical_id}
+    return status
 
 
 @router.get("/{video_id}", response_model=VideoSourceInfo)

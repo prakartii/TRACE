@@ -20,7 +20,7 @@ import logging
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 
 from backend.contracts.models import (
     AlertAcknowledgeRequest,
@@ -31,6 +31,7 @@ from backend.contracts.models import (
     InterventionAlert,
     InterventionFeedResponse,
 )
+from backend.db.app_settings import get_setting, set_setting
 from backend.db.db import get_connection, get_db
 from backend.db.events import get_event_by_id
 from backend.db.interventions import (
@@ -39,7 +40,15 @@ from backend.db.interventions import (
     get_intervention_by_id,
     list_interventions,
 )
+from backend.intervention.alert_phrases import (
+    DEFAULT_LANGUAGE,
+    SUPPORTED_LANGUAGES,
+    alert_text,
+    has_translation,
+    is_supported_language,
+)
 from backend.intervention.engine import intervention_engine
+from backend.intervention.tts import get_alert_audio
 from backend.intervention.ws import ws_manager
 
 logger = logging.getLogger("trace.api.intervention")
@@ -77,6 +86,87 @@ def get_interventions_list(
         limit=limit,
         offset=offset,
     )
+
+
+_ALERT_LANGUAGE_SETTING_KEY = "supervisor_alert_language"
+
+
+@router.get("/languages")
+def list_alert_languages() -> dict:
+    """Supported spoken-alert languages, by native display name only — no
+    provider/model/API terminology (CLAUDE.md: "do not expose
+    provider/API/voice-model terminology")."""
+    return {
+        "languages": [
+            {"code": code, "label": meta["label"], "bcp47": meta["bcp47"]}
+            for code, meta in SUPPORTED_LANGUAGES.items()
+        ],
+        "default": DEFAULT_LANGUAGE,
+    }
+
+
+@router.get("/alert-language")
+def get_alert_language(db: sqlite3.Connection = Depends(get_db)) -> dict:
+    """Current supervisor-configured alert language (a real preference,
+    persisted server-side — not just a per-browser localStorage value)."""
+    lang = get_setting(db, _ALERT_LANGUAGE_SETTING_KEY, DEFAULT_LANGUAGE)
+    if not is_supported_language(lang):
+        lang = DEFAULT_LANGUAGE
+    return {"language": lang}
+
+
+@router.put("/alert-language")
+def put_alert_language(
+    language: str = Query(..., description="One of the codes from GET /api/intervention/languages"),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    if not is_supported_language(language):
+        raise HTTPException(status_code=422, detail=f"Unsupported alert language '{language}'.")
+    set_setting(db, _ALERT_LANGUAGE_SETTING_KEY, language)
+    return {"language": language}
+
+
+@router.get("/alert-text")
+def get_alert_text(
+    scenario: Optional[str] = Query(None),
+    lang: str = Query(DEFAULT_LANGUAGE),
+    fallback: Optional[str] = Query(None, description="Alert's own immediate_action text, used only if no reviewed phrase exists for this scenario"),
+) -> dict:
+    """The canonical spoken text for a scenario in a language — same source
+    the intervention pipeline and the audio endpoint below use, so the UI can
+    show exactly what will be spoken."""
+    if not is_supported_language(lang):
+        raise HTTPException(status_code=422, detail=f"Unsupported language '{lang}'.")
+    text = alert_text(scenario, lang, fallback=fallback)
+    return {
+        "scenario": scenario,
+        "language": lang,
+        "text": text,
+        "has_reviewed_translation": has_translation(scenario, lang),
+    }
+
+
+@router.get("/alert-audio")
+def get_alert_audio_endpoint(
+    scenario: Optional[str] = Query(None),
+    lang: str = Query(DEFAULT_LANGUAGE),
+    fallback: Optional[str] = Query(None),
+) -> Response:
+    """Real synthesized speech (MP3) for a scenario's alert text in `lang` —
+    the actual requested language, not a browser-default voice guess. See
+    backend/intervention/tts.py for why this exists instead of relying on
+    the Web Speech API alone."""
+    if not is_supported_language(lang):
+        raise HTTPException(status_code=422, detail=f"Unsupported language '{lang}'.")
+    text = alert_text(scenario, lang, fallback=fallback)
+    audio = get_alert_audio(scenario, lang, text)
+    if audio is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Voice audio could not be generated for this language right now (no cached "
+                   "audio and the TTS provider is unavailable). The alert remains available as text.",
+        )
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 @router.get("/{alert_id}", response_model=InterventionAlert)

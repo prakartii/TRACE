@@ -17,6 +17,7 @@ import {
   Video,
 } from 'lucide-react'
 import { listEvents } from '../api/events.js'
+import { listActiveInterventions } from '../api/intervention.js'
 import { getPreventionSummary } from '../api/measurement.js'
 import { listVideos } from '../api/videos.js'
 import { incidentsCsvUrl, shiftSummaryMdUrl } from '../api/reports.js'
@@ -28,6 +29,7 @@ import {
   resolveIncidentTitle,
 } from '../lib/scenarios.js'
 import { humanizeExplanation, humanizeAction, humanizeTitle } from '../lib/format.js'
+import LearningInsights from '../components/LearningInsights.jsx'
 
 const BAND_BADGES = {
   Critical: 'border-danger bg-danger text-paper font-bold',
@@ -49,6 +51,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState(null)
   const [events, setEvents] = useState([])
   const [videos, setVideos] = useState([])
+  const [activeAlerts, setActiveAlerts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedPattern, setSelectedPattern] = useState(null)
@@ -59,14 +62,18 @@ export default function Dashboard() {
 
     Promise.all([
       getPreventionSummary().catch(() => null),
-      listEvents({ limit: 200, order: 'desc' }).catch(() => []),
+      // Raised from 200 to the API's max (500) so shift-wide breakdowns
+      // below aren't silently truncated for a busy demo dataset.
+      listEvents({ limit: 500, order: 'desc' }).catch(() => []),
       listVideos().catch(() => []),
+      listActiveInterventions().catch(() => []),
     ])
-      .then(([sumData, evData, vidData]) => {
+      .then(([sumData, evData, vidData, alertData]) => {
         if (!active) return
         setSummary(sumData)
         setEvents(evData || [])
         setVideos((vidData || []).filter((v) => !v.duplicate_of))
+        setActiveAlerts(Array.isArray(alertData) ? alertData : [])
       })
       .catch((err) => {
         if (active) setError(err.message || 'Failed to load safety overview')
@@ -106,38 +113,85 @@ export default function Dashboard() {
     return distinct
   }, [events])
 
-  // Recurring Safety Patterns (Grouped by scenario)
+  // The perception pipeline samples several times a second, so one ongoing
+  // hazard (e.g. a worker standing near a dock edge for 10 seconds) produces
+  // many evidence rows, not many hazards. Counting raw rows as "events"
+  // wildly overstates what actually happened — a single sustained situation
+  // could read as dozens of "incidents". Cluster same video + same scenario
+  // + within a short time gap into one incident before counting anything,
+  // the same rule EventFeed already applies when grouping similar findings.
+  const evidenceBackedEvents = useMemo(
+    () => events.filter((e) => e.status === 'supported' || e.status === 'probable'),
+    [events],
+  )
+
+  const distinctIncidents = useMemo(() => {
+    if (!evidenceBackedEvents.length) return []
+    const sorted = [...evidenceBackedEvents].sort(
+      (a, b) => (a.video_id || '').localeCompare(b.video_id || '') ||
+        (a.scenario || '').localeCompare(b.scenario || '') ||
+        (a.timestamp ?? 0) - (b.timestamp ?? 0),
+    )
+    const clusters = []
+    for (const ev of sorted) {
+      const last = clusters[clusters.length - 1]
+      if (
+        last &&
+        last.video_id === ev.video_id &&
+        last.scenario === ev.scenario &&
+        (ev.timestamp ?? 0) - last.maxTimestamp <= 2.5
+      ) {
+        last.maxTimestamp = Math.max(last.maxTimestamp, ev.timestamp ?? 0)
+        last.observations += 1
+        if ((BAND_PRIORITY[ev.band] || 1) > (BAND_PRIORITY[last.band] || 1)) last.band = ev.band
+        continue
+      }
+      clusters.push({
+        video_id: ev.video_id,
+        scenario: ev.scenario,
+        maxTimestamp: ev.timestamp ?? 0,
+        observations: 1,
+        band: ev.band || 'Low',
+        representative: ev,
+      })
+    }
+    return clusters
+  }, [evidenceBackedEvents])
+
+  // Recurring Safety Patterns — distinct incidents grouped by scenario, not
+  // raw detection rows (see distinctIncidents above for why that matters).
   const recurringPatterns = useMemo(() => {
-    if (!events?.length) return []
+    if (!distinctIncidents.length) return []
     const counts = {}
-    for (const ev of events) {
-      const sc = ev.scenario
+    for (const inc of distinctIncidents) {
+      const sc = inc.scenario
       if (!sc) continue
       if (!counts[sc]) {
-        counts[sc] = {
-          key: sc,
-          occurrences: 0,
-          highestBand: 'Low',
-          events: [],
-        }
+        counts[sc] = { key: sc, occurrences: 0, highestBand: 'Low', events: [] }
       }
       counts[sc].occurrences += 1
-      counts[sc].events.push(ev)
-      if ((BAND_PRIORITY[ev.band] || 1) > (BAND_PRIORITY[counts[sc].highestBand] || 1)) {
-        counts[sc].highestBand = ev.band
+      if (counts[sc].events.length < 4) counts[sc].events.push(inc.representative)
+      if ((BAND_PRIORITY[inc.band] || 1) > (BAND_PRIORITY[counts[sc].highestBand] || 1)) {
+        counts[sc].highestBand = inc.band
       }
     }
 
     return Object.values(counts)
       .sort((a, b) => b.occurrences - a.occurrences)
       .slice(0, 6)
-  }, [events])
+  }, [distinctIncidents])
 
   const mostFrequentPattern = recurringPatterns[0]
 
-  const activeHazardsCount = events.filter((e) => e.status !== 'insufficient_evidence').length
-  const preventedCount = summary?.prevented_count ?? summary?.confirmed_count ?? 14
-  const cameraBaysCount = videos.length || 7
+  // "Active Hazards" = the same deduplicated alert count the header badge
+  // and voice-alert system use (one alert per active video+scenario hazard,
+  // not one per detection row) — so this number is consistent everywhere
+  // it's shown, not a bigger, confusing number invented just for this card.
+  const activeHazardsCount = activeAlerts.length
+  // Real counts only — a failed fetch shows 0, never a fabricated number
+  // (CLAUDE.md honesty rule: never inflate prevention numbers).
+  const preventedCount = summary?.prevented_count ?? 0
+  const cameraBaysCount = videos.length
 
   const handleReplay = (ev) => {
     navigateTo('Incident Replay', {
@@ -277,18 +331,23 @@ export default function Dashboard() {
                 className="flex flex-col justify-between border border-line bg-surface p-5 shadow-xs transition-colors hover:border-ink"
               >
                 <div>
-                  {/* Risk Badge & Location */}
-                  <div className="flex items-center justify-between border-b border-line pb-2.5">
-                    <span className={`px-2 py-0.5 text-label uppercase tracking-wider rounded-xs ${BAND_BADGES[ev.band] || 'bg-line text-ink'}`}>
-                      {ev.band}
+                  {/* Risk Badge & Camera Tag */}
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2.5 py-1 text-label font-bold uppercase tracking-wider rounded-xs ${BAND_BADGES[ev.band] || 'bg-line text-ink'}`}>
+                      {ev.band} Risk
                     </span>
-                    <span className="font-mono text-caption text-ink-soft">
-                      {bay.cameraName} · {formatTimestamp(ev.timestamp)}
+                    <span className="text-caption font-semibold text-ink-soft">
+                      {bay.tag || 'Camera'}
                     </span>
                   </div>
 
+                  {/* Location with clear breathing room — NO timestamp clutter */}
+                  <div className="mt-2.5 text-caption font-semibold text-ink">
+                    {bay.cameraName}
+                  </div>
+
                   {/* Title & Reason */}
-                  <h3 className="mt-3 text-base font-bold text-ink leading-snug">
+                  <h3 className="mt-2 text-base font-bold text-ink leading-snug">
                     {title}
                   </h3>
 
@@ -326,11 +385,11 @@ export default function Dashboard() {
               Recurring Safety Patterns
             </h2>
             <p className="text-caption text-ink-soft">
-              Most frequent operational safety conditions detected across warehouse operations.
+              Distinct incidents by type — repeated camera detections of the same ongoing situation count once.
             </p>
           </div>
           <span className="text-caption font-mono text-ink-faint">
-            Aggregated from {events.length} observations
+            From {evidenceBackedEvents.length} verified detections across the shift
           </span>
         </div>
 
@@ -339,7 +398,7 @@ export default function Dashboard() {
             <thead>
               <tr className="border-b border-line bg-paper text-label font-bold uppercase tracking-wider text-ink-faint">
                 <th className="px-4 py-2.5">Pattern</th>
-                <th className="px-4 py-2.5">Occurrences</th>
+                <th className="px-4 py-2.5">Distinct Incidents</th>
                 <th className="px-4 py-2.5">Priority</th>
                 <th className="px-4 py-2.5">Recommended Response</th>
                 <th className="px-4 py-2.5 text-right">Action</th>
@@ -420,9 +479,9 @@ export default function Dashboard() {
                     key={ev.event_id}
                     type="button"
                     onClick={() => handleReplay(ev)}
-                    className="border border-line bg-surface px-3 py-1.5 text-caption font-mono text-ink hover:border-ink cursor-pointer"
+                    className="border border-line bg-surface px-3 py-1.5 text-caption font-medium text-ink hover:border-ink hover:bg-paper cursor-pointer"
                   >
-                    #{ev.event_id} · {getVideoScenarioInfo(ev.video_id, ev.scenario).cameraName} (@{formatTimestamp(ev.timestamp)}) →
+                    #{ev.event_id} · {getVideoScenarioInfo(ev.video_id, ev.scenario).cameraName} →
                   </button>
                 ))}
             </div>
@@ -479,6 +538,11 @@ export default function Dashboard() {
           })}
         </div>
       </section>
+
+      {/* SECTION 5 — PREVENTION & LEARNING: recurring configurations across
+          bays/videos, training recommendations, and per-source scorecards
+          (Layer 9, ARCHITECTURE.md §11 "Prevention & Learning"). */}
+      <LearningInsights />
     </div>
   )
 }

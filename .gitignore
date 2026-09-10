@@ -23,6 +23,7 @@ data/clips/*
 data/pilot_annotations/*
 !data/pilot_annotations/.gitkeep
 data/.perception_cache/
+data/tts_cache/
 
 # Challenge-provided input videos (large binary assets, kept local only)
 data/challenge_videos/*

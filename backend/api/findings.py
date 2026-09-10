@@ -25,18 +25,11 @@ from backend.api.perception import (
 )
 from backend.api.scene import get_world_model
 from backend.api.videos import get_registry
-from backend.behaviour.lens import evaluate_behaviour
 from backend.contracts.models import RiskEvent
 from backend.db.db import get_db
-from backend.db.events import persist_findings
-from backend.lenses.conformance import STANDARD_CONFORMANCE_RULES, evaluate_conformance
-from backend.lenses.environmental import CONFIGURED_ZONES, evaluate_environmental
-from backend.lenses.structural import evaluate_structural
-from backend.planner.actions import plan_action
 from backend.risk.config import DEFAULT_RISK_CONFIG
-from backend.rules.engine import apply_custom_rules_to_findings
+from backend.video.ingest import analyze_frame
 from backend.video.registry import VideoRegistry
-from backend.world_model.manifest import get_manifest_for_source
 from backend.world_model.scene_graph import WorldModel
 
 router = APIRouter(prefix="/api/videos", tags=["findings"])
@@ -80,81 +73,15 @@ def get_findings(
     frame_index = results.index(frame_result)
     window = results[max(0, frame_index - DEFAULT_RISK_CONFIG.temporal_window_samples + 1) : frame_index + 1]
 
-    manifest = get_manifest_for_source(video_id, record.filename)
-    product_metadata_by_id = (
-        {p.product_id: p for p in manifest.product_metadata} if manifest else {}
+    # Same per-frame pipeline backend/video/ingest.py's bulk sweep runs —
+    # single source of truth for "what happens for one sampled frame"
+    # (CLAUDE.md: no second perception/risk pipeline).
+    return analyze_frame(
+        video_id=video_id,
+        frame_result=frame_result,
+        window=window,
+        record=record,
+        world_model=world_model,
+        db=db,
+        persist=True,
     )
-    default_product_id = manifest.primary_product_id if manifest else None
-    zones = manifest.environmental_zones if manifest else CONFIGURED_ZONES
-
-    snapshot = world_model.build_snapshot(
-        frame_result.entities,
-        frame_width=record.metadata.width,
-        frame_height=record.metadata.height,
-        timestamp=frame_result.timestamp,
-        default_product_id=default_product_id,
-        compute_aspect_orientation=True,
-    )
-    entity_confidence = {e.id: e.confidence for e in frame_result.entities}
-
-    findings: list[RiskEvent] = []
-    findings.extend(
-        evaluate_behaviour(
-            window,
-            frame_width=record.metadata.width,
-            frame_height=record.metadata.height,
-            timestamp=frame_result.timestamp,
-            product_metadata_by_id=product_metadata_by_id,
-            default_product_id=default_product_id,
-        )
-    )
-    findings.extend(
-        evaluate_structural(
-            snapshot,
-            entity_confidence=entity_confidence,
-            product_metadata_by_id=product_metadata_by_id,
-        )
-    )
-    findings.extend(
-        evaluate_conformance(
-            snapshot.nodes,
-            product_metadata_by_id=product_metadata_by_id,
-            timestamp=frame_result.timestamp,
-            rules=STANDARD_CONFORMANCE_RULES,
-        )
-    )
-    findings.extend(
-        evaluate_environmental(
-            snapshot.nodes,
-            timestamp=frame_result.timestamp,
-            zones=zones,
-        )
-    )
-    # Supervisor rules are applied before planning so an escalated band and any
-    # operator directive reach the recommendation and the event store (§17).
-    apply_custom_rules_to_findings(findings, db)
-
-    for f in findings:
-        if f.planner_recommendation is None:
-            f.planner_recommendation = plan_action(
-                f.scenario,
-                f.status,
-                f.confidence,
-                evidence=f.evidence,
-                limitations=f.limitations,
-            )
-
-    try:
-        canonical_id = record.duplicate_of or record.id
-        persist_findings(
-            findings=findings,
-            video_id=video_id,
-            canonical_id=canonical_id,
-            timestamp=frame_result.timestamp,
-            conn=db,
-        )
-    except Exception:
-        # Persistence failure must NOT turn a valid risk finding into a failed analysis response
-        pass
-
-    return findings

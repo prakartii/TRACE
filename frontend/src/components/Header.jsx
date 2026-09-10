@@ -1,7 +1,6 @@
-import { ShieldAlert, Volume2, VolumeX } from 'lucide-react'
+import { ShieldAlert, UserCog, Volume2, VolumeX } from 'lucide-react'
 import { useIntervention } from '../context/InterventionContext.jsx'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { spokenTextFor } from '../lib/voiceAlerts.js'
 
 const STATUS = {
   online: { dot: 'bg-ok', label: 'backend online' },
@@ -30,10 +29,12 @@ export default function Header({ backendStatus }) {
 
   let role = 'supervisor'
   let setRole = null
+  let navigateTo = null
   try {
     const ctx = useLiveViewContext()
     role = ctx.role
     setRole = ctx.setRole
+    navigateTo = ctx.navigateTo
   } catch {
     // Graceful fallback if rendered outside provider
   }
@@ -50,10 +51,34 @@ export default function Header({ backendStatus }) {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          {setRole && (
+            <div
+              className="flex items-center gap-1 border border-line bg-paper p-0.5"
+              title="Switch which screens are visible: Operator sees only the live workflow; Supervisor sees the full toolset."
+            >
+              <UserCog size={13} className="ml-1.5 text-ink-faint" />
+              {['supervisor', 'operator'].map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRole(r)}
+                  className={`px-2 py-1 text-caption font-semibold capitalize transition-colors cursor-pointer ${
+                    role === r ? 'bg-ink text-paper' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          )}
+
           {activeCount > 0 && (
             <button
               type="button"
-              onClick={() => setSelectedAlert && bannerAlert && setSelectedAlert(bannerAlert)}
+              onClick={() => {
+                if (navigateTo) navigateTo('Incidents')
+                if (setSelectedAlert && bannerAlert) setSelectedAlert(bannerAlert)
+              }}
               className="flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-3 py-1 text-caption font-bold text-danger transition-transform hover:scale-105 cursor-pointer"
             >
               <ShieldAlert className="h-3.5 w-3.5 animate-pulse" />
@@ -68,13 +93,8 @@ export default function Header({ backendStatus }) {
                 onClick={() => {
                   const next = !voice.enabled
                   voice.setEnabled(next)
-                  if (next) {
-                    voice.speak(
-                      bannerAlert
-                        ? spokenTextFor(bannerAlert, voice.lang)
-                        : 'Voice alerts on.',
-                      { force: true },
-                    )
+                  if (next && bannerAlert) {
+                    voice.speak(bannerAlert, { force: true })
                   }
                 }}
                 title={voice.enabled ? 'Voice alerts active' : 'Enable voice alerts'}

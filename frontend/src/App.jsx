@@ -83,7 +83,7 @@ function AppContent() {
             <ScenarioCoverage />
           ) : effectiveScreen === 'Structural View' ? (
             <StructuralView />
-          ) : effectiveScreen === 'Incidents' || effectiveScreen === 'Event Feed' ? (
+          ) : effectiveScreen === 'Incidents' || effectiveScreen === 'Event Feed' || effectiveScreen === 'Active Hazards' ? (
             <EventFeed />
           ) : effectiveScreen === 'Incident Replay' ? (
             <IncidentReplay />

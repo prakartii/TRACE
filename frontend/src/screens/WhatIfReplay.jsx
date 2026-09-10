@@ -18,7 +18,6 @@ import {
 import { getSupportedWhatIfEvents, getSafetyWhatIfSimulation } from '../api/whatif.js'
 import { streamUrl } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import WorkflowNav from '../components/WorkflowNav.jsx'
 import WhatIfScenarioVisualizer from '../components/video/WhatIfScenarioVisualizer.jsx'
 
 const BAND_BADGES = {
@@ -26,6 +25,91 @@ const BAND_BADGES = {
   Medium: 'border-signal/50 bg-signal/15 text-[#8a5f00]',
   High: 'border-danger/40 bg-danger/10 text-danger',
   Critical: 'border-danger bg-danger text-paper font-bold',
+}
+
+const BAND_ORDER = ['Low', 'Medium', 'High', 'Critical']
+const BAND_SCALE_COLOR = {
+  Low: 'bg-ok',
+  Medium: 'bg-signal',
+  High: 'bg-orange-500',
+  Critical: 'bg-danger',
+}
+
+// Parses a "High Risk -> Low Risk" style string into its two band names.
+// Never fabricates a band that wasn't actually in the source string.
+function parseBandTransition(text, fallbackBand) {
+  if (typeof text === 'string') {
+    const m = text.match(/(Low|Medium|High|Critical)\s*Risk\s*(?:->|→)\s*(Low|Medium|High|Critical)\s*Risk/i)
+    if (m) {
+      const cap = (s) => s[0].toUpperCase() + s.slice(1).toLowerCase()
+      return { before: cap(m[1]), after: cap(m[2]) }
+    }
+  }
+  return { before: fallbackBand || 'Medium', after: null }
+}
+
+/**
+ * Honest "before -> after" risk visualization: TRACE's stability model is
+ * qualitative (Low/Medium/High/Critical bands), never a fabricated 0-100
+ * number, so this scale marks real band positions rather than inventing a
+ * score (CLAUDE.md honesty rule: never invent metrics).
+ */
+function RiskTransitionScale({ before, after }) {
+  const beforeIdx = BAND_ORDER.indexOf(before)
+  const afterIdx = after ? BAND_ORDER.indexOf(after) : -1
+
+  return (
+    <div className="border border-line bg-paper p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-ink-faint">
+          Risk Band Transition
+        </span>
+        {after && (
+          <div className="flex items-center gap-2 text-small font-bold">
+            <span className={`px-2 py-0.5 text-label uppercase ${BAND_BADGES[before]}`}>{before}</span>
+            <ArrowRight size={14} className="text-ink-faint" />
+            <span className={`px-2 py-0.5 text-label uppercase ${BAND_BADGES[after]}`}>{after}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="relative">
+        <div className="flex h-3 w-full overflow-hidden rounded-full border border-line-strong">
+          {BAND_ORDER.map((b) => (
+            <div key={b} className={`flex-1 ${BAND_SCALE_COLOR[b]} opacity-80`} />
+          ))}
+        </div>
+        <div className="mt-1 flex text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+          {BAND_ORDER.map((b) => (
+            <div key={b} className="flex-1 text-center">{b}</div>
+          ))}
+        </div>
+
+        {/* Observed marker */}
+        {beforeIdx >= 0 && (
+          <div
+            className="absolute -top-2.5 flex -translate-x-1/2 flex-col items-center"
+            style={{ left: `${(beforeIdx + 0.5) * (100 / BAND_ORDER.length)}%` }}
+          >
+            <span className="text-[9px] font-bold uppercase tracking-wider text-danger">Observed</span>
+            <span className="mt-3.5 h-2.5 w-2.5 rotate-45 border-2 border-danger bg-paper" />
+          </div>
+        )}
+
+        {/* Counterfactual marker */}
+        {afterIdx >= 0 && (
+          <div
+            className="absolute -bottom-6 flex -translate-x-1/2 flex-col items-center"
+            style={{ left: `${(afterIdx + 0.5) * (100 / BAND_ORDER.length)}%` }}
+          >
+            <span className="h-2.5 w-2.5 rotate-45 border-2 border-ok bg-paper" />
+            <span className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-ok">What-If</span>
+          </div>
+        )}
+      </div>
+      {afterIdx >= 0 && <div className="h-4" />}
+    </div>
+  )
 }
 
 export default function WhatIfReplay() {
@@ -277,6 +361,38 @@ export default function WhatIfReplay() {
             </p>
           </div>
 
+          {/* Headline Risk Transition + Key Evidence Numbers */}
+          {(() => {
+            const { before, after } = parseBandTransition(
+              simulation.result?.risk_transition,
+              simulation.band,
+            )
+            const featuredSignals = (simulation.evidence?.signals || []).slice(0, 4)
+            return (
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr]">
+                <RiskTransitionScale before={before} after={after} />
+                {featuredSignals.length > 0 && (
+                  <div className="border border-line bg-paper p-4">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-ink-faint mb-2">
+                      Measured Evidence
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {featuredSignals.map((sig, idx) => {
+                        const [label, value] = sig.split(':').map((s) => s.trim())
+                        return (
+                          <div key={idx} className="border border-line/70 bg-surface px-2 py-1.5">
+                            <div className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">{label}</div>
+                            <div className="font-mono text-small font-bold text-ink">{value || sig}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* 3-Step Main Presentation Card */}
           <div className="grid grid-cols-1 divide-y divide-line border border-line bg-surface shadow-xs lg:grid-cols-2 lg:divide-y-0 lg:divide-x">
             {/* STEP 1: WHAT HAPPENED */}
@@ -383,14 +499,9 @@ export default function WhatIfReplay() {
                 <CheckCircle2 size={20} />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-caption font-bold uppercase tracking-wider text-ok">
-                    3. Expected Result
-                  </span>
-                  <span className="border border-line bg-surface px-2 py-0.5 font-mono text-label font-bold text-ink">
-                    {simulation.result?.risk_transition}
-                  </span>
-                </div>
+                <span className="text-caption font-bold uppercase tracking-wider text-ok">
+                  3. Expected Result
+                </span>
                 <h3 className="mt-1 text-base font-bold text-ink">
                   {simulation.result?.headline}
                 </h3>

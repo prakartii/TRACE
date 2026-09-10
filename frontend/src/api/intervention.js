@@ -90,3 +90,47 @@ export async function seedActiveInterventions(videoId = null) {
   if (!res.ok) throw new Error(`Failed to seed interventions: ${res.statusText}`)
   return res.json()
 }
+
+// --- Regional Indian-language voice alerts ------------------------------- //
+
+/** Supported spoken-alert languages: [{code, label}], native display names only. */
+export async function listAlertLanguages() {
+  const res = await fetch(`${API_BASE_URL}/api/intervention/languages`)
+  if (!res.ok) throw new Error(`Failed to list alert languages: ${res.statusText}`)
+  return res.json()
+}
+
+/** Supervisor's server-persisted alert-language preference. */
+export async function getAlertLanguage() {
+  const res = await fetch(`${API_BASE_URL}/api/intervention/alert-language`)
+  if (!res.ok) throw new Error(`Failed to fetch alert language: ${res.statusText}`)
+  return res.json()
+}
+
+export async function setAlertLanguage(language) {
+  const url = new URL(`${API_BASE_URL}/api/intervention/alert-language`)
+  url.searchParams.set('language', language)
+  const res = await fetch(url.toString(), { method: 'PUT' })
+  if (!res.ok) throw new Error(`Failed to set alert language: ${res.statusText}`)
+  return res.json()
+}
+
+/** The canonical spoken text TRACE will say for this scenario/language. */
+export async function getAlertText(scenario, lang, fallback = null) {
+  const url = new URL(`${API_BASE_URL}/api/intervention/alert-text`)
+  if (scenario) url.searchParams.set('scenario', scenario)
+  url.searchParams.set('lang', lang)
+  if (fallback) url.searchParams.set('fallback', fallback)
+  const res = await fetch(url.toString())
+  if (!res.ok) throw new Error(`Failed to fetch alert text: ${res.statusText}`)
+  return res.json()
+}
+
+/** Direct playable URL for the real synthesized speech (MP3) of an alert. */
+export function alertAudioUrl(scenario, lang, fallback = null) {
+  const url = new URL(`${API_BASE_URL}/api/intervention/alert-audio`)
+  if (scenario) url.searchParams.set('scenario', scenario)
+  url.searchParams.set('lang', lang)
+  if (fallback) url.searchParams.set('fallback', fallback)
+  return url.toString()
+}
