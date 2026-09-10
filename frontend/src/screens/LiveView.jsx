@@ -11,6 +11,7 @@ import SceneOverlay from '../components/video/SceneOverlay.jsx'
 import VideoLibrary from '../components/video/VideoLibrary.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
 import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
+import LiveCameraPanel from '../components/video/LiveCameraPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
 import { getVideoScenarioInfo } from '../lib/scenarios.js'
 import WorkflowNav from '../components/WorkflowNav.jsx'
@@ -444,6 +445,8 @@ export default function LiveView() {
         {uploadError && (
           <p className="mt-2 border border-danger bg-danger/5 p-2 text-caption text-danger">{uploadError}</p>
         )}
+
+        <LiveCameraPanel />
       </div>
     </div>
     </div>
