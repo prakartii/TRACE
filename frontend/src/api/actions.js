@@ -2,7 +2,9 @@
  * API client for TRACE Safe Action Planner (Feature 3).
  */
 
-const BASE_URL = '/api/actions'
+import { API_BASE_URL } from '../config.js'
+
+const BASE_URL = `${API_BASE_URL}/api/actions`
 
 /**
  * Fetches the structured SafeActionPlan for a specific recorded event ID.

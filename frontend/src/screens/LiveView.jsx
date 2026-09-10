@@ -201,12 +201,6 @@ export default function LiveView() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* 5-step safety workflow banner */}
-      <WorkflowNav
-        currentStep={1}
-        navigateTo={navigateTo}
-        context={{ videoId: selectedId, timestamp: currentTime }}
-      />
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_300px]">
       <div className="flex flex-col gap-6">

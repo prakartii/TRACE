@@ -82,7 +82,7 @@ def route(question: str) -> Route:
         return Route("process_attribution", [q.process_attribution])
 
     # "what did TRACE recommend / what should we do" ---------------------------
-    if _kw(t, "recommend", "what did trace", "safe action", "what should", "advice", "mitigat"):
+    if _kw(t, "recommend", "what did trace recommend", "safe action", "what should", "advice", "mitigat"):
         return Route("recommendation_for",
                      [lambda c: q.recommendation_for(c, event_id=event_id, keyword=kw)])
 
@@ -107,13 +107,13 @@ def route(question: str) -> Route:
         return Route("top_scenarios", [q.top_scenarios])
 
     # most frequent behaviour ------------------------------------------
-    if _kw(t, "behaviour", "behavior") and _kw(t, "most", "frequent", "common", "which"):
+    if _kw(t, "behaviour", "behavior") and _kw(t, "most", "frequent", "common", "which", "often"):
         return Route("top_behaviours", [q.top_behaviours])
     if _kw(t, "throwing", "dragging", "dropping", "rolling", "stepping", "strap"):
         return Route("top_behaviours", [q.top_behaviours])
 
     # high-risk events / by bay --------------------------------------
-    if _kw(t, "high risk", "high-risk", "critical", "most dangerous", "worst"):
+    if _kw(t, "high risk", "high-risk", "highest risk", "highest-risk", "critical", "most dangerous", "worst"):
         return Route("high_risk_events", [q.high_risk_events])
 
     # false positives ---------------------------------------------
@@ -139,7 +139,8 @@ def route(question: str) -> Route:
 
     # specific camera / bay analysis -----------------------------------------
     if _kw(t, "camera 1", "camera 2", "camera 3", "camera 4", "camera 5", "camera 6", "camera 7",
-           "camera", "loading dock", "staging deck", "transit aisle", "unloading bay", "racking area", "dispatch bay"):
+           "camera", "loading dock", "staging deck", "transit aisle", "unloading bay", "racking area", "dispatch bay",
+           "video", "in this video", "this video", "footage", "find in this video", "what did trace find"):
         return Route("camera_events", [lambda c: q.camera_events(c, t)])
 
     # scenario explanations / protocols --------------------------------------
@@ -151,12 +152,12 @@ def route(question: str) -> Route:
 
 
 SUGGESTIONS = [
+    "What are the highest-risk events?",
+    "What unsafe behaviour occurred most often?",
+    "Why was this incident high risk?",
+    "What should the supervisor do next?",
+    "What did TRACE find in this video?",
     "Give me a shift safety briefing",
-    "What are the most common risks?",
-    "Show me the High-risk events",
     "Are there any active alerts?",
     "How does the Safe Action Planner work?",
-    "How many events were prevented?",
-    "What happened on Camera 2?",
-    "Explain unstable overhang risk",
 ]

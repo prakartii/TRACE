@@ -126,17 +126,6 @@ export default function WhatIfReplay() {
 
   return (
     <div className="flex flex-col gap-6 pb-14 font-sans text-ink">
-      {/* 5-step safety workflow banner */}
-      <WorkflowNav
-        currentStep={4}
-        navigateTo={navigateTo}
-        context={{
-          eventId: selectedEventId,
-          videoId: simulation?.video_id || selectedBay,
-          timestamp: simulation?.timestamp,
-        }}
-      />
-
       {/* Header */}
       <section className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
         <div>

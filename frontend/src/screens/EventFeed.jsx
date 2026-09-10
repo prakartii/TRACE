@@ -318,23 +318,19 @@ export default function EventFeed() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* 5-step safety workflow banner */}
-      <WorkflowNav
-        currentStep={2}
-        navigateTo={navigateTo}
-        context={{
-          eventId: selectedEventId,
-          videoId: selectedEvent?.video_id,
-        }}
-      />
-
-      {/* header */}
       {/* Header */}
       <section className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line pb-4">
         <div>
-          <div className="flex items-center gap-2 text-label font-medium text-ink-soft">
-            <TriangleAlert size={13} className="text-signal" />
-            <span>Active Hazard Triage</span>
+          <div className="flex items-center gap-2 text-caption text-ink-soft">
+            <button
+              type="button"
+              onClick={() => navigateTo('Live View')}
+              className="inline-flex items-center gap-1 font-medium hover:text-ink cursor-pointer"
+            >
+              ← Step 1: Live Feeds
+            </button>
+            <span>/</span>
+            <span className="font-semibold text-ink">Step 2: Active Hazards</span>
           </div>
           <h1 className="mt-1 text-2xl font-bold text-ink">Active Hazards</h1>
           <p className="mt-1 max-w-2xl text-body text-ink-soft">

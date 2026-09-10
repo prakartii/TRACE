@@ -556,17 +556,6 @@ export default function IncidentReplay() {
 
   return (
     <div className="flex flex-col gap-6 pb-12">
-      {/* 5-step safety workflow banner */}
-      <WorkflowNav
-        currentStep={3}
-        navigateTo={navigateTo}
-        context={{
-          eventId: incidentEvent?.event_id || selectedEventId,
-          videoId: incidentEvent?.video_id || selectedVideo?.id,
-          timestamp: targetTimestamp,
-          event: incidentEvent,
-        }}
-      />
 
       {/* Header bar */}
       <section className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">

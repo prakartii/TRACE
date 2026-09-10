@@ -46,7 +46,7 @@ const SCREEN_META = {
     category: 'intelligence',
   },
   'Scenario Coverage': {
-    label: '14 Hazard Scenarios',
+    label: 'Safety Rules & Catalog',
     icon: Crosshair,
     category: 'intelligence',
   },
@@ -68,7 +68,7 @@ const SCREEN_META = {
     category: 'governance',
   },
   Settings: {
-    label: 'Safety Rules & Catalog',
+    label: 'Warehouse Configuration',
     icon: Settings,
     category: 'governance',
   },

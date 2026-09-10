@@ -57,7 +57,7 @@ export default function Header({ backendStatus }) {
               className="flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-3 py-1 text-caption font-bold text-danger transition-transform hover:scale-105 cursor-pointer"
             >
               <ShieldAlert className="h-3.5 w-3.5 animate-pulse" />
-              <span>{activeCount} {activeCount === 1 ? 'Hazard Alert' : 'Hazard Alerts'} Active</span>
+              <span>{activeCount} Active Hazards</span>
             </button>
           )}
 
@@ -100,51 +100,6 @@ export default function Header({ backendStatus }) {
               )}
             </div>
           )}
-
-          <div className="h-3 w-px bg-line" />
-
-          {/* Backend Status indicator */}
-          <div className="flex items-center gap-1.5 font-mono text-caption text-ink-soft" title={s.label}>
-            <span className={`h-2 w-2 rounded-full ${s.dot}`} />
-            <span className="hidden sm:inline">{s.label}</span>
-          </div>
-
-          <div className="h-3 w-px bg-line" />
-
-          {/* Role Switcher */}
-          <div className="flex items-center gap-1.5 text-caption">
-            <span className="font-medium text-ink-soft">Role:</span>
-            <div
-              className="inline-flex rounded border border-line bg-paper p-0.5"
-              role="group"
-              aria-label="Select role view"
-            >
-              <button
-                type="button"
-                onClick={() => setRole?.('supervisor')}
-                className={`rounded px-2.5 py-0.5 text-caption font-medium transition-colors cursor-pointer ${
-                  role === 'supervisor'
-                    ? 'bg-ink text-paper font-semibold shadow-sm'
-                    : 'text-ink-soft hover:text-ink hover:bg-surface'
-                }`}
-                title="Switch to Supervisor view (all screens & intelligence)"
-              >
-                Supervisor
-              </button>
-              <button
-                type="button"
-                onClick={() => setRole?.('operator')}
-                className={`rounded px-2.5 py-0.5 text-caption font-medium transition-colors cursor-pointer ${
-                  role === 'operator'
-                    ? 'bg-ink text-paper font-semibold shadow-sm'
-                    : 'text-ink-soft hover:text-ink hover:bg-surface'
-                }`}
-                title="Switch to Operator view (shop-floor operations)"
-              >
-                Operator
-              </button>
-            </div>
-          </div>
         </div>
       </div>
       <div className="h-1 bg-[repeating-linear-gradient(45deg,#1A1712_0_10px,#C28208_10px_20px)]" />

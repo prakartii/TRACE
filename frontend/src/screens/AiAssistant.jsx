@@ -21,14 +21,13 @@ import { askAssistant, getAssistantSuggestions } from '../api/assistant.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 
 const CATEGORY_PROMPTS = [
+  { label: '⚠️ Highest-Risk Events', query: 'What are the highest-risk events?' },
+  { label: '🔄 Unsafe Behaviour', query: 'What unsafe behaviour occurred most often?' },
+  { label: '❓ Why High Risk?', query: 'Why was this incident high risk?' },
+  { label: '⚡ Next Action', query: 'What should the supervisor do next?' },
+  { label: '📹 Video Findings', query: 'What did TRACE find in this video?' },
   { label: '📋 Shift Briefing', query: 'Give me the shift briefing' },
-  { label: '🚨 Active Interventions', query: 'What are the active interventions?' },
-  { label: '⚠️ High Risks', query: 'Show high risk events' },
-  { label: '🔍 Near Misses', query: 'Which bay had the most near misses?' },
-  { label: '🛡️ Prevented Incidents', query: 'How many events were prevented?' },
-  { label: '📦 Overhang Protocol', query: 'What is the protocol for box overhang?' },
-  { label: '📐 Stability Formula', query: 'How does the planner calculate stability?' },
-  { label: '🏷️ Catalog Rules', query: 'What product rules are configured?' },
+  { label: '🚨 Active Alerts', query: 'Are there any active alerts?' },
 ]
 
 export default function AiAssistant() {
@@ -147,16 +146,23 @@ export default function AiAssistant() {
               </div>
               <h2 className="text-small font-semibold text-ink">How can I assist your safety inspection today?</h2>
               <p className="mt-0.5 max-w-md text-caption text-ink-soft">
-                Ask about today's shift briefing, active alerts, near misses, or safe box stacking.
+                Ask about high-risk events, unsafe behaviours, root cause explanations, or recommended actions:
               </p>
 
               <div className="mt-4 grid max-w-2xl grid-cols-1 gap-1.5 sm:grid-cols-2 text-left">
-                {suggestions.slice(0, 6).map((s) => (
+                {(suggestions.length > 0 ? suggestions : [
+                  'What are the highest-risk events?',
+                  'What unsafe behaviour occurred most often?',
+                  'Why was this incident high risk?',
+                  'What should the supervisor do next?',
+                  'What did TRACE find in this video?',
+                  'Give me a shift safety briefing',
+                ]).slice(0, 6).map((s) => (
                   <button
                     key={s}
                     type="button"
                     onClick={() => send(s)}
-                    className="flex items-center justify-between border border-line bg-paper p-2 text-caption text-ink-soft transition-all hover:border-ink hover:text-ink hover:shadow-xs"
+                    className="flex items-center justify-between border border-line bg-paper p-2 text-caption text-ink-soft transition-all hover:border-ink hover:text-ink hover:shadow-xs cursor-pointer"
                   >
                     <span>{s}</span>
                     <ArrowRight size={12} className="shrink-0 ml-2 text-ink-faint" />
@@ -237,7 +243,7 @@ export default function AiAssistant() {
 
 function AssistantBubble({ msg, onFollowUp, navigateTo }) {
   const [showGrounding, setShowGrounding] = useState(false)
-  const [showCards, setShowCards] = useState(false)
+  const [showCards, setShowCards] = useState(true)
   const [selectedCardFilter, setSelectedCardFilter] = useState('all')
 
   if (msg.error) {

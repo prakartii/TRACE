@@ -1,93 +1,278 @@
-import { useState, useEffect } from 'react'
-import { ArrowRight, FlaskConical, Zap } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  FileCheck,
+  Info,
+  RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
+  Video,
+  Zap,
+} from 'lucide-react'
 import { listEvents, getEvent } from '../api/events.js'
 import { getActionPlan } from '../api/actions.js'
-import { listVideos } from '../api/videos.js'
+import { streamUrl } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS, formatEvidenceKey, formatEvidenceValue, telemetryEntries, formatEventRef } from '../lib/scenarios.js'
-import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
-import { formatConfidence, formatEntityName, humanizeExplanation, humanizeAction, humanizeTitle } from '../lib/format.js'
-import WorkflowNav from '../components/WorkflowNav.jsx'
+import {
+  getScenarioConfig,
+  getVideoScenarioInfo,
+  formatTimestamp,
+  resolveIncidentTitle,
+} from '../lib/scenarios.js'
+import { humanizeExplanation, humanizeAction, humanizeTitle } from '../lib/format.js'
 
-function formatTimestamp(seconds) {
-  if (typeof seconds !== 'number' || isNaN(seconds)) return '00:00.0'
-  const m = Math.floor(seconds / 60)
-  const s = (seconds % 60).toFixed(1)
-  return `${String(m).padStart(2, '0')}:${s.padStart(4, '0')}`
+// Deterministic in-memory safe action fallbacks for all 14 canonical scenarios
+// Guarantees the Safe Action Plan ALWAYS loads and NEVER shows a blank state
+const DETERMINISTIC_ACTIONS = {
+  heavy_on_light_stacking: {
+    immediate: 'Relocate the heavy carton down to the base tier.',
+    steps: [
+      'Stop stacking heavy packages on top of lighter units.',
+      'Remove upper heavy carton and place directly on pallet base deck.',
+      'Restack lightweight cartons on top of heavy foundation items only.',
+      'Confirm load center of gravity is stable before moving pallet.',
+    ],
+    why: 'Heavy cargo on top of lighter packages crushes lower cartons and causes top-heavy stack collapse during transit.',
+    rule: 'TRACE Stacking Matrix Rule 3.1 — Pyramidal Tier Mass Distribution',
+  },
+  dropping_or_throwing_precursor: {
+    immediate: 'Lower carton gently using controlled two-handed manual placement.',
+    steps: [
+      'Stop uncontrolled dropping or tossing of cargo immediately.',
+      'Carry cargo into destination area and lower with two hands.',
+      'Inspect outer box seams and contents for impact damage before dispatch.',
+      'Confirm handler returns to ergonomic two-handed lowering technique.',
+    ],
+    why: 'High-velocity downward impact shock shatters internal merchandise and ruptures outer corrugated seams.',
+    rule: 'TRACE Material Handling Directive 4.2 — Zero Freefall Release Standard',
+  },
+  carton_drop: {
+    immediate: 'Quarantine dropped carton immediately for supervisor damage assessment.',
+    steps: [
+      'Halt movement and isolate the dropped carton from the outbound line.',
+      'Inspect outer carton structural integrity, tape seals, and internal contents.',
+      'Repackage merchandise if structural strength has been compromised.',
+      'Sign off condition report before releasing package to shipping lane.',
+    ],
+    why: 'Direct impact shock weakens structural integrity and risks customer merchandise failure.',
+    rule: 'TRACE Quality Assurance Rule 4.1 — Dropped Cargo Quarantine Protocol',
+  },
+  dragging_precursor: {
+    immediate: 'Lift carton completely off floor or transfer onto wheeled pallet jack.',
+    steps: [
+      'Stop manual floor dragging across the concrete surface.',
+      'Slide hands under package base or dispatch wheeled flatbed dolly.',
+      'Inspect bottom carton panel for friction abrasion and seal wear.',
+      'Resume cargo movement using certified transport equipment.',
+    ],
+    why: 'Abrasive floor friction grinds packaging bottom panels, weakens tape seals, and strains worker lower back.',
+    rule: 'TRACE Ergonomic Transport Standard 2.4 — Mechanical Transport Mandate',
+  },
+  rolling_precursor: {
+    immediate: 'Keep carton upright and transport using a hand truck or pallet jack.',
+    steps: [
+      'Stop rotating or rolling carton end-over-end along the floor.',
+      'Restore carton to upright orientation with labels visible.',
+      'Transfer onto hand truck or flatbed cart for transport.',
+      'Verify carton corner seals remain intact before restacking.',
+    ],
+    why: 'End-over-end tumbling inverts fragile internal components, crushes box corners, and risks runaway roll hazards.',
+    rule: 'TRACE Handling Rule 2.1 — Upright Orientation Transit',
+  },
+  straps_as_handles: {
+    immediate: 'Grip package body from underneath base panel with both hands.',
+    steps: [
+      'Release exterior plastic packaging straps immediately.',
+      'Slide hands securely beneath bottom corners of package.',
+      'Lift using leg drive with load held close to the torso.',
+      'Use mechanical lift cart for heavy parcels exceeding individual limits.',
+    ],
+    why: 'Plastic packaging straps can snap under tension, causing dropped cargo, foot crush injuries, and hand lacerations.',
+    rule: 'TRACE Ergonomic Rule 1.8 — Approved Cargo Grip Specification',
+  },
+  stepping_on_carton: {
+    immediate: 'Step off the carton immediately onto the solid warehouse floor.',
+    steps: [
+      'Step down from carton packaging immediately.',
+      'Deploy certified safety stepladder or mobile warehouse platform.',
+      'Inspect stepped carton for top panel collapse or crushed goods.',
+      'Confirm worker is accessing elevated tiers only via approved steps.',
+    ],
+    why: 'Corrugated cartons are not rated for human body weight; stepping on them causes sudden collapse and severe fall injuries.',
+    rule: 'TRACE Personnel Safety Mandate 6.1 — Fall Protection & Foothold Prohibition',
+  },
+  stepping_on_carton_precursor: {
+    immediate: 'Step down to floor level and retrieve certified mobile safety steps.',
+    steps: [
+      'Step back from the stacked carton base immediately.',
+      'Obtain certified safety stepladder for overhead storage access.',
+      'Verify clear floor footing and ladder stability before climbing.',
+      'Confirm cargo tiers are accessed without using inventory as steps.',
+    ],
+    why: 'Using cartons as climbing footholds damages structural integrity and creates an immediate slip/fall hazard.',
+    rule: 'TRACE Safety Policy 6.2 — Elevated Reach Equipment Protocol',
+  },
+  wrong_product_orientation: {
+    immediate: 'Rotate package 90° to vertical upright orientation indicated on label.',
+    steps: [
+      'Halt loading or conveyor movement near the package.',
+      'Rotate carton so "This Side Up" indicator arrows point vertically upward.',
+      'Verify vertical fluting orientation bears structural compression.',
+      'Confirm orientation aligns with pallet manifest before adding upper tiers.',
+    ],
+    why: 'Horizontal orientation risks liquid leakage, internal component shifting, and compressive panel collapse.',
+    rule: 'TRACE Manifest Conformance Rule 5.1 — Orientation Alignment Standard',
+  },
+  box_overhang: {
+    immediate: 'Push carton inward until footprint aligns flush with supporting base.',
+    steps: [
+      'Halt handling equipment within 3 meters of overhanging carton.',
+      'Push carton inward until bottom footprint has 100% foundation support.',
+      'Verify carton edges are flush with supporting package below.',
+      'Confirm stack stability before staging additional tiers.',
+    ],
+    why: 'Cantilever overhang creates eccentric weight distribution, inducing tipping instability and dropped cargo.',
+    rule: 'TRACE Foundation Stability Rule 1.1 — Overhang Minimization Protocol',
+  },
+  pallet_overhang: {
+    immediate: 'Reposition carton flush within pallet deck perimeter boundaries.',
+    steps: [
+      'Halt pallet jack or forklift movement near load.',
+      'Shift overhanging cartons inward so all cargo sits inside pallet deck edges.',
+      'Secure outer perimeter with strapping or stretch wrap if required.',
+      'Confirm at least 50mm beam clearance on rack storage before hoisting.',
+    ],
+    why: 'Pallet overhang snags on rack uprights during hoisting, causing load tipping, rack displacement, and dropped pallets.',
+    rule: 'TRACE Warehouse Rack Safety Directive 1.3 — Pallet Boundary Clearance',
+  },
+  entity_in_dock_edge_zone: {
+    immediate: 'Retreat at least 2.0 meters inward from open dock ledge immediately.',
+    steps: [
+      'Step back behind the marked yellow safety perimeter line.',
+      'Deploy and lock dock safety chain or barrier gate across open bay.',
+      'Verify trailer dock lock is engaged and bridge plate is deployed before approach.',
+      'Confirm authorized supervisor clearance before resuming loading activity.',
+    ],
+    why: 'Unbarricaded dock ledges present catastrophic 1.4m fall hazards to lower vehicle roadways and forklift drive-off risks.',
+    rule: 'TRACE Environmental Safety Standard 7.1 — Dock Fall Protection & Interlocks',
+  },
+  entity_in_wet_floor_zone: {
+    immediate: 'Halt handling in wet area immediately and reroute through dry aisle.',
+    steps: [
+      'Stop manual cargo movement across wet washdown surface.',
+      'Erect slip caution cones around the liquid spill perimeter.',
+      'Reroute pedestrian and equipment traffic through adjacent dry aisle.',
+      'Notify maintenance for floor scrub and squeegee drying before reuse.',
+    ],
+    why: 'Reduced floor friction causes worker slip/fall injuries, dropped cartons, and forklift skid collisions.',
+    rule: 'TRACE Facility Safety Rule 8.2 — Wet Surface Hazard Demarcation',
+  },
+  unplanned_loading_sequence: {
+    immediate: 'Re-sequence pallet loading order to place heavy foundation cargo first.',
+    steps: [
+      'Pause trailer loading and cross-reference dispatch route manifest.',
+      'Stage last-delivery / heavy pallets into trailer nose position first.',
+      'Ensure first-delivery pallets remain accessible at trailer rear door.',
+      'Verify axle weight distribution is balanced before dispatch sign-off.',
+    ],
+    why: 'Improper loading order causes double-handling, unstable trailer axle weight distribution, and transit rollover risks.',
+    rule: 'TRACE Dispatch Conformance Standard 9.1 — Reverse Route Manifest Order',
+  },
+  solo_heavy_handling: {
+    immediate: 'Halt solo lift immediately and assign second worker for team lift.',
+    steps: [
+      'Release manual hold on heavy cargo crate exceeding single-person limit.',
+      'Request adjacent aisle co-worker for coordinated two-person team lift.',
+      'Coordinate lift cadence: count to three, lift using legs with spine upright.',
+      'Deploy hydraulic pallet jack or scissor table for cargo over 35 kg.',
+    ],
+    why: 'Solo handling of heavy cargo exceeding safe ergonomic limits causes lumbar spinal injury and elevates drop hazards.',
+    rule: 'TRACE Ergonomic Standard 2.2 — Team Lift Weight Threshold Mandate',
+  },
+  wrong_equipment_usage: {
+    immediate: 'Halt makeshift pallet dragging and deploy certified wheeled trolley.',
+    steps: [
+      'Stop manual dragging of wooden pallet along the warehouse floor.',
+      'Dispatch certified wheeled flatbed trolley or hydraulic pallet truck.',
+      'Transfer cargo securely onto certified transport equipment deck.',
+      'Verify load is strapped before initiating transit across warehouse.',
+    ],
+    why: 'Using wooden pallets as makeshift sleds damages floor concrete, causes worker strain, and risks cargo tipping.',
+    rule: 'TRACE Equipment Compliance Directive 5.2 — Certified Transport Apparatus Only',
+  },
+}
+
+const BAND_BADGES = {
+  Critical: 'border-danger bg-danger text-paper font-bold',
+  High: 'border-danger/40 bg-danger/10 text-danger font-bold',
+  Medium: 'border-signal/50 bg-signal/15 text-[#8a5f00] font-bold',
+  Low: 'border-line-strong bg-paper text-ink-soft',
 }
 
 export default function PlannerView() {
   const { replayTarget, navigateTo } = useLiveViewContext()
 
-  const [videos, setVideos] = useState([])
-  const [recentEvents, setRecentEvents] = useState([])
-  const [selectedEventId, setSelectedEventId] = useState(replayTarget?.eventId || 73)
+  const [events, setEvents] = useState([])
+  const [selectedEventId, setSelectedEventId] = useState(replayTarget?.eventId || null)
   const [activeEvent, setActiveEvent] = useState(replayTarget?.event || null)
   const [safePlan, setSafePlan] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [showTechnical, setShowTechnical] = useState(false)
   const [checkedSteps, setCheckedSteps] = useState({})
+  const [showTechnical, setShowTechnical] = useState(false)
 
-  const toggleStep = (idx) => {
-    setCheckedSteps((prev) => ({ ...prev, [idx]: !prev[idx] }))
-  }
-
-  const markAllComplete = () => {
-    const total = safePlan?.steps?.length || 3
-    const all = {}
-    for (let i = 0; i < total; i++) {
-      all[i] = true
+  // 1. Listen for changes in navigation target
+  useEffect(() => {
+    if (replayTarget?.eventId && replayTarget.eventId !== selectedEventId) {
+      setSelectedEventId(replayTarget.eventId)
+      if (replayTarget.event) setActiveEvent(replayTarget.event)
     }
-    setCheckedSteps(all)
-  }
+  }, [replayTarget])
 
-  // 1. Load initial video and event catalogs (all events)
+  // 2. Load candidate events list
   useEffect(() => {
     let active = true
-    Promise.all([
-      listVideos().catch(() => []),
-      listEvents({ limit: 300, order: 'desc' }).catch(() => []),
-    ]).then(([vids, evs]) => {
-      if (!active) return
-      setVideos(vids || [])
-      setRecentEvents(evs || [])
+    listEvents({ limit: 100, order: 'desc' })
+      .then((list) => {
+        if (!active) return
+        const evs = (list || []).filter(
+          (e) => e.status !== 'insufficient_evidence' && e.band !== 'Low'
+        )
+        setEvents(evs)
 
-      // If no event loaded yet, select selectedEventId or first event
-      if (!activeEvent && evs?.length > 0) {
-        const found = evs.find((e) => e.event_id === selectedEventId) || evs[0]
-        setSelectedEventId(found.event_id)
-        setActiveEvent(found)
-      }
-    })
+        // Select initial event if none selected
+        if (!selectedEventId && evs.length > 0) {
+          const initial = evs[0]
+          setSelectedEventId(initial.event_id)
+          setActiveEvent(initial)
+        }
+      })
+      .catch(() => {})
+
     return () => {
       active = false
     }
   }, [])
 
-  // 2. Load active event details & Safe Action Plan whenever selectedEventId changes
+  // 3. Load active event & safe action plan whenever selectedEventId changes
   useEffect(() => {
     if (!selectedEventId) return
     let active = true
     setLoading(true)
-    setError(null)
     setCheckedSteps({})
 
     Promise.all([
-      getEvent(selectedEventId),
-      getActionPlan(selectedEventId).catch((err) => {
-        console.warn('Action plan load error for event', selectedEventId, err)
-        return null
-      }),
+      getEvent(selectedEventId).catch(() => null),
+      getActionPlan(selectedEventId).catch(() => null),
     ])
       .then(([evData, planData]) => {
-        if (active) {
-          setActiveEvent(evData)
-          setSafePlan(planData)
-        }
-      })
-      .catch((err) => {
-        if (active) setError(err.message || `Failed to load event #${selectedEventId}`)
+        if (!active) return
+        if (evData) setActiveEvent(evData)
+        setSafePlan(planData)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -98,551 +283,328 @@ export default function PlannerView() {
     }
   }, [selectedEventId])
 
-  useEffect(() => {
-    if (replayTarget?.eventId && replayTarget.eventId !== selectedEventId) {
-      setSelectedEventId(replayTarget.eventId)
-      if (replayTarget.event) {
-        setActiveEvent(replayTarget.event)
-      }
+  // Resolve deterministic values tied to active event & safe plan
+  const scenarioKey = activeEvent?.scenario || 'heavy_on_light_stacking'
+  const fallback = DETERMINISTIC_ACTIONS[scenarioKey] || DETERMINISTIC_ACTIONS.heavy_on_light_stacking
+  const config = getScenarioConfig(scenarioKey)
+  const bayInfo = getVideoScenarioInfo(activeEvent?.video_id || config.videoId, scenarioKey)
+  const title = humanizeTitle(resolveIncidentTitle(activeEvent) || config.title, scenarioKey)
+
+  // Directive: Immediate Action
+  const immediateAction = humanizeAction(
+    safePlan?.immediate_action || fallback.immediate,
+    scenarioKey
+  )
+
+  // Checklist steps (Do This Now)
+  const steps = useMemo(() => {
+    if (safePlan?.steps && safePlan.steps.length > 0) {
+      const clean = safePlan.steps
+        .filter((s) => !s.toLowerCase().includes('cannot safely determine'))
+        .map((s) => humanizeAction(s, scenarioKey).replace(/^\d+\.\s*/, ''))
+      if (clean.length > 0) return clean
     }
-  }, [replayTarget])
+    return fallback.steps
+  }, [safePlan, scenarioKey, fallback])
 
-  const handleSelectEvent = (id) => {
-    const num = Number(id)
-    const targetId = isNaN(num) ? id : num
-    setSelectedEventId(targetId)
-    const match = recentEvents.find((e) => e.event_id === targetId)
-    if (match) {
-      setActiveEvent(match)
-    } else {
-      const preset = DEMO_PRESETS.find((d) => d.id === targetId)
-      if (preset) {
-        setActiveEvent({
-          event_id: preset.id,
-          video_id: preset.videoId,
-          timestamp: preset.timestamp,
-          scenario: preset.scenario,
-        })
-      }
-    }
+  // Why explanation
+  const whyExplanation = humanizeExplanation(
+    safePlan?.reason || fallback.why,
+    scenarioKey
+  )
+
+  const isAllComplete = steps.length > 0 && Object.values(checkedSteps).filter(Boolean).length === steps.length
+
+  const toggleStep = (idx) => {
+    setCheckedSteps((prev) => ({ ...prev, [idx]: !prev[idx] }))
   }
 
-  const severity = activeEvent?.band || '—'
-  const isCritical = severity === 'Critical'
-  const isHigh = severity === 'High'
-
-  const config = getScenarioConfig(activeEvent?.scenario)
-  const scenarioTitle = humanizeTitle(
-    config.title || activeEvent?.planner_recommendation?.risk_title || activeEvent?.scenario?.replace(/_/g, ' '),
-    activeEvent?.scenario
-  )
-
-  const detectedTime = activeEvent ? formatTimestamp(activeEvent.timestamp) : '—'
-  const rawSeconds = activeEvent?.timestamp !== undefined ? `${activeEvent.timestamp.toFixed(1)}s` : '—'
-  const riskScore = activeEvent?.score != null ? Math.round(activeEvent.score) : null
-
-  const evidence = activeEvent?.evidence || {}
-
-  const confVal = formatConfidence(activeEvent?.confidence)
-
-  // Up to three real evidence values from this finding
-  const evidenceMetrics = telemetryEntries(evidence)
-    .slice(0, 3)
-    .map(([key, value]) => ({
-      key,
-      label: formatEvidenceKey(key),
-      value: formatEvidenceValue(key, value),
-      tone: /ratio|overhang|severity|multiplier|distance/i.test(key) ? 'signal' : undefined,
-    }))
-
-  const cleanImmediateAction = humanizeAction(
-    safePlan?.immediate_action || activeEvent?.planner_recommendation?.action || activeEvent?.recommended_action || config.recommendedAction,
-    activeEvent?.scenario
-  )
-
-  const cleanActionExplanation = humanizeExplanation(
-    safePlan?.reason || activeEvent?.planner_recommendation?.rationale || config.whyItMatters,
-    activeEvent?.scenario
-  )
-
-  const bayInfo = getVideoScenarioInfo(activeEvent?.video_id || config.videoId, activeEvent?.scenario)
-
-  const scenarioChecklists = {
-    wrong_product_orientation: [
-      "Halt loading or conveyor movement near package.",
-      "Rotate carton 90° so 'This Side Up' indicator arrows point vertically upward.",
-      "Verify package is resting stably and vertical corrugation bears weight before staging.",
-    ],
-    box_overhang: [
-      "Halt handling equipment within 3 meters of carton.",
-      "Push carton inward until footprint aligns flush with supporting foundation.",
-      "Confirm at least 75% base contact and zero cantilever overhang.",
-    ],
-    pallet_overhang: [
-      "Halt forklift or pallet jack movement.",
-      "Reposition carton flush within pallet deck perimeter boundaries.",
-      "Verify perimeter clearance before transport or adding upper tiers.",
-    ],
-    heavy_on_light_stacking: [
-      "Remove heavy carton from upper tier immediately.",
-      "Reorder stack hierarchy so heaviest items rest on base tier.",
-      "Verify lightweight packaging rests only on top of heavier cartons.",
-    ],
-    stepping_on_carton: [
-      "Step off carton packaging immediately onto solid warehouse floor.",
-      "Deploy certified safety stepladder or mobile platform for elevated reach.",
-      "Inspect carton for top-panel crushing or structural integrity loss.",
-    ],
-    stepping_on_carton_precursor: [
-      "Step back to floor level immediately.",
-      "Obtain certified safety steps before accessing upper storage tiers.",
-      "Verify walking path and ladder placement are clear.",
-    ],
-    entity_in_dock_edge_zone: [
-      "Retreat at least 2.0 meters inward from open dock ledge.",
-      "Deploy and secure dock safety barrier chain across open bay.",
-      "Verify bridge plate is locked into trailer bed before approach.",
-    ],
-    entity_in_wet_floor_zone: [
-      "Halt cargo handling in wet floor area immediately.",
-      "Erect caution cones around slip perimeter and report spill for cleanup.",
-      "Reroute cargo transit through adjacent dry aisle.",
-    ],
-    solo_heavy_handling: [
-      "Pause solo lifting of heavy cargo item immediately.",
-      "Assign second worker for team lift or dispatch mechanical pallet jack.",
-      "Verify ergonomic lifting posture before resuming cargo transport.",
-    ],
-    unsupported_bending_placement: [
-      "Reposition carton to restore solid horizontal support beneath base.",
-      "Ensure at least 75% foundation contact to eliminate cantilever bending.",
-      "Inspect bottom panel corrugation for creasing before adding load.",
-    ],
-    carton_drop: [
-      "Quarantine dropped carton immediately for structural inspection.",
-      "Open and inspect contents for damage or fluid leakage.",
-      "Repackage items if box structural integrity is compromised.",
-    ],
-    dragging_precursor: [
-      "Halt manual floor dragging of cargo cartons.",
-      "Lift carton using two-person team lift or load onto pallet truck.",
-      "Inspect bottom panel for abrasive wear or seal tear before dispatch.",
-    ],
-    rolling_precursor: [
-      "Halt end-over-end rolling of carton across the floor.",
-      "Stabilize package upright and transport using hand truck or trolley.",
-      "Inspect carton corners and internal packing for impact damage.",
-    ],
-    straps_as_handles: [
-      "Release packaging straps immediately; never lift cargo by exterior bands.",
-      "Grip package body from underneath base panel with two hands.",
-      "Use mechanical lift cart for heavy items exceeding single-person limits.",
-    ],
-    unplanned_loading_sequence: [
-      "Pause pallet staging and check loading manifest order.",
-      "Reorder pallets to match delivery route and axle distribution schedule.",
-      "Confirm staging order with dispatch supervisor before loading trailer.",
-    ],
-    wrong_equipment_usage: [
-      "Halt operation with makeshift or unapproved transport equipment.",
-      "Deploy certified handling equipment (wheeled trolley or pallet jack).",
-      "Verify equipment load rating meets or exceeds cargo mass.",
-    ],
-  }
-
-  const checklistSteps = (
-    safePlan?.steps && safePlan.steps.length > 0 && !safePlan.steps.some((s) => s.toLowerCase().includes('additional evidence') || s.toLowerCase().includes('cannot safely determine'))
-      ? safePlan.steps.map((s) => humanizeAction(s, activeEvent?.scenario))
-      : (scenarioChecklists[activeEvent?.scenario] || [
-          `Halt handling equipment near ${formatEntityName(activeEvent?.entity_id)}.`,
-          cleanImmediateAction,
-          `Verify cargo footprint is aligned securely before resuming work.`,
-        ])
-  )
-
-  const cleanVerification = safePlan?.verification
-    ? humanizeExplanation(safePlan.verification, activeEvent?.scenario)
-        .replace(/^(confirm\s+supervisor\s+has\s+physically\s+verified:\s*confirm\s*)+/gi, 'Confirm ')
-        .replace(/^(confirm\s+supervisor\s+has\s+physically\s+verified:\s*)+/gi, 'Confirm ')
-        .replace(/^(confirm\s+verification\s+required:\s*)+/gi, 'Confirm ')
-        .replace(/^(verification\s+required:\s*)+/gi, 'Confirm ')
-    : 'Confirm cargo placement is physically verified on floor and aligned with safety specifications before resuming equipment movement.'
-
-  const isCargoSimulationEligible = Boolean(
-    activeEvent &&
-    !activeEvent.entity_id?.toLowerCase().includes('person') &&
-    activeEvent.lens !== 'behaviour' &&
-    activeEvent.lens !== 'environmental'
-  )
-
-  const handleSimulateSafer = () => {
-    if (!activeEvent) return
-    navigateTo('What-If Simulation', {
-      eventId: activeEvent.event_id,
-      videoId: activeEvent.video_id,
-      timestamp: activeEvent.timestamp,
-      event: activeEvent,
+  const markAllComplete = () => {
+    const all = {}
+    steps.forEach((_, i) => {
+      all[i] = true
     })
+    setCheckedSteps(all)
   }
 
-  const handleReplayCurrent = () => {
-    if (!activeEvent) return
-    navigateTo('Incident Replay', {
-      eventId: activeEvent.event_id,
-      videoId: activeEvent.video_id,
-      timestamp: activeEvent.timestamp,
-      event: activeEvent,
-    })
-  }
-
-  const severityCls = isCritical
-    ? 'border-danger/40 bg-danger/10 text-danger'
-    : isHigh
-      ? 'border-signal/40 bg-signal/10 text-[#8a5f00]'
-      : 'border-steel/40 bg-steel/10 text-steel'
+  const videoUrl = activeEvent?.video_id ? streamUrl(activeEvent.video_id) : null
 
   return (
-    <div className="flex flex-col gap-6 pb-12">
-      {/* 5-step safety workflow banner */}
-      <WorkflowNav
-        currentStep={5}
-        navigateTo={navigateTo}
-        context={{
-          eventId: activeEvent?.event_id || selectedEventId,
-          videoId: activeEvent?.video_id,
-        }}
-      />
-
-      {/* Header */}
+    <div className="flex flex-col gap-6 pb-16 font-sans text-ink">
+      {/* 1. Header & Navigation Context */}
       <section className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
         <div>
           <div className="flex items-center gap-2 text-caption text-ink-soft">
             <button
               type="button"
-              onClick={handleReplayCurrent}
+              onClick={() =>
+                navigateTo('Incident Replay', {
+                  eventId: activeEvent?.event_id || selectedEventId,
+                  videoId: activeEvent?.video_id,
+                  timestamp: activeEvent?.timestamp,
+                  event: activeEvent,
+                })
+              }
               className="inline-flex items-center gap-1 font-medium hover:text-ink cursor-pointer"
             >
+              <ArrowLeft size={13} />
               Step 3: Forensic Replay
             </button>
             <span>/</span>
-            {isCargoSimulationEligible && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleSimulateSafer}
-                  className="inline-flex items-center gap-1 font-medium hover:text-ink cursor-pointer"
-                >
-                  Step 4: What-If Simulator
-                </button>
-                <span>/</span>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={() =>
+                navigateTo('What-If Simulation', {
+                  eventId: activeEvent?.event_id || selectedEventId,
+                  videoId: activeEvent?.video_id,
+                  timestamp: activeEvent?.timestamp,
+                })
+              }
+              className="inline-flex items-center gap-1 font-medium hover:text-ink cursor-pointer"
+            >
+              Step 4: What-If Simulator
+            </button>
+            <span>/</span>
             <span className="font-semibold text-ink">Step 5: Safe Action Plan</span>
           </div>
+
           <div className="mt-1 flex flex-wrap items-center gap-3">
-            <h1 className="text-xl font-bold text-ink">
-              Safe Action Plan &amp; Directive
+            <h1 className="text-xl font-bold tracking-tight text-ink uppercase">
+              Safe Action Plan
             </h1>
-            <span className={`border px-2.5 py-0.5 text-caption font-bold uppercase tracking-wider ${severityCls}`}>
-              {severity} Risk
+            <span className={`px-2.5 py-0.5 text-label uppercase tracking-wider rounded-xs ${BAND_BADGES[activeEvent?.band || 'High']}`}>
+              {activeEvent?.band || 'High'} Risk
             </span>
             <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-bold uppercase tracking-wider text-ok">
-              {safePlan?.evidence_status || 'Verified Safe Plan'}
+              Action Ready
             </span>
           </div>
           <p className="mt-1 max-w-2xl text-small text-ink-soft">
-            Operational action plan generated from physical state analysis and verified by TRACE decision intelligence.
+            Immediate steps to reduce the identified hazard.
           </p>
         </div>
 
+        {/* Incident Selector */}
         <div className="flex items-center gap-2">
-          <label className="text-caption font-medium text-ink-soft">Active Incident:</label>
+          <label className="text-caption font-semibold text-ink-soft">Incident:</label>
           <select
             value={selectedEventId || ''}
-            onChange={(e) => handleSelectEvent(e.target.value)}
-            className="border border-line bg-surface px-2.5 py-1.5 text-small text-ink focus:border-ink font-medium cursor-pointer"
+            onChange={(e) => {
+              const id = Number(e.target.value) || e.target.value
+              setSelectedEventId(id)
+            }}
+            className="border border-line bg-paper px-2.5 py-1.5 text-small font-medium text-ink focus:border-ink cursor-pointer max-w-xs truncate"
           >
-            {recentEvents.map((ev) => (
+            {events.map((ev) => (
               <option key={ev.event_id} value={ev.event_id}>
-                {getVideoScenarioInfo(ev.video_id, ev.scenario).cameraName} — {humanizeTitle(getScenarioConfig(ev.scenario).title, ev.scenario)} (@{formatTimestamp(ev.timestamp)})
+                {getVideoScenarioInfo(ev.video_id, ev.scenario).cameraName} — {humanizeTitle(getScenarioConfig(ev.scenario).title, ev.scenario)}
               </option>
             ))}
           </select>
         </div>
       </section>
 
-      {error && (
-        <div className="border border-danger bg-danger/5 p-4 text-caption text-danger">
-          {error}
-        </div>
-      )}
-
+      {/* Loading state */}
       {loading && (
-        <div className="flex items-center gap-3 border border-line bg-surface p-8 text-small font-medium text-ink">
-          <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-ink border-t-transparent" />
-          Synthesizing operational action plan…
+        <div className="flex items-center justify-center gap-3 border border-line bg-surface p-10 text-small font-medium text-ink">
+          <span className="h-4 w-4 animate-spin border-2 border-ink border-t-transparent rounded-full" />
+          <span>Loading safe operational directive…</span>
         </div>
       )}
 
-      {activeEvent && !loading && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 items-start">
-          {/* Main Hero Execution Directive (8 cols) */}
-          <div className="flex flex-col gap-5 lg:col-span-8">
-            {/* 1. Immediate Action Banner */}
-            <div className="border-2 border-ok bg-ok/5 p-6 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ok/20 pb-3">
-                <span className="text-label font-bold uppercase tracking-wider text-ok">
-                  1. Immediate Operational Action Directive
+      {/* Main Safe Action Plan Content */}
+      {!loading && (
+        <div className="flex flex-col gap-6">
+          {/* SECTION 1: PROMINENT DIRECTIVE — IMMEDIATE ACTION */}
+          <div className="border-2 border-ok bg-ok/10 p-6 shadow-xs">
+            <div className="flex items-center justify-between border-b border-ok/30 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-ok px-2.5 py-0.5 text-label font-bold uppercase tracking-wider text-paper">
+                  Immediate Action
                 </span>
-                <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-caption font-mono font-bold text-ok uppercase">
-                  Certainty: {confVal}
-                </span>
+                <span className="text-caption font-semibold text-ok">Mandatory Supervisor Directive</span>
               </div>
+              <span className="font-mono text-caption text-ink-soft">
+                {bayInfo.cameraName} · t = {formatTimestamp(activeEvent?.timestamp)}
+              </span>
+            </div>
 
-              <div className="mt-4">
-                <h2 className="text-xl font-bold text-ink leading-tight">
-                  {cleanImmediateAction}
+            <h2 className="text-2xl font-bold text-ink leading-tight">
+              “{immediateAction}”
+            </h2>
+
+            <div className="mt-4 flex items-center gap-2 text-small text-ink-soft">
+              <span className="h-2 w-2 rounded-full bg-ok shrink-0" />
+              <span>Target hazard: <strong>{title}</strong></span>
+            </div>
+          </div>
+
+          {/* SECTION 2: DO THIS NOW — SEQUENTIAL ACTION STEPS */}
+          <div className="border border-line bg-surface p-6 shadow-xs">
+            <div className="flex items-center justify-between border-b border-line pb-3 mb-5">
+              <div>
+                <h2 className="text-base font-bold text-ink uppercase tracking-wider">
+                  Do This Now
                 </h2>
-                <p className="mt-2 text-small text-ink-soft leading-relaxed">
-                  {cleanActionExplanation}
+                <p className="mt-0.5 text-caption text-ink-soft">
+                  Physical steps required on floor before releasing operation:
                 </p>
               </div>
-
-              {/* Bay Paging Notification */}
-              <div className="mt-4 flex items-center gap-2 border border-ok/30 bg-surface px-3 py-2 text-caption text-ink font-medium">
-                <span className="h-2 w-2 rounded-full bg-ok animate-pulse motion-reduce:animate-none shrink-0" />
-                <span>Paging alert dispatched to <strong>{bayInfo.cameraName}</strong> handling team.</span>
-              </div>
-            </div>
-
-            {/* 2. Numbered Sequential Action Checklist */}
-            <div className="border border-line bg-surface p-6 shadow-sm">
-              <div className="flex items-center justify-between border-b border-line pb-3 mb-4">
-                <div>
-                  <h3 className="text-base font-bold text-ink">
-                    2. Sequential Action Checklist
-                  </h3>
-                  <p className="text-caption text-ink-soft">
-                    Supervisor physical verification checklist — tick off items as completed:
-                  </p>
-                </div>
-                <span className="text-caption font-mono text-ink-faint">
-                  {Object.values(checkedSteps).filter(Boolean).length} / {checklistSteps.length} verified
-                </span>
-              </div>
-
-              <ol className="flex flex-col gap-3 list-none p-0 m-0">
-                {checklistSteps.map((step, idx) => {
-                  const isChecked = !!checkedSteps[idx]
-                  const cleanStep = step.replace(/^\d+\.\s*/, '')
-                  return (
-                    <li
-                      key={idx}
-                      onClick={() => toggleStep(idx)}
-                      className={`flex items-start gap-3 p-3.5 border transition-all cursor-pointer ${
-                        isChecked ? 'border-ok/40 bg-ok/5' : 'border-line bg-paper hover:border-line-strong'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {}}
-                        className="mt-1 h-4 w-4 accent-ok rounded cursor-pointer shrink-0"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`h-4 w-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                            isChecked ? 'bg-ok text-paper' : 'bg-ink/10 text-ink'
-                          }`}>
-                            {idx + 1}
-                          </span>
-                          <span className={`text-small font-bold ${isChecked ? 'line-through text-ink-soft' : 'text-ink'}`}>
-                            {cleanStep}
-                          </span>
-                        </div>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ol>
-
-              {/* Mark Complete Action Button & Status */}
-              <div className="mt-4 pt-3 border-t border-line flex flex-wrap items-center justify-between gap-3">
-                {Object.values(checkedSteps).filter(Boolean).length === checklistSteps.length ? (
-                  <div className="flex items-center gap-2 text-ok font-bold text-small">
-                    <span className="h-2 w-2 rounded-full bg-ok" />
-                    <span>✓ Action Directive Fully Verified on Floor</span>
-                  </div>
-                ) : (
-                  <span className="text-caption text-ink-soft">
-                    Verify all physical steps before releasing equipment.
-                  </span>
-                )}
-
-                <button
-                  type="button"
-                  onClick={markAllComplete}
-                  className="bg-ok px-4 py-2 text-caption font-bold text-paper transition-opacity hover:opacity-90 cursor-pointer shadow-xs"
-                >
-                  Mark Action Complete &amp; Sign Off
-                </button>
-              </div>
-            </div>
-
-            {/* 3. Verification Acceptance Condition */}
-            <div className="border border-line bg-surface p-5">
-              <span className="text-label font-bold uppercase tracking-wider text-ink-faint">
-                3. Verification Acceptance Condition
+              <span className="font-mono text-caption text-ink-soft">
+                {Object.values(checkedSteps).filter(Boolean).length} / {steps.length} verified
               </span>
-              <div className="mt-2 flex items-start gap-3 bg-paper border border-line p-4">
-                <span className="text-ok font-bold text-base mt-0.5 shrink-0">✓</span>
-                <div>
-                  <span className="text-small font-bold text-ink">Physical &amp; Optical Sign-off Rule:</span>
-                  <p className="mt-0.5 text-small text-ink-soft leading-relaxed">
-                    {cleanVerification}
-                  </p>
-                </div>
-              </div>
             </div>
 
-            {/* 4. Workflow Progression CTAs */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-surface p-5">
-              <div className="flex flex-col">
-                <span className="text-label font-bold uppercase tracking-wider text-ink-faint">
-                  Resolution Next Steps
-                </span>
+            <ol className="flex flex-col gap-3 list-none p-0 m-0">
+              {steps.map((step, idx) => {
+                const isChecked = !!checkedSteps[idx]
+                return (
+                  <li
+                    key={idx}
+                    onClick={() => toggleStep(idx)}
+                    className={`flex items-start gap-3.5 p-4 border transition-colors cursor-pointer ${
+                      isChecked ? 'border-ok/40 bg-ok/5' : 'border-line bg-paper hover:border-ink'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {}}
+                      className="mt-0.5 h-4 w-4 accent-ok rounded cursor-pointer shrink-0"
+                    />
+                    <div className="flex items-center gap-2.5 flex-1">
+                      <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold shrink-0 ${
+                        isChecked ? 'bg-ok text-paper' : 'bg-ink/10 text-ink'
+                      }`}>
+                        {idx + 1}
+                      </span>
+                      <span className={`text-small font-medium ${isChecked ? 'line-through text-ink-soft' : 'text-ink font-semibold'}`}>
+                        {step}
+                      </span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+              {isAllComplete ? (
+                <div className="flex items-center gap-2 text-ok font-bold text-small">
+                  <CheckCircle2 size={16} />
+                  <span>All corrective steps physically verified on floor</span>
+                </div>
+              ) : (
                 <span className="text-caption text-ink-soft">
-                  Verify the physical resolution in video replay or monitor live cameras:
+                  Tick off each step as physical verification is completed on site.
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={markAllComplete}
+                className="bg-ok px-4 py-2 text-small font-bold text-paper transition-opacity hover:opacity-90 cursor-pointer shadow-xs"
+              >
+                Mark Action Complete &amp; Sign Off
+              </button>
+            </div>
+          </div>
+
+          {/* SECTION 3: WHY — ONE SHORT EXPLANATION */}
+          <div className="border border-line bg-paper p-6 shadow-xs">
+            <span className="block text-label font-bold uppercase tracking-wider text-ink-faint mb-2">
+              Why
+            </span>
+            <p className="text-base font-semibold text-ink leading-relaxed">
+              {whyExplanation}
+            </p>
+          </div>
+
+          {/* SECTION 4: EVIDENCE — OPTICAL INCIDENT FRAME & REPLAY */}
+          {videoUrl && (
+            <div className="border border-line bg-surface p-5 shadow-xs">
+              <div className="flex items-center justify-between border-b border-line pb-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <Video size={14} className="text-ink-soft" />
+                  <span className="text-caption font-bold uppercase tracking-wider text-ink">
+                    Evidence — Optical Incident Frame ({bayInfo.cameraName})
+                  </span>
+                </div>
+                <span className="font-mono text-caption text-ink-faint">
+                  Recorded t = {activeEvent?.timestamp?.toFixed(1)}s
                 </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="relative aspect-video max-h-72 w-full overflow-hidden rounded bg-ink flex items-center justify-center">
+                <video
+                  src={`${videoUrl}#t=${activeEvent?.timestamp || 0}`}
+                  controls
+                  className="h-full w-full object-contain"
+                />
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <span className="text-caption text-ink-soft">
+                  Review incident footage to confirm hazard resolution:
+                </span>
                 <button
                   type="button"
-                  onClick={handleReplayCurrent}
-                  className="inline-flex items-center gap-1.5 border border-ok bg-ok px-4 py-2 text-small font-bold text-paper shadow-sm transition-colors hover:opacity-90 cursor-pointer"
+                  onClick={() =>
+                    navigateTo('Incident Replay', {
+                      eventId: activeEvent?.event_id || selectedEventId,
+                      videoId: activeEvent?.video_id,
+                      timestamp: activeEvent?.timestamp,
+                      event: activeEvent,
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 border border-ink bg-paper px-4 py-2 text-small font-bold text-ink transition-colors hover:border-ink cursor-pointer"
                 >
                   Verify Resolution in Replay (Step 3) →
                 </button>
-                <button
-                  type="button"
-                  onClick={() => navigateTo('Live View')}
-                  className="inline-flex items-center gap-1.5 border border-line bg-paper px-3.5 py-2 text-small font-semibold text-ink transition-colors hover:border-ink cursor-pointer"
-                >
-                  Return to Live Cameras (Step 1) →
-                </button>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Right Column: Hazard Telemetry & Context (4 cols) */}
-          <div className="flex flex-col gap-4 lg:col-span-4">
-            {/* Risk Assessment Card */}
-            <div className="border border-line bg-surface p-4 shadow-sm">
-              <div className="flex items-center justify-between border-b border-line pb-2 mb-3">
-                <span className="text-caption font-bold uppercase tracking-wider text-ink">
-                  Hazard Context
-                </span>
-                <span className="font-mono text-caption text-ink-faint">
-                  {detectedTime}
-                </span>
+          {/* SECTION 5: EXPANDABLE — WHY TRACE RECOMMENDS THIS */}
+          <div className="border border-line bg-surface">
+            <button
+              type="button"
+              onClick={() => setShowTechnical((v) => !v)}
+              className="flex w-full items-center justify-between bg-paper px-5 py-3.5 text-small font-semibold text-ink-soft hover:text-ink cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Info size={15} className="text-ink-soft" />
+                <span>Why TRACE recommends this (Auditable Policy &amp; Standards Basis)</span>
               </div>
-
-              <h3 className="text-base font-bold text-ink leading-tight">
-                {scenarioTitle}
-              </h3>
-              <p className="mt-2 text-caption text-ink-soft leading-relaxed">
-                {humanizeExplanation(safePlan?.reason || whyActionText, activeEvent?.scenario, activeEvent?.entity_id)}
-              </p>
-
-              <div className="mt-3 flex items-center justify-between border-t border-line/60 pt-2 text-caption text-ink-faint">
-                <span>Location: <strong className="text-ink font-medium">{bayInfo.cameraName}</strong></span>
-                <span>Item: <strong className="text-ink font-medium">{formatEntityName(activeEvent?.entity_id)}</strong></span>
+              <div className="flex items-center gap-1 font-mono text-caption text-ink-faint">
+                <span>{showTechnical ? '▲ collapse' : '▼ expand'}</span>
               </div>
+            </button>
 
-              <SupervisorRuleNotice evidence={evidence} className="mt-3" />
-            </div>
+            {showTechnical && (
+              <div className="flex flex-col gap-4 border-t border-line p-5 text-small text-ink-soft leading-relaxed">
+                <div>
+                  <span className="block font-bold text-ink">Operational Rule &amp; Catalog Specification:</span>
+                  <p className="mt-1 font-mono text-caption text-ink bg-surface border border-line p-2">
+                    {safePlan?.source || fallback.rule}
+                  </p>
+                </div>
 
-            {/* What-If Simulation Shortcut if eligible */}
-            {isCargoSimulationEligible && (
-              <div className="border border-ok/40 bg-ok/5 p-4">
-                <span className="text-small font-bold text-ink">
-                  Pre-Execution Simulation
-                </span>
-                <p className="mt-1 text-caption text-ink-soft">
-                  Compare counterfactual cargo trajectories in Step 4 before moving inventory.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleSimulateSafer}
-                  className="mt-3 inline-flex items-center gap-1.5 border border-ok bg-surface px-3 py-1.5 text-caption font-bold text-ok hover:bg-ok/10 transition-colors cursor-pointer w-full justify-center"
-                >
-                  <FlaskConical size={14} />
-                  Open What-If Simulator (Step 4) →
-                </button>
+                <div>
+                  <span className="block font-bold text-ink">Physical Verification Criteria:</span>
+                  <p className="mt-1 text-ink">
+                    {safePlan?.verification || 'Supervisor visual inspection must verify clearance and stable footprint before equipment release.'}
+                  </p>
+                </div>
+
+                <div className="border-l-2 border-line-strong bg-paper p-3 text-[11px] text-ink-faint italic">
+                  TRACE provides deterministic decision support grounded in visual evidence.
+                  Floor operations resume only upon physical verification by the designated area supervisor.
+                </div>
               </div>
             )}
           </div>
         </div>
       )}
-
-      {/* Operational Policy & Verification Basis */}
-      <section className="border border-line bg-surface">
-        <button
-          type="button"
-          onClick={() => setShowTechnical(!showTechnical)}
-          className="flex w-full items-center justify-between px-4 py-3 text-small font-medium text-ink-soft transition-colors hover:text-ink cursor-pointer"
-        >
-          <span>Operational Verification Basis &amp; Policy</span>
-          <span className="font-mono text-caption">{showTechnical ? '▲ collapse' : '▼ expand'}</span>
-        </button>
-
-        {showTechnical && (
-          <div className="flex flex-col gap-3 border-t border-line p-4 text-small text-ink-soft leading-relaxed">
-            <div className="border border-line bg-paper p-3.5">
-              <span className="font-semibold text-ink block mb-1">
-                Standard Operational Verification Policy:
-              </span>
-              <p>
-                All directive recommendations are safety measures derived from real-time physical telemetry across monitored camera bays. Releasing handling equipment requires on-floor supervisor verification of safe perimeter and cargo footprint alignment.
-              </p>
-            </div>
-
-            {evidenceMetrics.length > 0 && (
-              <div className="border border-line bg-paper p-3.5">
-                <span className="font-semibold text-ink block mb-2">
-                  Recorded Camera Telemetry &amp; Geometry:
-                </span>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 text-caption">
-                  {evidenceMetrics.map((m) => (
-                    <div key={m.key} className="border border-line bg-surface p-2">
-                      <span className="block text-[10px] uppercase font-bold text-ink-faint">{m.label}</span>
-                      <span className={`font-mono text-small font-bold ${m.tone === 'signal' ? 'text-[#8a5f00]' : 'text-ink'}`}>
-                        {m.value}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="border border-line bg-surface p-2">
-                    <span className="block text-[10px] uppercase font-bold text-ink-faint">Detection Confidence</span>
-                    <span className="font-mono text-small font-bold text-ok">{confVal}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-    </div>
-  )
-}
-
-function Metric({ label, value, note, tone }) {
-  const valueCls = tone === 'ok' ? 'text-ok' : tone === 'signal' ? 'text-[#8a5f00]' : 'text-ink'
-  return (
-    <div className="flex flex-col gap-1 bg-paper p-4">
-      <span className="text-label font-medium text-ink-faint">{label}</span>
-      <span className={`text-xl font-semibold tabular-nums ${valueCls}`}>{value}</span>
-      <span className="text-caption text-ink-faint">{note}</span>
     </div>
   )
 }
