@@ -165,3 +165,24 @@ substitutes one model for the other. `backend/perception/adapter.py`'s
 `CLASS_MAP_BY_MODEL_IDENTITY` is keyed by this same identity string, so
 the stock model's output can never accidentally be interpreted through
 the pilot's (wider) class vocabulary or vice versa.
+
+## v2 classes (trolley / forklift / vehicle_bed) — plumbed, not trained
+
+The v2 vocabulary adds `trolley`, `forklift`, `vehicle_bed` on top of the
+pilot's `person`/`box`/`pallet`. The plumbing is complete and committed:
+
+- `training/dataset.yaml` + `build_yolo_labels.py` + `train_pilot_model.py`
+  declare class ids 0–5 (person, box, pallet, trolley, forklift, vehicle_bed).
+- `backend/perception/config.py` defines `TRACE_PILOT_V2_IDENTITY` +
+  `PILOT_V2_CONFIG` (points at `models/trace_pilot_v2.pt`, which does not exist yet).
+- `backend/perception/adapter.py` maps the v2 vocabulary via
+  `TRACE_PILOT_V2_CLASS_MAP`.
+- `backend/contracts.models.EntityClass.FORKLIFT` was added.
+
+**No v2 weights exist**, so no detector can produce `trolley`/`forklift`/
+`vehicle_bed` yet — the maps exist to define the contract, not to claim
+detection. Producing the model requires manually labelling frames for these
+classes (the honest bottleneck). `training/auto_label.py` bootstraps more
+`person`/`box`/`pallet` frames at a strict confidence floor, marked for review,
+but it is deliberately NOT used for the new classes: a weak teacher would just
+propagate noise into ground truth.
