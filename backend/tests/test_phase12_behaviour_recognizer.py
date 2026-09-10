@@ -497,12 +497,12 @@ def test_solo_heavy_handling_suppressed_by_team_lift():
 # ---------------------------------------------------------------------------
 
 def test_api_behaviour_scenarios_catalog():
-    """GET /api/behaviour/scenarios returns all 8 catalog items with metadata."""
+    """GET /api/behaviour/scenarios returns all catalog items with metadata."""
     client = TestClient(app)
     res = client.get("/api/behaviour/scenarios")
     assert res.status_code == 200
     data = res.json()
-    assert len(data) == 8
+    assert len(data) == 9
 
     scenarios = {s["scenario_id"] for s in data}
     assert "dropping_or_throwing_precursor" in scenarios
@@ -511,6 +511,7 @@ def test_api_behaviour_scenarios_catalog():
     assert "straps_as_handles" in scenarios
     assert "stepping_on_carton_precursor" in scenarios
     assert "solo_heavy_handling" in scenarios
+    assert "forklift_pedestrian_proximity" in scenarios
 
 
 def test_api_behaviour_scenario_detail():
@@ -537,3 +538,42 @@ def test_api_behaviour_evaluate_video():
         assert "epistemic_notice" in data
     else:
         assert res.status_code in (404, 503)
+
+
+def test_forklift_pedestrian_proximity():
+    """Moving forklift within proximity of a pedestrian raises a High-risk finding."""
+    frames = [
+        make_frame(
+            float(i) * 0.3,
+            [
+                make_entity("f1", 200 + i * 15, 300, 350 + i * 15, 450, EntityClass.FORKLIFT, timestamp=float(i) * 0.3),
+                make_entity("p1", 300, 300, 380, 500, EntityClass.PERSON, timestamp=float(i) * 0.3),
+            ],
+        )
+        for i in range(5)
+    ]
+    findings, _ = recognize_all_behaviours(
+        frames, frame_width=FRAME_W, frame_height=FRAME_H, timestamp=1.2
+    )
+    fk = next((f for f in findings if f.scenario == "forklift_pedestrian_proximity"), None)
+    assert fk is not None
+    assert fk.band == RiskBand.HIGH
+    assert fk.status == FindingStatus.PROBABLE
+
+
+def test_no_forklift_when_stationary():
+    """A stationary forklift does not raise the proximity finding."""
+    frames = [
+        make_frame(
+            float(i) * 0.3,
+            [
+                make_entity("f1", 200, 300, 350, 450, EntityClass.FORKLIFT, timestamp=float(i) * 0.3),
+                make_entity("p1", 300, 300, 380, 500, EntityClass.PERSON, timestamp=float(i) * 0.3),
+            ],
+        )
+        for i in range(5)
+    ]
+    findings, _ = recognize_all_behaviours(
+        frames, frame_width=FRAME_W, frame_height=FRAME_H, timestamp=1.2
+    )
+    assert all(f.scenario != "forklift_pedestrian_proximity" for f in findings)
