@@ -103,6 +103,36 @@ Runs on `http://localhost:5173`. It calls the backend's `/health` endpoint on lo
 show a live backend-status indicator; start the backend first (or expect "offline").
 Open the **Live View** screen to browse and play the discovered videos.
 
+## Docker
+
+Container definitions are provided for both services:
+
+| File | Purpose |
+| --- | --- |
+| `Dockerfile` | Backend API image. Multi-stage: a builder installs the CPU-only PyTorch / OpenCV / Ultralytics stack into a venv and pre-fetches `yolov8n.pt` + `yolov8n-pose.pt`; the runtime stage carries only the venv, weights, and code. Runs as non-root on port `8000`. |
+| `frontend/Dockerfile` | Frontend image. Builds the Vite bundle (Node stage) and serves the static assets with nginx on port `80`. `VITE_API_BASE_URL` is baked in at build time — it must be the URL the **browser** uses to reach the backend, not a Docker network name. |
+| `docker-compose.yml` | Runs the full stack: `backend` on `http://localhost:8000`, `frontend` on `http://localhost:5173`. |
+
+```bash
+docker compose up --build
+```
+
+Then open `http://localhost:5173`. Notes:
+
+- The backend image is large (~2–3 GB) because of the ML dependency tree; the first
+  build downloads it all.
+- The SQLite event ledger persists in the `backend-db` named volume and is re-seeded
+  from `backend/db/canonical_seed.py` on startup, so the demo data survives restarts.
+- `./data` is bind-mounted into the backend container — drop challenge MP4s into
+  `./data/challenge_videos/` on the host and the backend picks them up (see below).
+- Optional environment (create a `.env` next to `docker-compose.yml`):
+  `ANTHROPIC_API_KEY` enables the assistant's LLM phrasing layer (it falls back to
+  deterministic retrieval without one); `VITE_API_BASE_URL` overrides the baked-in
+  backend URL for the frontend build.
+- The image build needs working DNS / registry access. On networks that filter
+  outbound DNS, build from a different network (e.g. a phone hotspot) once — the
+  layers are then cached locally.
+
 ## Challenge videos
 
 Place the challenge-provided MP4 files in:

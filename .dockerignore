@@ -1,0 +1,49 @@
+# Keep the build context small and free of local-only / secret material.
+
+# VCS
+.git
+.gitignore
+
+# Python envs / caches
+.venv
+venv
+**/__pycache__
+**/*.pyc
+*.egg-info
+.pytest_cache
+
+# Frontend — not built by the backend image
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Runtime data & large binary assets (mounted as volumes instead)
+**/*.db
+backend/db/*.sqlite3
+data/challenge_videos/*
+!data/challenge_videos/.gitkeep
+data/clips/*
+!data/clips/.gitkeep
+data/pilot_annotations/*
+!data/pilot_annotations/.gitkeep
+data/.perception_cache
+models/*
+!models/.gitkeep
+training/runs
+runs
+
+# Secrets / local env
+.env
+.env.local
+
+# Internal instructions — never bake into an image
+CLAUDE.md
+PHASE_8_REPORT.md
+PHASE_8_1_REPORT.md
+SPEC_VS_IMPLEMENTATION_AUDIT.md
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
