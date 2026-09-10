@@ -19,16 +19,16 @@ from backend.contracts.models import FindingStatus, RiskBand
 from backend.db.canonical_seed import CANONICAL_SCENARIOS_DATA
 from backend.planner.eligibility import what_if_supported
 
-# Canonical camera bay names mapped to video IDs
+# Canonical camera bay names mapped to video IDs (aligned with CANONICAL_VIDEO_MAPPINGS)
 VIDEO_BAY_NAMES: dict[str, str] = {
-    "d2984c4eb1cf6b86": "KD Inbound Bay — Staging Line B",
-    "70063d8b35d1fa9a": "Trailer Loading Dock — Mattress Transfer",
-    "93e4b1963c6fcd97": "Dock Bay 09 — Dispatch Staging",
-    "734f165d61afafa0": "Washdown Bay 02 — Wet Floor Staging",
-    "44f245313615d3a1": "Inbound Staging Bay 03 — Bulk Seating",
-    "ccba59290a852fdc": "Inbound Staging Bay 03 — Bulk Seating",
-    "f15ad7e2295d190b": "Trailer Bay 07 — Bulk Carton Stacking",
-    "ac99ff34e1bd2c13": "Sortation Line 01 — Pallet Overhang Deck",
+    "93e4b1963c6fcd97": "Dock Bay 4 — Inbound Transfer",
+    "d2984c4eb1cf6b86": "Zone B — Pallet Assembly Deck",
+    "734f165d61afafa0": "Aisle 3 — Washdown Staging Area",
+    "ac99ff34e1bd2c13": "Staging Deck A — Sortation Bay",
+    "f15ad7e2295d190b": "Rack Bay 7 — High-Bay Storage",
+    "70063d8b35d1fa9a": "Loading Dock 2 — Outbound Staging",
+    "44f245313615d3a1": "Bay 1 — Parcel Sortation",
+    "ccba59290a852fdc": "Bay 1 — Parcel Sortation",
 }
 
 # Scenario-specific visual & counterfactual intelligence configurations
@@ -300,16 +300,17 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
             "SKU manifest mandates vertical upright orientation for this package. Correct alignment restores full conformance."
         ),
         "rule_reference": "TRACE Safety Catalog Section 6.2 - Package Orientation Compliance",
+        # Numeric aspect-ratio is filled in from this event's real
+        # evidence (evidence.observed_aspect_ratio) by build_what_if_safety_simulation
+        # below — never a fixed number here.
         "visual_data": {
             "before": {
                 "orientation": "horizontal",
-                "aspect_ratio": 1.72,
                 "label": "Non-compliant horizontal orientation",
                 "state": "danger",
             },
             "after": {
                 "orientation": "vertical",
-                "aspect_ratio": 0.58,
                 "label": "Compliant upright orientation",
                 "state": "safe",
             },

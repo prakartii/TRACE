@@ -341,7 +341,7 @@ CANONICAL_SCENARIOS_DATA: list[dict[str, Any]] = [
         "entity_id": "d2984c4eb1cf6b86:solo_worker",
         "epistemic_level": EpistemicLevel.INFERRED.value,
         "title": "Ergonomic lift hazard: heavy SKU handled by single worker",
-        "explanation": "Single worker maneuvering heavy mass-class cargo crate (42kg) without team lift assistance or mechanical aid. Exceeds single-person safe lifting threshold, elevating risk of spinal injury and dropped cargo.",
+        "explanation": "Single worker maneuvering heavy mass-class cargo crate without team lift assistance or mechanical aid. Exceeds single-person safe lifting threshold, elevating risk of spinal injury and dropped cargo.",
         "evidence": {
             "worker_count": 1,
             "mass_class": "heavy",
