@@ -15,9 +15,11 @@ import {
   Sparkles,
   Info,
 } from 'lucide-react'
-import { getScenes, listVideos, listZones, listManifests, streamUrl } from '../api/videos.js'
-import { getVideoScenarioInfo } from '../lib/scenarios.js'
+import { getFindings, getScenes, listVideos, listZones, listManifests, streamUrl } from '../api/videos.js'
+import { getScenarioConfig, getVideoScenarioInfo } from '../lib/scenarios.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
+import { useOverlayData } from '../hooks/useOverlayData.js'
+import { humanizeAction, humanizeTitle } from '../lib/format.js'
 import FaceRedactionOverlay from '../components/video/FaceRedactionOverlay.jsx'
 
 // High-contrast industrial palette for 2D Warehouse Blueprint
@@ -111,6 +113,13 @@ export default function StructuralView() {
   const scenarioInfo = selectedVideo
     ? getVideoScenarioInfo(selectedVideo.id || selectedVideo.filename)
     : null
+
+  // Real per-frame risk findings at the current playhead — the same
+  // pipeline LiveView uses — so the safety banner reflects what TRACE
+  // actually detects right now, not a static per-video scenario label
+  // that would otherwise stay on screen for the whole clip regardless of
+  // what's happening at the current instant.
+  const findings = useOverlayData(getFindings, Boolean(selectedId), selectedId, currentTime, 'pilot')
 
   // Fetch all scene snapshots for the selected video across the entire timeline
   useEffect(() => {
@@ -354,65 +363,40 @@ export default function StructuralView() {
       }))
   }, [activeSnapshot, selectedVideo])
 
-  // Dynamic safety status in simple English based on current frame findings
+  // Safety status driven by what TRACE actually found at THIS instant —
+  // never a static label tied to the video's overall scenario tag, which
+  // would otherwise show the same warning for the whole clip regardless of
+  // what's on screen right now (e.g. "Wet Floor" for the entire duration
+  // of a wet-floor demo video, even during the seconds nothing is
+  // happening near that zone).
   const safetyStatus = useMemo(() => {
-    if (!selectedVideo) return { level: 'Safe', title: 'Normal Operation', action: 'All cargo stable.' }
-    const scen = (scenarioInfo?.scenarioKey || '').toLowerCase()
+    if (!selectedVideo) return { level: 'Safe', title: 'Normal Operation', bg: 'border-ok/40 bg-ok/10 text-ok', action: 'All cargo stable.' }
 
-    // Check if any carton in current frame has overhang
-    const edges = activeSnapshot?.edges || []
-    const hasActiveOverhang = edges.some(
-      (e) => e.edge_type === 'support' && (e.evidence?.horizontal_overlap_ratio ?? 1) < 0.7
+    const live = (findings.data || []).filter(
+      (f) => f.status === 'supported' || f.status === 'probable'
     )
+    // Highest-band real finding at the current playhead, if any.
+    const priority = { Critical: 4, High: 3, Medium: 2, Low: 1 }
+    const top = live.sort((a, b) => (priority[b.band] || 0) - (priority[a.band] || 0))[0]
 
-    if (hasActiveOverhang || scen.includes('overhang') || scen.includes('heavy_on_light')) {
+    if (top) {
+      const config = getScenarioConfig(top.scenario)
+      const isCritical = top.band === 'Critical' || top.band === 'High'
       return {
-        level: 'Warning',
-        bg: 'border-warn/50 bg-warn/10 text-warn',
-        title: 'Box Overhanging Pallet Edge',
-        action: 'A box is sticking out over the edge of the pallet by more than 30%. Push it inward.',
-      }
-    }
-    if (scen.includes('dock') || scen.includes('cupboard')) {
-      return {
-        level: 'Alert',
-        bg: 'border-danger/50 bg-danger/10 text-danger',
-        title: 'Dock Edge Buffer Warning',
-        action: 'Maintain at least 1.5m clearance from the loading dock ledge.',
-      }
-    }
-    if (scen.includes('wet')) {
-      return {
-        level: 'Hazard',
-        bg: 'border-sky-500/50 bg-sky-500/10 text-sky-600',
-        title: 'Wet Floor Spill Area',
-        action: 'Floor is wet. Move slowly and clean up spill before rolling heavy loads.',
-      }
-    }
-    if (scen.includes('step')) {
-      return {
-        level: 'Warning',
-        bg: 'border-danger/50 bg-danger/10 text-danger',
-        title: 'Worker Standing on Inventory',
-        action: 'Use a rolling stepladder. Never stand directly on cargo boxes.',
-      }
-    }
-    if (scen.includes('drop') || scen.includes('throw')) {
-      return {
-        level: 'Warning',
-        bg: 'border-warn/50 bg-warn/10 text-warn',
-        title: 'Package Handling Caution',
-        action: 'Handle packages gently. Do not drop or throw cartons.',
+        level: top.band || 'Warning',
+        bg: isCritical ? 'border-danger/50 bg-danger/10 text-danger' : 'border-warn/50 bg-warn/10 text-warn',
+        title: humanizeTitle(config.title || top.scenario?.replace(/_/g, ' '), top.scenario),
+        action: humanizeAction(top.recommended_action || config.recommendedAction, top.scenario),
       }
     }
 
     return {
       level: 'Safe',
       bg: 'border-ok/40 bg-ok/10 text-ok',
-      title: 'Stable Placement',
-      action: 'All boxes and pallets are safely positioned.',
+      title: 'Normal Operation',
+      action: 'No safety hazard detected at the current frame.',
     }
-  }, [selectedVideo, scenarioInfo, activeSnapshot])
+  }, [selectedVideo, findings.data])
 
   return (
     <div className="flex flex-col gap-4 pb-8">

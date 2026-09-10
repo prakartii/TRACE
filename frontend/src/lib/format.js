@@ -33,11 +33,11 @@ export function formatConfidence(conf) {
     if (!isNaN(num) && Number.isFinite(num)) {
       return num <= 1 ? `${Math.round(num * 100)}%` : `${Math.round(num)}%`
     }
-    const lower = trimmed.toLowerCase()
-    if (lower === 'critical') return '95% (High Certainty)'
-    if (lower === 'high') return '85% (High Certainty)'
-    if (lower === 'medium') return '72% (Medium Certainty)'
-    if (lower === 'low') return '45% (Low Certainty)'
+    // A qualitative confidence band (High/Medium/Low) — TRACE's real
+    // confidence model is qualitative (detection quality, tracking
+    // continuity, geometry calibration), not a calibrated percentage, so
+    // this is shown as-is rather than inventing a specific-looking number
+    // that was never actually computed (CLAUDE.md §10 honesty rule).
     return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase()
   }
   return 'Uncalibrated'
@@ -275,9 +275,19 @@ export function generateWhyTraceFlaggedThis(event, config = {}, isVerifiedPreven
 
   // 2. Scenario-specific measurement & geometric inference
   if (lens === 'structural' || scenario.includes('overhang') || scenario.includes('stack')) {
-    const supportVal = formatPercentage(evidence.overlap_ratio ?? evidence.support_ratio, '40.4%')
-    const overhangVal = formatPercentage(evidence.overhang_ratio, '46.2%')
-    points.push(`Its footprint overlapped the supporting base by only ${supportVal}, leaving ${overhangVal} extending unsupported past the foundation boundary.`)
+    // Real measurements only — a missing value says so honestly rather than
+    // showing a specific-looking number that was never actually computed
+    // for this incident (this section is labeled "Verified Visual
+    // Evidence", so it must never show an unverified placeholder as fact).
+    const support = evidence.overlap_ratio ?? evidence.support_ratio
+    const overhang = evidence.overhang_ratio
+    if (support != null || overhang != null) {
+      const supportVal = formatPercentage(support, 'an unmeasured amount')
+      const overhangVal = formatPercentage(overhang, 'an unmeasured amount')
+      points.push(`Its footprint overlapped the supporting base by only ${supportVal}, leaving ${overhangVal} extending unsupported past the foundation boundary.`)
+    } else {
+      points.push('Structural support geometry indicated an unstable footprint relative to its base, though exact overlap/overhang ratios were not captured for this frame.')
+    }
   } else if (lens === 'environmental' || scenario.includes('dock') || scenario.includes('wet')) {
     const zoneName = humanizeExplanation(evidence.zone_id || 'dock-edge perimeter', scenario)
     points.push(`Its position was confirmed inside the designated hazard perimeter (${zoneName}) without protective barriers.`)
@@ -297,8 +307,10 @@ export function generateWhyTraceFlaggedThis(event, config = {}, isVerifiedPreven
   // 3. Hazard threshold crossing
   points.push(`The resulting condition crossed TRACE's configured safety limit, generating a ${band.toUpperCase()} RISK classification.`)
 
-  // 4. Physical verification basis
-  points.push(`Physical state was verified from multi-angle camera feeds and spatial geometry.`)
+  // 4. Physical verification basis — TRACE evaluates one camera feed per
+  // video source, not a multi-camera/stereo rig, so this must not claim
+  // "multi-angle" verification that didn't happen.
+  points.push(`Physical state was verified from the camera feed and computed spatial geometry.`)
 
   // 5. Recommended operational intervention
   points.push(`TRACE dispatched an immediate corrective action: "${actionText}".`)

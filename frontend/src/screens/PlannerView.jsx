@@ -283,16 +283,32 @@ export default function PlannerView() {
     }
   }, [selectedEventId])
 
-  // Resolve deterministic values tied to active event & safe plan
-  const scenarioKey = activeEvent?.scenario || 'heavy_on_light_stacking'
-  const fallback = DETERMINISTIC_ACTIONS[scenarioKey] || DETERMINISTIC_ACTIONS.heavy_on_light_stacking
+  // Resolve deterministic values tied to active event & safe plan.
+  //
+  // Priority order, and this order matters for correctness:
+  //   1. The real Safe Action Plan from the backend (safePlan) — always
+  //      preferred when present.
+  //   2. A static fallback keyed to THIS scenario — only used when the
+  //      scenario has a matching entry in DETERMINISTIC_ACTIONS.
+  //   3. The generic, scenario-aware copy from the scenario registry
+  //      (getScenarioConfig), which humanizes whatever the real scenario
+  //      key is rather than substituting an unrelated scenario.
+  //
+  // Previously step 2 fell back to DETERMINISTIC_ACTIONS.heavy_on_light_stacking
+  // for ANY scenario missing from that table — so if the backend call ever
+  // failed for, say, a wet-floor or dock-edge event, the screen would show
+  // confident, specific "move the heavy carton to the base tier" advice for
+  // a hazard that has nothing to do with stacking. Never substitute a
+  // different scenario's specific instructions (CLAUDE.md honesty rule).
+  const scenarioKey = activeEvent?.scenario || null
+  const fallback = scenarioKey ? DETERMINISTIC_ACTIONS[scenarioKey] : null
   const config = getScenarioConfig(scenarioKey)
   const bayInfo = getVideoScenarioInfo(activeEvent?.video_id || config.videoId, scenarioKey)
   const title = humanizeTitle(resolveIncidentTitle(activeEvent) || config.title, scenarioKey)
 
   // Directive: Immediate Action
   const immediateAction = humanizeAction(
-    safePlan?.immediate_action || fallback.immediate,
+    safePlan?.immediate_action || fallback?.immediate || config.recommendedAction,
     scenarioKey
   )
 
@@ -304,12 +320,13 @@ export default function PlannerView() {
         .map((s) => humanizeAction(s, scenarioKey).replace(/^\d+\.\s*/, ''))
       if (clean.length > 0) return clean
     }
-    return fallback.steps
-  }, [safePlan, scenarioKey, fallback])
+    if (fallback) return fallback.steps
+    return config.alternativeActions?.length ? config.alternativeActions : [config.recommendedAction]
+  }, [safePlan, scenarioKey, fallback, config])
 
   // Why explanation
   const whyExplanation = humanizeExplanation(
-    safePlan?.reason || fallback.why,
+    safePlan?.reason || fallback?.why || config.whyItMatters,
     scenarioKey
   )
 
@@ -585,7 +602,7 @@ export default function PlannerView() {
                 <div>
                   <span className="block font-bold text-ink">Operational Rule &amp; Catalog Specification:</span>
                   <p className="mt-1 font-mono text-caption text-ink bg-surface border border-line p-2">
-                    {safePlan?.source || fallback.rule}
+                    {safePlan?.source || fallback?.rule || 'TRACE Operational Safety Catalog (deterministic rule)'}
                   </p>
                 </div>
 

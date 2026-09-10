@@ -38,7 +38,7 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         "title": "Heavy item placed on lighter packets",
         "observed_headline": "Heavy overpack crate stacked on top of lightweight KD flatpack packets",
         "observed_description": (
-            "Dense 42kg overpack crate is placed on top of lightweight KD flatpack cartons. "
+            "A heavier overpack crate is placed on top of lighter KD flatpack cartons. "
             "Inverse mass distribution concentrates excessive vertical load on lower packaging."
         ),
         "risk_summary": "Lower packaging crush risk and top-heavy stack collapse hazard.",
@@ -57,15 +57,19 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
             "Inverting the tiers eliminates packaging fatigue and top-heavy tipping during transit."
         ),
         "rule_reference": "TRACE Safety Catalog Section 3.1 - Pyramidal Tier Mass Distribution",
+        # Numeric mass-ratio annotation is filled in from this event's real
+        # evidence (evidence.mass_ratio) by build_what_if_safety_simulation
+        # below — never a fixed number here, since the real ratio varies
+        # per incident.
         "visual_data": {
             "before": {
-                "top_item": {"label": "Heavy Crate (42kg)", "mass_class": "Heavy", "state": "danger"},
+                "top_item": {"label": "Heavy Crate", "mass_class": "Heavy", "state": "danger"},
                 "base_item": {"label": "KD Flatpack Packets", "mass_class": "Light", "state": "crush_risk"},
-                "annotation": "Inverse mass load (2.85x mass ratio)",
+                "annotation": "Inverse mass load (heavier item stacked above lighter item)",
             },
             "after": {
                 "top_item": {"label": "KD Flatpack Packets", "mass_class": "Light", "state": "safe"},
-                "base_item": {"label": "Heavy Crate (42kg)", "mass_class": "Heavy", "state": "foundation"},
+                "base_item": {"label": "Heavy Crate", "mass_class": "Heavy", "state": "foundation"},
                 "annotation": "Stable foundation support verified",
             },
         },
@@ -75,7 +79,7 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         "title": "Carton thrown during trailer loading",
         "observed_headline": "Worker shove-throws bulk cargo into trailer bed",
         "observed_description": (
-            "Worker shove-tosses cargo with sudden downward velocity spike (0.58 norm/s) "
+            "Worker shove-tosses cargo with a sudden downward velocity spike "
             "into the vehicle bed rather than carrying and lowering it under control."
         ),
         "risk_summary": "High-velocity impact causes internal damage, packaging seam rupture, and worker strike hazard.",
@@ -90,14 +94,14 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         ),
         "risk_transition": "High Risk -> Low Risk",
         "why_trace_recommends": (
-            "TRACE dynamic velocity lens detected downward acceleration exceeding safe release limits (-0.42 norm/s2). "
+            "TRACE's motion lens detected a downward acceleration spike exceeding safe release limits. "
             "Two-handed lowering ensures zero impact shock."
         ),
         "rule_reference": "TRACE Safety Catalog Section 4.2 - Controlled Cargo Lowering",
         "visual_data": {
             "before": {
                 "movement": "uncontrolled_throw",
-                "speed_vector": "High downward velocity (0.58 norm/s)",
+                "speed_vector": "High downward velocity spike",
                 "state": "danger",
             },
             "after": {
@@ -146,14 +150,14 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         ),
         "risk_transition": "Medium Risk -> Low Risk",
         "why_trace_recommends": (
-            "Continuous horizontal contact across 142px creates friction wear on packaging seams. "
+            "Sustained horizontal ground contact creates friction wear on packaging seams. "
             "Wheeled transport complies with safe material handling standards."
         ),
         "rule_reference": "TRACE Safety Catalog Section 5.1 - Mechanical Transport Mandate",
         "visual_data": {
             "before": {
                 "mode": "floor_drag",
-                "contact": "78% ground friction overlap",
+                "contact": "Sustained ground friction contact",
                 "state": "danger",
             },
             "after": {
@@ -182,12 +186,12 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         ),
         "risk_transition": "Medium Risk -> Low Risk",
         "why_trace_recommends": (
-            "Aspect ratio oscillation confirmed 2 end-over-end inversions. Upright handling preserves "
+            "Aspect-ratio oscillation confirmed repeated end-over-end rotation. Upright handling preserves "
             "internal component alignment."
         ),
         "rule_reference": "TRACE Safety Catalog Section 5.4 - Upright Transport Requirement",
         "visual_data": {
-            "before": {"mode": "rolling_tumble", "flips": 2, "state": "danger"},
+            "before": {"mode": "rolling_tumble", "state": "danger"},
             "after": {"mode": "upright_cart", "orientation": "vertical", "state": "safe"},
         },
     },
@@ -244,7 +248,7 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         "visual_data": {
             "before": {
                 "worker_position": "on_cartons",
-                "load": "Full adult body weight (>75kg)",
+                "load": "Full adult body weight",
                 "state": "danger",
             },
             "after": {
@@ -278,7 +282,7 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         "title": "Vertical product stored horizontally",
         "observed_headline": "Carton with vertical handling requirement placed on its side horizontally",
         "observed_description": (
-            "Carton is positioned horizontally across the vehicle bed (aspect ratio 1.72) violating "
+            "Carton is positioned horizontally across the vehicle bed, violating "
             "manifest specifications requiring strict vertical upright placement."
         ),
         "risk_summary": "Non-upright storage causes internal fluid leakage or component damage.",
@@ -314,15 +318,15 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
     "box_overhang": {
         "visual_type": "pallet_overhang",
         "title": "Carton overhang beyond pallet perimeter",
-        "observed_headline": "Carton positioned with 46% base cantilevered beyond supporting pallet deck",
+        "observed_headline": "Carton base cantilevered beyond supporting pallet deck",
         "observed_description": (
-            "Carton extends 46% past the pallet deck perimeter boundary, creating severe center-of-mass "
+            "Carton extends past the pallet deck perimeter boundary, creating a center-of-mass "
             "offset and unsupported cantilever bending."
         ),
         "risk_summary": "Cantilever tipping moment creates imminent cargo freefall and worker strike hazard.",
-        "counterfactual_headline": "Carton shifted 18cm inward flush with pallet deck boundary",
+        "counterfactual_headline": "Carton shifted inward flush with pallet deck boundary",
         "counterfactual_action": (
-            "Reposition carton 18cm inward so 100% of its base footprint is supported directly "
+            "Reposition carton inward so its full base footprint is supported directly "
             "by the pallet deck."
         ),
         "expected_outcome": (
@@ -330,20 +334,21 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         ),
         "risk_transition": "High Risk -> Low Risk",
         "why_trace_recommends": (
-            "Geometric analysis measured 46.1% overhang with tipping moment. Inward shift passes all boundary clearance checks."
+            "Geometric analysis measured base support below the safe overhang threshold. Inward shift passes all boundary clearance checks."
         ),
         "rule_reference": "TRACE Safety Catalog Section 1.1 - Pallet Perimeter Footprint Conformance",
+        # Numeric overhang/support percentages are filled in from this
+        # event's real evidence (overhang_ratio / support_ratio) by
+        # build_what_if_safety_simulation below.
         "visual_data": {
             "before": {
-                "overhang_pct": 46.1,
-                "support_pct": 53.9,
-                "label": "Cantilever overhang (46% past edge)",
+                "label": "Cantilever overhang past pallet edge",
                 "state": "danger",
             },
             "after": {
                 "overhang_pct": 0.0,
                 "support_pct": 100.0,
-                "label": "Flush pallet deck alignment (100% supported)",
+                "label": "Flush pallet deck alignment (fully supported)",
                 "state": "safe",
             },
         },
@@ -362,8 +367,9 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         "risk_transition": "High Risk -> Low Risk",
         "why_trace_recommends": "Eliminating overhang ensures stable pallet wrapping and safe rack entry.",
         "rule_reference": "TRACE Safety Catalog Section 1.1 - Pallet Perimeter Footprint Conformance",
+        # Overhang percentage filled in from real evidence below.
         "visual_data": {
-            "before": {"overhang_pct": 40.0, "state": "danger"},
+            "before": {"state": "danger"},
             "after": {"overhang_pct": 0.0, "state": "safe"},
         },
     },
@@ -372,29 +378,30 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         "title": "Severe cantilever bending under package overhang",
         "observed_headline": "Carton cantilevered past foundation creating seam deflection",
         "observed_description": (
-            "Extreme cantilever placement resulting in >50% unsupported package base and structural deflection."
+            "Extreme cantilever placement resulting in an unsupported package base and structural deflection."
         ),
         "risk_summary": "Gravitational bending moment creates seam tear and carton rupture risk.",
         "counterfactual_headline": "Carton centered over base foundation support",
-        "counterfactual_action": "Slide carton inward to ensure at least 85% base support on foundation.",
+        "counterfactual_action": "Slide carton inward to ensure the base is fully supported on the foundation.",
         "expected_outcome": "Eliminates cantilever bending deflection, protecting structural seams from rupture.",
         "risk_transition": "High Risk -> Low Risk",
-        "why_trace_recommends": "Support overlap ratio < 50% exceeds safe cantilever limits.",
+        "why_trace_recommends": "Support overlap ratio fell below the safe cantilever limit.",
         "rule_reference": "TRACE Safety Catalog Section 1.2 - Cantilever Deflection Thresholds",
+        # Support percentage filled in from real evidence below.
         "visual_data": {
-            "before": {"support_pct": 48.0, "deflection": "0.18 norm", "state": "danger"},
-            "after": {"support_pct": 100.0, "deflection": "0.00", "state": "safe"},
+            "before": {"state": "danger"},
+            "after": {"support_pct": 100.0, "state": "safe"},
         },
     },
     "entity_in_dock_edge_zone": {
         "visual_type": "dock_gap",
         "title": "Worker positioned within unprotected dock edge",
-        "observed_headline": "Worker and cargo within 1.2m of unprotected dock edge ledge",
+        "observed_headline": "Worker and cargo within the unprotected dock edge zone",
         "observed_description": (
-            "Worker operates within 1.2m of the unbarricaded dock edge ledge without a deployed "
+            "Worker operates close to the unbarricaded dock edge ledge without a deployed "
             "bridge plate connecting to the vehicle bed."
         ),
-        "risk_summary": "Severe fall hazard: worker or wheeled cargo falling 1.4m into vehicular yard driveway.",
+        "risk_summary": "Severe fall hazard: worker or wheeled cargo falling into the vehicular yard driveway below.",
         "counterfactual_headline": "Deploy dock leveler bridge plate and maintain safety buffer",
         "counterfactual_action": (
             "Deploy dock bridge plate leveler across vehicle gap and ensure operations remain "
@@ -405,13 +412,13 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         ),
         "risk_transition": "High Risk -> Low Risk",
         "why_trace_recommends": (
-            "Distance to unprotected ledge was measured at < 0.08 normalized units. Deploying dock plate eliminates the gap."
+            "The tracked entity's position fell inside the calibrated dock-edge hazard perimeter. Deploying a dock plate eliminates the gap."
         ),
         "rule_reference": "TRACE Safety Catalog Section 7.1 - Dock Edge Fall Protection",
         "visual_data": {
             "before": {
                 "gap_status": "open_ledge_void",
-                "distance_to_edge": "1.2m danger zone",
+                "distance_to_edge": "Inside the calibrated danger zone",
                 "state": "danger",
             },
             "after": {
@@ -428,7 +435,7 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         "observed_description": (
             "Worker moves cargo directly across an active wet washdown area with surface water puddles."
         ),
-        "risk_summary": "60% loss of surface traction creates severe slip-and-fall risk and carton base moisture dampening.",
+        "risk_summary": "Reduced surface traction creates severe slip-and-fall risk and carton base moisture dampening.",
         "counterfactual_headline": "Reroute transit path around wet zone perimeter along dry aisle",
         "counterfactual_action": (
             "Reroute cargo transit path around the marked washdown zone perimeter along the dry, slip-resistant aisle."
@@ -438,18 +445,18 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
         ),
         "risk_transition": "Medium Risk -> Low Risk",
         "why_trace_recommends": (
-            "Surface moisture reduces traction coefficient by >60%. Rerouting maintains safe dry-floor transit."
+            "The tracked entity's position fell inside the calibrated wet-floor hazard perimeter. Rerouting maintains safe dry-floor transit."
         ),
         "rule_reference": "TRACE Safety Catalog Section 7.3 - Wet Floor Transit Restriction",
         "visual_data": {
             "before": {
                 "path": "through_wet_zone",
-                "traction_loss": "60% friction reduction",
+                "traction_loss": "Reduced surface traction",
                 "state": "danger",
             },
             "after": {
                 "path": "dry_perimeter_aisle",
-                "traction_loss": "0% (normal dry traction)",
+                "traction_loss": "Normal dry-floor traction",
                 "state": "safe",
             },
         },
@@ -491,34 +498,34 @@ SCENARIO_SIMULATION_CONFIGS: dict[str, dict[str, Any]] = {
     "solo_heavy_handling": {
         "visual_type": "solo_heavy",
         "title": "Heavy SKU handled by single worker",
-        "observed_headline": "Single worker maneuvering 42kg heavy mass-class cargo crate",
+        "observed_headline": "Single worker maneuvering a heavy mass-class cargo crate",
         "observed_description": (
-            "Single worker attempting manual maneuver of 42kg heavy cargo crate without team lift "
+            "Single worker attempting manual maneuver of a heavy-class cargo crate without team lift "
             "assistance or mechanical aid."
         ),
-        "risk_summary": "Exceeds single-person safe lifting threshold (25kg), elevating risk of spinal injury and dropped cargo.",
+        "risk_summary": "Exceeds single-person safe lifting practice, elevating risk of spinal injury and dropped cargo.",
         "counterfactual_headline": "Deploy two-worker team lift or hydraulic mechanical lifter",
         "counterfactual_action": (
             "Summon second worker for synchronized team lift, or utilize a hydraulic mobile lifter "
             "to maneuver heavy cargo."
         ),
         "expected_outcome": (
-            "Team lift distributes ergonomic load safely below 22kg per worker, eliminating acute spinal strain."
+            "Team lift distributes the ergonomic load between two workers, eliminating acute spinal strain."
         ),
         "risk_transition": "High Risk -> Low Risk",
         "why_trace_recommends": (
-            "Cargo mass (42kg) exceeds the ergonomic 25kg individual limit by 68%. Team lifting complies with handling standards."
+            "This SKU's mass class exceeds the ergonomic individual-lift limit. Team lifting complies with handling standards."
         ),
         "rule_reference": "TRACE Safety Catalog Section 4.3 - Ergonomic Team Lift Mandate",
         "visual_data": {
             "before": {
                 "workers": 1,
-                "load_per_worker": "42 kg (Severe overload)",
+                "load_per_worker": "Full load (single-worker overload)",
                 "state": "danger",
             },
             "after": {
                 "workers": 2,
-                "load_per_worker": "21 kg (Within safe limits)",
+                "load_per_worker": "Shared load (within safe limits)",
                 "state": "safe",
             },
         },
@@ -667,6 +674,58 @@ def get_supported_what_if_events(
     return supported_list
 
 
+def _real_evidence_visual_overrides(scenario: str, evidence: dict) -> dict:
+    """Per-event numeric values for the visual counterfactual, sourced from
+    THIS event's actual measured evidence — never a fixed number shared
+    across every incident of a scenario type. Returns a partial
+    {"before": {...}} dict to merge over the scenario's static visual_data;
+    an empty dict when no matching evidence field exists for this scenario,
+    in which case the static (evidence-free, non-numeric) label is kept
+    rather than showing a number that was never actually measured.
+    """
+    def _pct(value):
+        if value is None:
+            return None
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return None
+        return round(v * 100, 1) if v <= 1 else round(v, 1)
+
+    if scenario == "heavy_on_light_stacking":
+        mass_ratio = evidence.get("mass_ratio")
+        if mass_ratio is not None:
+            try:
+                return {"before": {"annotation": f"Inverse mass load ({float(mass_ratio):.2f}x mass ratio)"}}
+            except (TypeError, ValueError):
+                pass
+        return {}
+
+    if scenario in ("box_overhang", "pallet_overhang", "unsupported_bending_placement"):
+        support_pct = _pct(evidence.get("overlap_ratio", evidence.get("support_ratio")))
+        overhang_pct = _pct(evidence.get("overhang_ratio"))
+        if overhang_pct is None and support_pct is not None:
+            overhang_pct = round(100 - support_pct, 1)
+        before: dict[str, Any] = {}
+        if support_pct is not None:
+            before["support_pct"] = support_pct
+        if overhang_pct is not None:
+            before["overhang_pct"] = overhang_pct
+            before["label"] = f"Cantilever overhang (~{overhang_pct:.0f}% past edge)"
+        return {"before": before} if before else {}
+
+    if scenario == "wrong_product_orientation":
+        aspect = evidence.get("observed_aspect_ratio")
+        if aspect is not None:
+            try:
+                return {"before": {"aspect_ratio": round(float(aspect), 2)}}
+            except (TypeError, ValueError):
+                pass
+        return {}
+
+    return {}
+
+
 def build_what_if_safety_simulation(
     event_id: int,
     db_conn: Optional[sqlite3.Connection] = None,
@@ -728,6 +787,14 @@ def build_what_if_safety_simulation(
     title = cfg.get("title") or scen.replace("_", " ").title()
     visual_type = cfg.get("visual_type", "general")
 
+    # Merge in this event's real measured values where TRACE actually has
+    # them (see _real_evidence_visual_overrides) — never mutate the shared
+    # module-level SCENARIO_SIMULATION_CONFIGS dict itself.
+    overrides = _real_evidence_visual_overrides(scen, evidence)
+    static_visual = cfg.get("visual_data", {})
+    visual_before = {**static_visual.get("before", {}), **overrides.get("before", {})}
+    visual_after = {**static_visual.get("after", {}), **overrides.get("after", {})}
+
     return {
         "event_id": event_id,
         "video_id": vid,
@@ -746,7 +813,7 @@ def build_what_if_safety_simulation(
             "description": cfg.get("observed_description", "Unsafe warehouse handling action observed in video."),
             "risk_summary": cfg.get("risk_summary", "Elevated operational risk."),
             "visual_type": visual_type,
-            "visual_data": cfg.get("visual_data", {}).get("before", {}),
+            "visual_data": visual_before,
         },
         "counterfactual": {
             "title": "What-If",
@@ -755,7 +822,7 @@ def build_what_if_safety_simulation(
             "expected_outcome": cfg.get("expected_outcome", "Lower observed hazard exposure."),
             "risk_reduction": cfg.get("risk_transition", "Reduced Exposure"),
             "visual_type": visual_type,
-            "visual_data": cfg.get("visual_data", {}).get("after", {}),
+            "visual_data": visual_after,
         },
         "result": {
             "headline": cfg.get("expected_outcome", "Safer configuration reduces operational exposure."),

@@ -32,10 +32,10 @@ import {
  * - stepping_on_carton: Worker on cartons vs certified access platform
  * - wrong_product_orientation: Horizontal orientation vs vertical specification
  * - pallet_overhang: Cantilever deck overhang vs flush pallet alignment
- * - dock_gap: Open 1.2m ledge void vs deployed bridge plate
+ * - dock_gap: Open ledge void vs deployed bridge plate
  * - wet_floor: Direct route through puddle vs dry perimeter detour
  * - loading_sequence: Manifest blocked cargo vs reverse delivery sequence
- * - solo_heavy: Solo 42kg overload vs synchronized team lift
+ * - solo_heavy: Solo heavy-load overload vs synchronized team lift
  * - wrong_equipment: Dragged pallet / strap grip vs certified wheeled trolley
  */
 export default function WhatIfScenarioVisualizer({ visualType, mode = 'before', data = {} }) {
@@ -72,7 +72,16 @@ export default function WhatIfScenarioVisualizer({ visualType, mode = 'before', 
 }
 
 /* 1. Heavy-on-Light Stacking */
-function HeavyOnLightVisual({ isBefore }) {
+function HeavyOnLightVisual({ isBefore, data }) {
+  // Real per-incident mass-ratio annotation when TRACE actually measured
+  // one for this event; otherwise a qualitative (non-numeric) label —
+  // never a fixed number shared across every heavy-on-light incident.
+  const annotation = isBefore
+    ? data?.top_item?.mass_class
+      ? `Mass Class ${data.top_item.mass_class[0]} over Mass Class ${data?.base_item?.mass_class?.[0] || 'L'}`
+      : 'Heavier item over lighter item'
+    : null
+
   return (
     <div className="relative flex h-48 w-full flex-col items-center justify-end rounded-md border border-line bg-paper/60 p-4 select-none">
       {/* Pallet Base Deck */}
@@ -80,12 +89,12 @@ function HeavyOnLightVisual({ isBefore }) {
         {/* Tier 2 (Top) */}
         {isBefore ? (
           <div className="z-10 flex h-14 w-40 flex-col items-center justify-center rounded border-2 border-danger bg-danger/15 px-2 text-center shadow-sm">
-            <span className="text-[11px] font-bold text-danger">Heavy Overpack Crate (42 kg)</span>
-            <span className="text-[9px] font-semibold text-danger/80">Mass Class H - 2.85x Load</span>
+            <span className="text-[11px] font-bold text-danger">{data?.top_item?.label || 'Heavy Crate'}</span>
+            <span className="text-[9px] font-semibold text-danger/80">{annotation}</span>
           </div>
         ) : (
           <div className="z-10 flex h-14 w-40 flex-col items-center justify-center rounded border-2 border-ok bg-ok/15 px-2 text-center shadow-sm">
-            <span className="text-[11px] font-bold text-ok">KD Flatpack Packets</span>
+            <span className="text-[11px] font-bold text-ok">{data?.top_item?.label || 'KD Flatpack Packets'}</span>
             <span className="text-[9px] font-semibold text-ok/80">Mass Class L (Supported)</span>
           </div>
         )}
@@ -106,12 +115,12 @@ function HeavyOnLightVisual({ isBefore }) {
         {/* Tier 1 (Base) */}
         {isBefore ? (
           <div className="flex h-14 w-48 flex-col items-center justify-center rounded border-2 border-dashed border-danger/60 bg-surface px-2 text-center">
-            <span className="text-[11px] font-bold text-ink">KD Flatpack Packets</span>
+            <span className="text-[11px] font-bold text-ink">{data?.base_item?.label || 'KD Flatpack Packets'}</span>
             <span className="text-[9px] text-danger font-semibold">Crushing & Fatigue Hazard</span>
           </div>
         ) : (
           <div className="flex h-14 w-48 flex-col items-center justify-center rounded border-2 border-ok bg-ok/25 px-2 text-center shadow-xs">
-            <span className="text-[11px] font-bold text-ink">Heavy Overpack Crate (42 kg)</span>
+            <span className="text-[11px] font-bold text-ink">{data?.base_item?.label || 'Heavy Crate'}</span>
             <span className="text-[9px] text-ok font-bold">Stable Foundation Deck</span>
           </div>
         )}
@@ -123,6 +132,9 @@ function HeavyOnLightVisual({ isBefore }) {
           <div className="h-2 w-4 bg-ink/40" />
         </div>
       </div>
+      {data?.annotation && (
+        <span className="mt-1.5 text-[9px] font-medium text-ink-faint">{data.annotation}</span>
+      )}
     </div>
   )
 }
@@ -173,7 +185,7 @@ function ThrowingDroppingVisual({ isBefore }) {
         <div className="absolute inset-x-0 bottom-0 text-center">
           {isBefore ? (
             <span className="rounded bg-danger/10 px-2 py-0.5 text-[10px] font-bold text-danger">
-              High Velocity Throw Spike (0.58 norm/s)
+              High-Velocity Downward Spike
             </span>
           ) : (
             <span className="rounded bg-ok/10 px-2 py-0.5 text-[10px] font-bold text-ok">
@@ -229,12 +241,12 @@ function DraggingVisual({ isBefore }) {
         <div className="flex flex-col items-end">
           {isBefore ? (
             <div className="rounded border border-danger/40 bg-danger/10 p-2 text-right">
-              <span className="block text-[10px] font-bold text-danger">78% Ground Friction Contact</span>
+              <span className="block text-[10px] font-bold text-danger">Sustained Ground Friction Contact</span>
               <span className="text-[9px] text-ink-soft">Package base scuffing & seal wear</span>
             </div>
           ) : (
             <div className="rounded border border-ok/40 bg-ok/10 p-2 text-right">
-              <span className="block text-[10px] font-bold text-ok">0% Floor Abrasive Friction</span>
+              <span className="block text-[10px] font-bold text-ok">No Floor Abrasive Friction</span>
               <span className="text-[9px] text-ink-soft">Smooth wheeled transit off the floor</span>
             </div>
           )}
@@ -271,7 +283,7 @@ function RollingVisual({ isBefore }) {
           <div className="flex flex-col items-center text-center max-w-[180px]">
             <PackageX className="text-danger mb-1" size={24} />
             <span className="text-caption font-bold text-danger">Inverted Internal Load</span>
-            <span className="text-[9px] text-ink-soft mt-0.5">2 successive flips detected; edge seams crushed</span>
+            <span className="text-[9px] text-ink-soft mt-0.5">Repeated end-over-end rotation detected; edge seams crushed</span>
           </div>
         </>
       ) : (
@@ -317,7 +329,7 @@ function SteppingVisual({ isBefore }) {
 
           <div className="flex flex-col items-center text-center max-w-[170px]">
             <AlertTriangle className="text-danger mb-1" size={24} />
-            <span className="text-caption font-bold text-danger">&gt;75 kg Concentrated Load</span>
+            <span className="text-caption font-bold text-danger">Full Body Weight Concentrated Load</span>
             <span className="text-[9px] text-ink-soft mt-0.5">Severe fall-from-height and carton collapse risk</span>
           </div>
         </>
@@ -355,7 +367,7 @@ function SteppingVisual({ isBefore }) {
 }
 
 /* 6. Wrong Product Orientation */
-function OrientationVisual({ isBefore }) {
+function OrientationVisual({ isBefore, data }) {
   return (
     <div className="relative flex h-48 w-full items-center justify-around rounded-md border border-line bg-paper/60 p-5 select-none">
       {isBefore ? (
@@ -367,7 +379,7 @@ function OrientationVisual({ isBefore }) {
               </span>
             </div>
             <span className="rounded bg-danger/10 px-2 py-0.5 text-[9px] font-bold text-danger">
-              Horizontal Placement (1.72 Aspect)
+              Horizontal Placement{data?.aspect_ratio ? ` (${data.aspect_ratio} aspect ratio)` : ''}
             </span>
           </div>
 
@@ -403,7 +415,17 @@ function OrientationVisual({ isBefore }) {
 }
 
 /* 7. Pallet / Box Overhang */
-function OverhangVisual({ isBefore }) {
+function OverhangVisual({ isBefore, data }) {
+  // Real per-incident overhang/support percentages when TRACE measured
+  // them for this event (see backend/planner/whatif_safety.py
+  // _real_evidence_visual_overrides); otherwise a qualitative label.
+  const overhangLabel = data?.overhang_pct != null
+    ? `${data.overhang_pct.toFixed(0)}% Overhang Beyond Deck Edge`
+    : 'Overhang Beyond Deck Edge'
+  const supportLabel = data?.support_pct != null
+    ? `${data.support_pct.toFixed(0)}% Supported by Pallet Deck`
+    : 'Fully Supported by Pallet Deck'
+
   return (
     <div className="relative flex h-48 w-full flex-col items-center justify-end rounded-md border border-line bg-paper/60 p-4 select-none">
       <div className="relative flex flex-col items-center w-64 pb-2">
@@ -411,12 +433,12 @@ function OverhangVisual({ isBefore }) {
         {isBefore ? (
           <div className="relative ml-16 flex h-14 w-44 flex-col items-center justify-center rounded border-2 border-danger bg-danger/20 text-center shadow-xs">
             <span className="text-[10px] font-bold text-danger">Cantilever Carton</span>
-            <span className="text-[8px] text-danger">46% Overhang Beyond Deck Edge</span>
+            <span className="text-[8px] text-danger">{overhangLabel}</span>
           </div>
         ) : (
           <div className="relative flex h-14 w-44 flex-col items-center justify-center rounded border-2 border-ok bg-ok/20 text-center shadow-xs">
             <span className="text-[10px] font-bold text-ok">Flush Aligned Carton</span>
-            <span className="text-[8px] text-ok">100% Supported by Pallet Deck</span>
+            <span className="text-[8px] text-ok">{supportLabel}</span>
           </div>
         )}
 
@@ -464,7 +486,7 @@ function DockGapVisual({ isBefore }) {
         <div className="flex flex-1 flex-col items-center px-3">
           {isBefore ? (
             <div className="flex flex-col items-center">
-              <span className="text-danger font-bold text-caption">1.2m Void Drop</span>
+              <span className="text-danger font-bold text-caption">Open Void Drop</span>
               <div className="my-1 h-1 w-full border-t-2 border-dashed border-danger" />
               <span className="rounded bg-danger/10 px-2 py-0.5 text-[8px] font-bold text-danger">
                 Bridge Plate Not Deployed
@@ -507,7 +529,7 @@ function WetFloorVisual({ isBefore }) {
           <div className="flex flex-col items-center text-center max-w-[170px]">
             <AlertTriangle className="text-danger mb-1" size={22} />
             <span className="text-caption font-bold text-danger">Direct Wet Transit</span>
-            <span className="text-[9px] text-ink-soft mt-0.5">60% traction loss elevates slip & cargo dampening risk</span>
+            <span className="text-[9px] text-ink-soft mt-0.5">Reduced traction elevates slip & cargo dampening risk</span>
           </div>
         </>
       ) : (
@@ -525,7 +547,7 @@ function WetFloorVisual({ isBefore }) {
           <div className="flex flex-col items-center text-center max-w-[170px]">
             <ShieldCheck className="text-ok mb-1" size={22} />
             <span className="text-caption font-bold text-ok">Safe Dry Transit</span>
-            <span className="text-[9px] text-ink-soft mt-0.5">Maintains 100% surface friction along designated walkway</span>
+            <span className="text-[9px] text-ink-soft mt-0.5">Maintains normal surface friction along designated walkway</span>
           </div>
         </>
       )}
@@ -591,10 +613,10 @@ function SoloHeavyVisual({ isBefore }) {
 
           <div className="flex flex-col items-center text-center max-w-[170px]">
             <span className="rounded border border-danger/40 bg-danger/15 px-2.5 py-1 text-caption font-bold text-danger">
-              42 kg Load on Single Worker
+              Full Heavy Load on Single Worker
             </span>
             <span className="mt-1 text-[9px] text-ink-soft">
-              Exceeds 25kg individual safe ergonomic threshold by 68%
+              Exceeds the individual safe ergonomic lifting threshold
             </span>
           </div>
         </>
@@ -612,7 +634,7 @@ function SoloHeavyVisual({ isBefore }) {
 
           <div className="flex flex-col items-center text-center max-w-[170px]">
             <span className="rounded border border-ok/40 bg-ok/15 px-2.5 py-1 text-caption font-bold text-ok">
-              21 kg Distributed Load
+              Load Shared Between Two Workers
             </span>
             <span className="mt-1 text-[9px] text-ink-soft">
               Synchronized lifting keeps spinal compression within safe limits

@@ -193,6 +193,38 @@ export default function Dashboard() {
   const preventedCount = summary?.prevented_count ?? 0
   const cameraBaysCount = videos.length
 
+  // Team Safety Score — a transparent, disclosed composite over the same
+  // distinct-incident data above: start at 100, deduct per distinct
+  // incident by band, credit for verified prevented outcomes, clamp to
+  // [0, 100]. This is a coaching gauge, not a certified audit metric, and
+  // it is explicitly team/process-level — CLAUDE.md forbids any
+  // individual worker score or ranking.
+  const safetyScore = useMemo(() => {
+    if (!distinctIncidents.length && !preventedCount) return null
+    const penalty = distinctIncidents.reduce((sum, inc) => {
+      if (inc.band === 'Critical') return sum + 6
+      if (inc.band === 'High') return sum + 3
+      if (inc.band === 'Medium') return sum + 1
+      return sum
+    }, 0)
+    const raw = 100 - penalty + preventedCount * 5
+    return Math.max(0, Math.min(100, Math.round(raw)))
+  }, [distinctIncidents, preventedCount])
+
+  const scoreBand =
+    safetyScore == null
+      ? null
+      : safetyScore >= 90
+        ? { label: 'Excellent', text: 'text-ok', bar: 'bg-ok' }
+        : safetyScore >= 75
+          ? { label: 'Good', text: 'text-ok', bar: 'bg-ok' }
+          : safetyScore >= 50
+            ? { label: 'Needs Attention', text: 'text-[#8a5f00]', bar: 'bg-signal' }
+            : { label: 'High Risk', text: 'text-danger', bar: 'bg-danger' }
+
+  const criticalIncidentCount = distinctIncidents.filter((i) => i.band === 'Critical').length
+  const highIncidentCount = distinctIncidents.filter((i) => i.band === 'High').length
+
   const handleReplay = (ev) => {
     navigateTo('Incident Replay', {
       eventId: ev.event_id,
@@ -288,6 +320,49 @@ export default function Dashboard() {
             <Video size={18} className="text-ink-soft" />
           </div>
         </div>
+
+        {/* TEAM SAFETY SCORE — process/team-level coaching gauge, never an
+            individual worker rating (CLAUDE.md §22). */}
+        {scoreBand && (
+          <div className="border border-line bg-surface p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-4">
+                <div>
+                  <span className="block text-label font-bold uppercase tracking-wider text-ink-faint">
+                    Team Safety Score
+                  </span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className={`font-mono text-2xl font-bold ${scoreBand.text}`}>{safetyScore}</span>
+                    <span className="text-caption text-ink-soft">/ 100</span>
+                    <span className={`ml-1 border px-1.5 py-0.5 text-label font-bold uppercase ${scoreBand.text} border-current/30`}>
+                      {scoreBand.label}
+                    </span>
+                  </div>
+                </div>
+                <div className="hidden h-10 w-40 overflow-hidden rounded-full border border-line-strong sm:block">
+                  <div className={`h-full transition-all ${scoreBand.bar}`} style={{ width: `${safetyScore}%` }} />
+                </div>
+              </div>
+              <p className="max-w-md text-caption text-ink-soft">
+                {highIncidentCount + criticalIncidentCount > 0
+                  ? `${criticalIncidentCount} Critical and ${highIncidentCount} High-risk incident${highIncidentCount === 1 && criticalIncidentCount === 0 ? '' : 's'} this shift, ${preventedCount} prevented through timely intervention.`
+                  : `No High or Critical incidents this shift.`}
+              </p>
+            </div>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[11px] text-ink-faint hover:text-ink-soft select-none">
+                How this score is calculated
+              </summary>
+              <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">
+                Starts at 100. Each distinct incident subtracts a fixed amount by risk band (Critical −6,
+                High −3, Medium −1); each verified prevented incident adds +5. Clamped to 0–100. This is a
+                team/process-level coaching indicator, not a certified safety audit and never an individual
+                worker rating — TRACE's structural, conformance and environmental lenses are worker-independent
+                by design.
+              </p>
+            </details>
+          </div>
+        )}
       </section>
 
       {error && (

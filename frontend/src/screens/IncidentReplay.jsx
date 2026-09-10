@@ -29,7 +29,6 @@ import {
 } from '../lib/scenarios.js'
 import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
 import {
-  formatConfidence,
   formatScore,
   formatPercentage,
   formatEntityName,
@@ -531,8 +530,6 @@ export default function IncidentReplay() {
   const massOrdering = isStructuralScenario
     ? (evidence.mass_ordering || (evidence.mass_ratio !== undefined ? formatPercentage(evidence.mass_ratio) : 'Not modeled'))
     : 'Not modeled for this scenario type'
-
-  const confidenceScore = formatConfidence(incidentEvent?.confidence)
 
   const actionText =
     incidentEvent?.planner_recommendation?.action ||
