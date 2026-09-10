@@ -314,6 +314,22 @@ export const SCENARIO_REGISTRY = {
     whatIfNotice: 'Routine proximity tracking — nominal precaution.',
     proceduralNotice: 'Routine proximity tracking — nominal precaution.',
   },
+  forklift_pedestrian_proximity: {
+    key: 'forklift_pedestrian_proximity',
+    title: 'Forklift moving near a pedestrian',
+    lens: 'behaviour',
+    defaultBand: 'High',
+    whatIsHappening: 'Powered forklift traveling within a hazardous distance of a worker.',
+    whyItMatters: 'Crush / struck-by hazard from moving material-handling equipment.',
+    recommendedAction: 'Halt forklift travel; maintain pedestrian exclusion zone and verify operator line of sight.',
+    alternativeActions: [
+      'Enforce marked pedestrian walkways around equipment aisles.',
+      'Pause equipment travel until the pedestrian clears the zone.',
+    ],
+    whatIfEligible: false,
+    whatIfNotice: 'Integration-ready — requires a trained forklift detection class.',
+    proceduralNotice: 'Integration-ready — requires a trained forklift detection class.',
+  },
   image_space_support_hypothesis: {
     key: 'image_space_support_hypothesis',
     title: 'Support alignment under review',

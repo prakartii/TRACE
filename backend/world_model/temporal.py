@@ -22,6 +22,10 @@ class TrackSample:
     confidence: float
     footprint: BoundingBox | None = None
     tracking_status: str = "TRACKED"
+    # 17-keypoint COCO skeleton, normalized [0,1] (absolute pixels scaled by
+    # frame dimensions) — populated only when the perception pipeline ran pose
+    # estimation for this frame. None means "no pose signal", not "no person".
+    keypoints: tuple[tuple[float, float], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,11 @@ def build_track_histories(
             normalized = normalize_bbox(entity.bbox, frame_width, frame_height)
             position = bbox_center(normalized)
             status = getattr(entity, "tracking_status", "TRACKED")
+            keypoints = None
+            if entity.keypoints:
+                keypoints = tuple(
+                    (x / frame_width, y / frame_height) for x, y in entity.keypoints
+                )
             samples_by_id.setdefault(entity.id, []).append(
                 TrackSample(
                     timestamp=frame_result.timestamp,
@@ -87,6 +96,7 @@ def build_track_histories(
                     confidence=entity.confidence,
                     footprint=normalized,
                     tracking_status=status,
+                    keypoints=keypoints,
                 )
             )
             class_by_id[entity.id] = entity.entity_class

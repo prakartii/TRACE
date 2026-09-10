@@ -82,6 +82,9 @@ _SCENARIO_ACTIONS: dict[str, str] = {
     "product_conformance": (
         "Configure SKU manifest handling rules (orientation, mass class, max stack height) in Supervisor Settings."
     ),
+    "forklift_pedestrian_proximity": (
+        "Halt forklift travel; maintain pedestrian exclusion zone and verify operator line of sight."
+    ),
 }
 
 _SCENARIO_RISK_TITLES: dict[str, str] = {
@@ -106,6 +109,7 @@ _SCENARIO_RISK_TITLES: dict[str, str] = {
     "product_rule_coverage": "Operational manifest gap: unlinked SKU handling constraints",
     "product_conformance": "Operational manifest gap: unlinked SKU handling constraints",
     "image_space_support_hypothesis": "Unverified visual support contact relationship",
+    "forklift_pedestrian_proximity": "Powered forklift traveling near a pedestrian",
 }
 
 
