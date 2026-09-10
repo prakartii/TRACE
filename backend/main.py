@@ -27,6 +27,7 @@ from backend.api.planner_whatif import router as planner_whatif_router
 from backend.api.intervention import live_ws_router as intervention_ws_router
 from backend.api.intervention import router as intervention_router
 from backend.api.learning import router as learning_router
+from backend.api.live import router as live_router
 from backend.api.responsible_ai import router as responsible_ai_router
 from backend.api.reports import router as reports_router
 from backend.api.rules import router as rules_router
@@ -94,6 +95,7 @@ app.include_router(intervention_ws_router)
 app.include_router(assistant_router)
 app.include_router(responsible_ai_router)
 app.include_router(learning_router)
+app.include_router(live_router)
 app.include_router(reports_router)
 
 
