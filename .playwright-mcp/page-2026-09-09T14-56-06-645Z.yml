@@ -1,0 +1,203 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]: TRACE.
+        - generic [ref=e8]: See what's about to go wrong. Know what to do instead.
+      - generic [ref=e9]:
+        - button "14 Alerts Active" [ref=e10] [cursor=pointer]
+        - 'generic "Real-time Stream: connecting" [ref=e14]': offline fallback
+        - 'button "view: supervisor" [ref=e18] [cursor=pointer]'
+        - button "voice" [ref=e20] [cursor=pointer]
+        - generic [ref=e26]: backend online
+  - generic [ref=e29]:
+    - navigation [ref=e30]:
+      - generic [ref=e31]:
+        - generic [ref=e32]: Operations & Safety
+        - list [ref=e33]:
+          - listitem [ref=e34]:
+            - button "1. Live Camera Feeds LIVE" [ref=e35] [cursor=pointer]:
+              - generic [ref=e37]: 1. Live Camera Feeds
+              - generic [ref=e42]: LIVE
+          - listitem [ref=e43]:
+            - button "2. Active Hazards" [ref=e44] [cursor=pointer]
+          - listitem [ref=e49]:
+            - button "3. Incident Replay" [ref=e50] [cursor=pointer]
+          - listitem [ref=e56]:
+            - button "4. What-If Simulator" [ref=e57] [cursor=pointer]
+          - listitem [ref=e67]:
+            - button "5. Safe Action Center" [ref=e68] [cursor=pointer]
+      - generic [ref=e73]:
+        - generic [ref=e74]: Safety Intelligence
+        - list [ref=e75]:
+          - listitem [ref=e76]:
+            - button "Safety Overview" [ref=e77] [cursor=pointer]
+          - listitem [ref=e85]:
+            - button "14 Hazard Scenarios" [ref=e86] [cursor=pointer]
+      - generic [ref=e91]:
+        - generic [ref=e92]: Supervisor & Ethics
+        - list [ref=e93]:
+          - listitem [ref=e94]:
+            - button "AI Safety Assistant AI" [ref=e95] [cursor=pointer]:
+              - generic [ref=e96]: AI Safety Assistant
+              - generic [ref=e101]: AI
+          - listitem [ref=e102]:
+            - button "Worker Privacy & Ethics" [ref=e103] [cursor=pointer]
+          - listitem [ref=e109]:
+            - button "Safety Rules & Catalog" [ref=e110] [cursor=pointer]
+    - main [ref=e116]:
+      - alert [ref=e117]:
+        - generic [ref=e118]:
+          - generic [ref=e123]:
+            - generic [ref=e124]: CRITICAL — IMMEDIATE
+            - heading "Worker standing on carton" [level=3] [ref=e126]
+            - generic [ref=e127]:
+              - generic [ref=e128]: "Action:"
+              - paragraph [ref=e129]: Step off the carton immediately.
+          - generic [ref=e130]:
+            - button "Acknowledge" [ref=e131] [cursor=pointer]
+            - button "Speak this alert (voice alerts off)" [ref=e135] [cursor=pointer]
+            - button "View Safe Plan" [ref=e140] [cursor=pointer]
+            - button "Dismiss from banner" [ref=e144] [cursor=pointer]
+      - generic [ref=e148]:
+        - navigation "Safety Investigation Workflow" [ref=e149]:
+          - generic [ref=e150]:
+            - generic [ref=e151]: "Safety Workflow:"
+            - generic [ref=e153]:
+              - button "1. Live Feeds" [ref=e155] [cursor=pointer]
+              - button "2. Active Hazards" [ref=e163] [cursor=pointer]
+              - button "3. Incident Replay" [ref=e170] [cursor=pointer]
+              - button "4. What-If Simulator" [ref=e178] [cursor=pointer]
+              - button "5. Safe Action Plan" [ref=e190] [cursor=pointer]
+          - generic [ref=e194]:
+            - generic [ref=e195]:
+              - generic [ref=e196]: "Step 1 of 5:"
+              - generic [ref=e197]: Observe live video feeds. When a hazard occurs, proceed to Active Hazards or Replay.
+            - 'button "Next: 2. Active Hazards →" [ref=e199] [cursor=pointer]'
+        - generic [ref=e200]:
+          - generic [ref=e201]:
+            - generic [ref=e202]:
+              - generic [ref=e207]:
+                - generic [ref=e208]:
+                  - heading "Dock Bay 4 — Inbound Transfer" [level=2] [ref=e209]
+                  - generic [ref=e210]: Warehouse
+                - paragraph [ref=e211]: "Dock Edge Fall & Dragging Hazard · Position: 00:00.0"
+              - generic [ref=e212]: All Clear · Normal Operation
+            - generic [ref=e214]:
+              - generic [ref=e215]: faces obscured — person detection unavailable
+              - generic [ref=e217]:
+                - button "Play" [ref=e218] [cursor=pointer]
+                - slider "Seek" [ref=e221] [cursor=pointer]
+                - generic [ref=e222]: 0:00 / 0:00
+            - generic [ref=e223]:
+              - generic [ref=e224]:
+                - generic [ref=e226]: "Worker Privacy Active:"
+                - generic [ref=e227]: Personnel faces obscured by default
+              - generic [ref=e228]: live stream
+            - generic [ref=e229]:
+              - generic [ref=e230]:
+                - generic [ref=e231] [cursor=pointer]:
+                  - checkbox "Object Detection (0 tracked)" [checked] [ref=e232]
+                  - generic [ref=e233]: Object Detection
+                  - generic [ref=e234]: (0 tracked)
+                - generic [ref=e235] [cursor=pointer]:
+                  - checkbox "Stacking & Alignment Overlays" [ref=e236]
+                  - generic [ref=e237]: Stacking & Alignment Overlays
+                - generic [ref=e238] [cursor=pointer]:
+                  - checkbox "Live Hazard Warnings" [checked] [ref=e239]
+                  - generic [ref=e240]: Live Hazard Warnings
+              - button "Replay in Forensics →" [ref=e241] [cursor=pointer]
+            - generic [ref=e243]:
+              - generic [ref=e244]:
+                - generic [ref=e245]: analysis at 00:00.0
+                - generic [ref=e246]: normal operation
+              - paragraph [ref=e247]: No actionable risk or conformance findings detected in this frame.
+            - group [ref=e248]:
+              - generic "Camera Specifications & Stream Details" [ref=e249] [cursor=pointer]
+          - generic [ref=e250]:
+            - heading "Monitored Cameras" [level=2] [ref=e255]
+            - generic [ref=e256]:
+              - generic [ref=e257]:
+                - generic [ref=e258]: monitored camera feeds
+                - generic [ref=e259]: 7 scenarios
+              - list [ref=e260]:
+                - listitem [ref=e261]:
+                  - generic [ref=e262]:
+                    - generic [ref=e263]:
+                      - generic [ref=e264]:
+                        - generic [ref=e265]: Dock Edge Fall & Dragging Hazard
+                        - text: Dock Bay 4 — Inbound Transfer
+                      - generic [ref=e266]: High risk
+                    - paragraph [ref=e267]: Personnel and cargo fall hazard from elevated loading dock threshold.
+                    - generic [ref=e268]:
+                      - button "selected feed" [ref=e269] [cursor=pointer]
+                      - button "replay incidents" [ref=e270] [cursor=pointer]
+                - listitem [ref=e273]:
+                  - generic [ref=e274]:
+                    - generic [ref=e275]:
+                      - generic [ref=e276]:
+                        - generic [ref=e277]: Heavy-on-Light Stacking & Floor Dragging
+                        - text: Zone B — Pallet Assembly Deck
+                      - generic [ref=e278]: High risk
+                    - paragraph [ref=e279]: Compressive crushing of lower packaging and stack destabilization during transit.
+                    - generic [ref=e280]:
+                      - button "inspect feed" [ref=e281] [cursor=pointer]
+                      - button "replay incidents" [ref=e282] [cursor=pointer]
+                - listitem [ref=e285]:
+                  - generic [ref=e286]:
+                    - generic [ref=e287]:
+                      - generic [ref=e288]:
+                        - generic [ref=e289]: Wet Floor Slip & Rolling Hazard
+                        - text: Aisle 3 — Washdown Staging Area
+                      - generic [ref=e290]: High risk
+                    - paragraph [ref=e291]: High-probability worker slip/fall injury and carton moisture absorption weakening base.
+                    - generic [ref=e292]:
+                      - button "inspect feed" [ref=e293] [cursor=pointer]
+                      - button "replay incidents" [ref=e294] [cursor=pointer]
+                - listitem [ref=e297]:
+                  - generic [ref=e298]:
+                    - generic [ref=e299]:
+                      - generic [ref=e300]:
+                        - generic [ref=e301]: Carton Overhang & Freefall Drop
+                        - text: Staging Deck A — Sortation Bay
+                      - generic [ref=e302]: High risk
+                    - paragraph [ref=e303]: Eccentric tipping moment causes cargo drop, inventory breakage, and foot crush hazard.
+                    - generic [ref=e304]:
+                      - button "inspect feed" [ref=e305] [cursor=pointer]
+                      - button "replay incidents" [ref=e306] [cursor=pointer]
+                - listitem [ref=e309]:
+                  - generic [ref=e310]:
+                    - generic [ref=e311]:
+                      - generic [ref=e312]:
+                        - generic [ref=e313]: Carton Stepping & Orientation Violations
+                        - text: Rack Bay 7 — High-Bay Storage
+                      - generic [ref=e314]: Critical risk
+                    - paragraph [ref=e315]: Carton panel puncture, internal product crushing, and fall from height.
+                    - generic [ref=e316]:
+                      - button "inspect feed" [ref=e317] [cursor=pointer]
+                      - button "replay incidents" [ref=e318] [cursor=pointer]
+                - listitem [ref=e321]:
+                  - generic [ref=e322]:
+                    - generic [ref=e323]:
+                      - generic [ref=e324]:
+                        - generic [ref=e325]: Bulk Cargo Drop & Impact Shock
+                        - text: Loading Dock 2 — Outbound Staging
+                      - generic [ref=e326]: High risk
+                    - paragraph [ref=e327]: Uncontrolled kinetic impact causes cargo seam burst and worker strike hazard.
+                    - generic [ref=e328]:
+                      - button "inspect feed" [ref=e329] [cursor=pointer]
+                      - button "replay incidents" [ref=e330] [cursor=pointer]
+                - listitem [ref=e333]:
+                  - generic [ref=e334]:
+                    - generic [ref=e335]:
+                      - generic [ref=e336]:
+                        - generic [ref=e337]: Packaging Straps Used as Handles
+                        - text: Bay 1 — Parcel Sortation
+                      - generic [ref=e338]: High risk
+                    - paragraph [ref=e339]: Strap tensile failure causes sudden dropped cargo, impact damage, and hand laceration.
+                    - generic [ref=e340]:
+                      - button "inspect feed" [ref=e341] [cursor=pointer]
+                      - button "replay incidents" [ref=e342] [cursor=pointer]
+            - generic [ref=e345] [cursor=pointer]:
+              - generic [ref=e349]: Add camera footage
+              - generic [ref=e350]: Drop in an MP4 — detection & risk analysis run automatically

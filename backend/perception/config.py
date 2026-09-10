@@ -16,6 +16,7 @@ from backend.perception.redaction import DEFAULT_REDACTION, RedactionConfig
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STOCK_MODEL_PATH = REPO_ROOT / "models" / "yolov8n.pt"
 PILOT_MODEL_PATH = REPO_ROOT / "models" / "trace_pilot_v1.pt"
+POSE_MODEL_PATH = REPO_ROOT / "models" / "yolov8n-pose.pt"
 DEFAULT_MODEL_PATH = STOCK_MODEL_PATH  # backwards-compat alias, used below
 
 # Identifies which model produced a given detection/Entity — never
@@ -39,6 +40,13 @@ class PerceptionConfig:
     model_path: Path = DEFAULT_MODEL_PATH
     model_identity: str = STOCK_COCO_IDENTITY
     device: str = "cpu"
+
+    # Pose estimation (Layer 1 enhancement). Optional and degradable — when
+    # disabled, or the weights are absent, entities simply carry no keypoints
+    # and the core detection loop is unaffected. Off by default so the stock
+    # (test) pipeline stays dependency-light; enabled on the pilot config.
+    pose_enabled: bool = False
+    pose_model_path: Path = POSE_MODEL_PATH
 
     confidence_threshold: float = 0.25
     iou_threshold: float = 0.45
@@ -91,4 +99,5 @@ DEFAULT_CONFIG = PerceptionConfig()
 PILOT_CONFIG = PerceptionConfig(
     model_path=PILOT_MODEL_PATH,
     model_identity=TRACE_PILOT_IDENTITY,
+    pose_enabled=True,
 )

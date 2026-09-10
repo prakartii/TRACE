@@ -19,6 +19,14 @@ const CLASS_COLOR = {
 }
 const DEFAULT_COLOR = '#71717a'
 
+// COCO 17-keypoint skeleton — mirrors backend/perception/pose.py COCO_LIMBS.
+const POSE_LIMBS = [
+  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
+  [5, 11], [6, 12], [11, 12],
+  [11, 13], [13, 15], [12, 14], [14, 16],
+  [0, 1], [0, 2], [1, 3], [2, 4], [0, 5], [0, 6],
+]
+
 function formatShortTrackId(trackId) {
   if (!trackId) return ''
   const str = String(trackId)
@@ -90,6 +98,7 @@ export default function PerceptionOverlay({
         const color = CLASS_COLOR[entity.entity_class] ?? DEFAULT_COLOR
         const opLabel = getEntityOperationalLabel(entity, resolvedEntities)
         const shortTrackId = formatShortTrackId(entity.track_id)
+        const keypoints = entity.keypoints
 
         return (
           <div
@@ -97,6 +106,16 @@ export default function PerceptionOverlay({
             className="absolute border-[1.5px]"
             style={{ left, top, width, height, borderColor: color }}
           >
+            {keypoints && keypoints.length > 0 && (
+              <Skeleton
+                keypoints={keypoints}
+                originX={x1}
+                originY={y1}
+                scaleX={scaleX}
+                scaleY={scaleY}
+                color={color}
+              />
+            )}
             <span
               className="absolute left-0 top-0 -translate-y-full inline-flex items-center gap-1.5 whitespace-nowrap px-1.5 py-0.5 text-caption leading-tight text-white font-sans"
               style={{ backgroundColor: color }}
@@ -124,5 +143,35 @@ export default function PerceptionOverlay({
         )
       })}
     </div>
+  )
+}
+
+function Skeleton({ keypoints, originX, originY, scaleX, scaleY, color }) {
+  const pts = keypoints.map(([kx, ky]) => [(kx - originX) * scaleX, (ky - originY) * scaleY])
+  const lines = POSE_LIMBS.filter(([a, b]) => pts[a] && pts[b])
+    .map(([a, b]) => ({ x1: pts[a][0], y1: pts[a][1], x2: pts[b][0], y2: pts[b][1] }))
+    .filter((l) => [l.x1, l.y1, l.x2, l.y2].every((v) => Number.isFinite(v)))
+
+  return (
+    <svg className="pointer-events-none absolute inset-0 h-full w-full" style={{ overflow: 'visible' }}>
+      {lines.map((l, i) => (
+        <line
+          key={i}
+          x1={l.x1}
+          y1={l.y1}
+          x2={l.x2}
+          y2={l.y2}
+          stroke={color}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          opacity={0.9}
+        />
+      ))}
+      {pts.map(([x, y], i) =>
+        Number.isFinite(x) && Number.isFinite(y) ? (
+          <circle key={i} cx={x} cy={y} r={2} fill={color} stroke="#fff" strokeWidth={0.5} />
+        ) : null
+      )}
+    </svg>
   )
 }
