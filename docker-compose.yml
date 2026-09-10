@@ -1,0 +1,59 @@
+# TRACE full stack: FastAPI backend (perception + risk lenses + Safe Action
+# Planner) and the Vite/React frontend served by nginx.
+#
+#   docker compose up --build
+#
+# Then open http://localhost:5173 . The backend API is on http://localhost:8000
+# (docs at /docs, liveness at /health). The first perception call per video
+# loads a model and can take up to ~a minute; later calls reuse the cache.
+#
+# Drop challenge MP4s into ./data/challenge_videos/ on the host — the backend
+# discovers whatever is present there at request time (nothing is hardcoded).
+#
+# Optional: create a .env file next to this one with
+#   ANTHROPIC_API_KEY=sk-ant-...   # enables the assistant's LLM phrasing layer
+#   VITE_API_BASE_URL=http://localhost:8000   # change if the browser reaches
+#                                             # the backend on another host/port
+
+name: trace
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trace-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Without a key the assistant still answers from deterministic
+      # retrieval — the LLM is only a phrasing layer, never the source of truth.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      # SQLite event ledger — survives `compose down` (named volume).
+      - backend-db:/app/backend/db
+      # Local footage + derived artefacts (clips, perception cache, tts cache).
+      # Bind-mounted so you can add challenge videos from the host. The
+      # container runs as uid 1000; on a typical single-user Linux host that
+      # matches your account, so ./data stays writable.
+      - ./data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the JS bundle at build time. This is what the USER'S
+        # BROWSER uses to reach the backend (REST + ws:// upgrades), so it
+        # must be a host-published address, not the `backend` service name.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    image: trace-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend-db:
