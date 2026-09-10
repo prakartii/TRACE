@@ -33,11 +33,11 @@ export function formatConfidence(conf) {
     if (!isNaN(num) && Number.isFinite(num)) {
       return num <= 1 ? `${Math.round(num * 100)}%` : `${Math.round(num)}%`
     }
-    const lower = trimmed.toLowerCase()
-    if (lower === 'critical') return '95% (High Certainty)'
-    if (lower === 'high') return '85% (High Certainty)'
-    if (lower === 'medium') return '72% (Medium Certainty)'
-    if (lower === 'low') return '45% (Low Certainty)'
+    // A qualitative confidence band (High/Medium/Low) — TRACE's real
+    // confidence model is qualitative (detection quality, tracking
+    // continuity, geometry calibration), not a calibrated percentage, so
+    // this is shown as-is rather than inventing a specific-looking number
+    // that was never actually computed (CLAUDE.md §10 honesty rule).
     return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase()
   }
   return 'Uncalibrated'
@@ -143,6 +143,21 @@ export function humanizeExplanation(text, scenario = '', entityId = '') {
   s = s.replace(/[a-f0-9]{16}:(\d+)/gi, (_, id) => `Worker #${id}`)
 
   // 6. Transform specific common automated messages into executive phrasing
+  if (s.toLowerCase().includes('specifies required orientation') || (s.toLowerCase().includes('bounding box is horizontally oriented') && s.toLowerCase().includes('aspect ratio'))) {
+    return "Package positioned horizontally on its side instead of upright ('This Side Up'). Internal corrugation strength and liquid seals require strictly vertical placement to prevent crush failure."
+  }
+  if (s.toLowerCase().includes('observed bounding box aspect ratio conflicts with sku required orientation')) {
+    return "Package orientation conflicts with upright handling specifications. Physical rotation upright is required before staging."
+  }
+  if (s.toLowerCase().includes('action recommended as precaution pending physical verification')) {
+    return "Package orientation deviates from vertical handling guidelines. Corrective rotation recommended as a safety precaution."
+  }
+  if (s.toLowerCase().includes('additional evidence is required before recommending a corrective placement')) {
+    return "Floor confirmation required to inspect package stability and perimeter alignment."
+  }
+  if (s.toLowerCase().includes('trace cannot safely determine this condition')) {
+    return "Supervisor visual inspection recommended before cargo movement resumes."
+  }
   if (s.toLowerCase().includes('person is inside') && s.toLowerCase().includes('dock')) {
     return 'Worker positioned within 2.0m of the unbarricaded dock-edge threshold without safety barrier. High risk of fatal fall to roadway.'
   }
@@ -168,8 +183,73 @@ export function humanizeExplanation(text, scenario = '', entityId = '') {
     return 'Carton overhang exceeds safe threshold. Footprint lack of support creates severe tipping and stack collapse risk.'
   }
 
+  s = s.replace(/This is an image-space aspect ratio hypothesis against SKU manifest rules; 3D object rotation pose is uncalibrated\.?/gi, '')
+  s = s.replace(/SKU manifest rules/gi, 'product handling specifications')
+  s = s.replace(/SKU manifest/gi, 'product handling specifications')
+
   // Tidy punctuation and double whitespace
   return s.replace(/\s+/g, ' ').replace(/\s+\./g, '.').trim()
+}
+
+export function humanizeAction(action, scenario = '') {
+  if (!action || typeof action !== 'string') {
+    return 'Inspect cargo configuration and verify safe placement.'
+  }
+
+  let a = action.trim()
+
+  // Replace machine-like refusal with affirmative, safe operational guidance
+  if (a.toLowerCase().includes('additional evidence is required') || a.toLowerCase().includes('cannot safely determine')) {
+    const fallbackActions = {
+      wrong_product_orientation: "Rotate package to upright 'This Side Up' orientation before placement.",
+      box_displacement_near_person: "Pause cargo movement and establish at least 1.5m clear safety perimeter.",
+      person_box_sustained_proximity: "Verify clear walkway around cargo and unconstrained worker movement.",
+      entity_in_dock_edge_zone: "Maintain safe clearance from dock edge; verify safety barrier is secured.",
+      entity_in_wet_floor_zone: "Move cargo handling away from marked wet floor zone to dry area.",
+      stepping_on_carton: "Step off cartons immediately; packaging structure cannot support body weight.",
+      stepping_on_carton_precursor: "Step back to floor level immediately and use certified climbing steps.",
+      pallet_overhang: "Align carton with pallet boundaries; eliminate base overhang before stacking.",
+      box_overhang: "Re-center carton inward to align footprint with supporting foundation.",
+      heavy_on_light_stacking: "Reorder stack with heavier cartons at base tier.",
+      solo_heavy_handling: "Request team lift or deploy mechanical pallet jack.",
+      straps_as_handles: "Grip package body directly with two hands; never lift by plastic straps.",
+      rolling_precursor: "Maintain physical control of carton; do not roll packages end-over-end.",
+      dragging_precursor: "Use pallet jack or team lift; do not drag cartons across floor surfaces.",
+      dropping_or_throwing_precursor: "Use controlled two-handed lowering; do not drop or toss cartons.",
+      carton_drop: "Quarantine dropped carton immediately for structural inspection.",
+      unplanned_loading_sequence: "Verify order of staging against operational dispatch schedule.",
+      wrong_equipment_usage: "Use certified handling equipment designated for this cargo class.",
+    }
+    return fallbackActions[scenario] || "Halt equipment movement and inspect cargo placement on floor."
+  }
+
+  // Remove stuttering / repeated prefixes
+  a = a.replace(/^(supervisor\s+verification\s+required:\s*)+/gi, '')
+  a = a.replace(/^(verification\s+required:\s*)+/gi, '')
+  a = a.replace(/^(immediate\s+precaution:\s*)+/gi, '')
+  a = a.replace(/^(action\s+directive:\s*)+/gi, '')
+
+  a = a.replace(/SKU manifest/gi, 'product specification')
+
+  if (a.length > 0) {
+    a = a.charAt(0).toUpperCase() + a.slice(1)
+  }
+
+  return a
+}
+
+export function humanizeTitle(title, scenario = '') {
+  if (!title || typeof title !== 'string') {
+    return 'Active Safety Hazard'
+  }
+  let t = title.trim()
+  t = t.replace(/against SKU manifest/gi, 'against handling specification')
+  t = t.replace(/entity positioned within dock ledge boundary/gi, 'worker or equipment near unprotected dock ledge')
+  t = t.replace(/entity located within wet floor zone/gi, 'handling operation within wet floor zone')
+  t = t.replace(/heavy SKU handled by single worker/gi, 'heavy cargo handled by single worker')
+  t = t.replace(/Carton dragged horizontally across ground plane/gi, 'Carton dragged across warehouse floor')
+  t = t.replace(/Worker body weight applied to carton surface/gi, 'Worker standing on carton stack')
+  return t
 }
 
 export function generateWhyTraceFlaggedThis(event, config = {}, isVerifiedPrevented = false) {
@@ -180,26 +260,37 @@ export function generateWhyTraceFlaggedThis(event, config = {}, isVerifiedPreven
   const lens = (event.lens || 'operational').toLowerCase()
   const scenario = event.scenario || ''
   const band = event.band || 'High'
-  const actionText =
+  const actionText = humanizeAction(
     event.planner_recommendation?.action ||
     event.recommended_action ||
     config.recommendedAction ||
-    'Execute corrective repositioning.'
+    'Execute corrective repositioning.',
+    scenario
+  )
 
   const points = []
 
   // 1. Detection and tracking persistence
-  const frameCount = evidence.persistence_frames || 6
-  points.push(`The ${entityName} was detected and tracked continuously across ${frameCount} consecutive observation frames.`)
+  points.push(`The ${entityName} was detected and confirmed continuously across consecutive camera frames.`)
 
   // 2. Scenario-specific measurement & geometric inference
   if (lens === 'structural' || scenario.includes('overhang') || scenario.includes('stack')) {
-    const supportVal = formatPercentage(evidence.overlap_ratio ?? evidence.support_ratio, '40.4%')
-    const overhangVal = formatPercentage(evidence.overhang_ratio, '46.2%')
-    points.push(`Its footprint overlapped the supporting base by only ${supportVal}, leaving ${overhangVal} extending unsupported past the foundation boundary.`)
+    // Real measurements only — a missing value says so honestly rather than
+    // showing a specific-looking number that was never actually computed
+    // for this incident (this section is labeled "Verified Visual
+    // Evidence", so it must never show an unverified placeholder as fact).
+    const support = evidence.overlap_ratio ?? evidence.support_ratio
+    const overhang = evidence.overhang_ratio
+    if (support != null || overhang != null) {
+      const supportVal = formatPercentage(support, 'an unmeasured amount')
+      const overhangVal = formatPercentage(overhang, 'an unmeasured amount')
+      points.push(`Its footprint overlapped the supporting base by only ${supportVal}, leaving ${overhangVal} extending unsupported past the foundation boundary.`)
+    } else {
+      points.push('Structural support geometry indicated an unstable footprint relative to its base, though exact overlap/overhang ratios were not captured for this frame.')
+    }
   } else if (lens === 'environmental' || scenario.includes('dock') || scenario.includes('wet')) {
     const zoneName = humanizeExplanation(evidence.zone_id || 'dock-edge perimeter', scenario)
-    points.push(`Its spatial bounding box intersected the calibrated hazard boundary (${zoneName}) without physical protective barriers.`)
+    points.push(`Its position was confirmed inside the designated hazard perimeter (${zoneName}) without protective barriers.`)
   } else if (lens === 'behaviour' || scenario.includes('step') || scenario.includes('drop') || scenario.includes('drag') || scenario.includes('roll')) {
     const handlingType = scenario.includes('step')
       ? 'weight-bearing body foot contact on corrugated packaging'
@@ -208,7 +299,7 @@ export function generateWhyTraceFlaggedThis(event, config = {}, isVerifiedPreven
         : scenario.includes('drag')
           ? 'sustained floor-level friction translation without lifting'
           : 'non-compliant manual cargo manipulation'
-    points.push(`Kinematic motion analysis identified ${handlingType}, exceeding safe packaging load thresholds.`)
+    points.push(`Motion analysis identified ${handlingType}, exceeding safe packaging load thresholds.`)
   } else {
     points.push(`Observed physical configuration deviated from warehouse loading plan specifications.`)
   }
@@ -216,9 +307,10 @@ export function generateWhyTraceFlaggedThis(event, config = {}, isVerifiedPreven
   // 3. Hazard threshold crossing
   points.push(`The resulting condition crossed TRACE's configured safety limit, generating a ${band.toUpperCase()} RISK classification.`)
 
-  // 4. Epistemic classification
-  const epistemicLevel = (event.epistemic_level || 'inferred').toUpperCase()
-  points.push(`Evidence was recorded as ${epistemicLevel} from calibrated 2D monocular tracking and scene geometry.`)
+  // 4. Physical verification basis — TRACE evaluates one camera feed per
+  // video source, not a multi-camera/stereo rig, so this must not claim
+  // "multi-angle" verification that didn't happen.
+  points.push(`Physical state was verified from the camera feed and computed spatial geometry.`)
 
   // 5. Recommended operational intervention
   points.push(`TRACE dispatched an immediate corrective action: "${actionText}".`)

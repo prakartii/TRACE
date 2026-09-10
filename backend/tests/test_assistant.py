@@ -84,11 +84,39 @@ def seeded_db():
         ("Which behaviour occurred most frequently?", "top_behaviours"),
         ("Show me the high-risk events", "high_risk_events"),
         ("Any false positives?", "false_positives"),
-        ("hello there", "overview"),
+        ("hello there", "greetings"),
     ],
 )
 def test_router_maps_canonical_questions(question, expected):
     assert route(question).intent == expected
+
+
+@pytest.mark.parametrize("greeting", ["hi", "Hi!", "hello", "hey", "hey there", "good morning", "yo"])
+def test_greetings_route_to_greetings_not_a_data_dump(greeting):
+    assert route(greeting).intent == "greetings"
+
+
+@pytest.mark.parametrize("msg", ["thanks", "thank you!", "ty", "cheers"])
+def test_thanks_routes_to_small_talk(msg):
+    assert route(msg).intent == "small_talk"
+
+
+@pytest.mark.parametrize("msg", ["bye", "goodbye", "see you"])
+def test_bye_routes_to_small_talk(msg):
+    assert route(msg).intent == "small_talk"
+
+
+def test_greeting_reply_has_no_cards_or_metrics(seeded_db):
+    r = q.greetings(seeded_db)
+    assert r.cards == []
+    assert r.metrics == []
+    assert r.summary  # still a real, non-empty reply
+
+
+def test_a_real_question_is_not_swallowed_by_the_greeting_matcher():
+    # "hi" must not fire on questions that merely start with a similar word.
+    assert route("high risk events today").intent != "greetings"
+    assert route("hi, what happened in bay 3?").intent != "greetings"
 
 
 # --------------------------------------------------------------------------- #
@@ -292,3 +320,39 @@ def test_process_attribution_is_honest_on_an_empty_db(empty_db):
     assert "does not rank or identify individual workers" in r.summary
     assert r.data["by_source"] == []
     assert r.row_count == 0
+
+
+# --------------------------------------------------------------------------- #
+# "this video" grounding — CLAUDE.md critical-pass: a newly uploaded video
+# has no entry in the fixed canonical camera-name table, so a deictic
+# question ("what did TRACE find in this video?") must resolve against the
+# caller's actual open video, not a hardcoded demo camera.
+# --------------------------------------------------------------------------- #
+
+def test_camera_events_resolves_this_video_from_context(seeded_db):
+    r = q.camera_events(seeded_db, "what did trace find in this video?", context_video_id="vidB")
+    assert r.data["video_id"] == "vidB"
+    assert r.row_count > 0
+    assert all(eid in (3, 4) for eid in r.event_ids)
+
+
+def test_camera_events_context_does_not_override_a_named_camera(seeded_db):
+    # A camera explicitly named in the question still wins over the
+    # currently-open-video context.
+    r = q.camera_events(seeded_db, "what happened at camera 1 - loading dock bay", context_video_id="vidB")
+    assert r.data["video_id"] != "vidB"
+
+
+def test_camera_events_without_context_falls_back_to_default_camera(seeded_db):
+    # No context and no named camera: falls back to the historical default
+    # rather than erroring, and is honest that vidA/vidB/vidC (this test's
+    # fixture videos) have no evidence under that id.
+    r = q.camera_events(seeded_db, "what did trace find in this video?")
+    assert r.row_count == 0
+    assert "No evidence-backed events" in r.summary
+
+
+def test_assistant_answer_grounds_this_video_question_in_the_open_video(seeded_db):
+    result = answer(seeded_db, "What did TRACE find in this video?", video_id="vidC")
+    assert result["data"]["camera_events"]["video_id"] == "vidC"
+    assert result["grounded_row_count"] > 0

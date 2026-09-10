@@ -1,4 +1,21 @@
 import { useEffect, useState } from 'react'
+import {
+  AlertTriangle,
+  Boxes,
+  Camera,
+  Construction,
+  Droplets,
+  Footprints,
+  ListChecks,
+  Lock,
+  MapPinned,
+  Package,
+  Settings as SettingsIcon,
+  ShieldQuestion,
+  Trash2,
+  TrafficCone,
+  Volume2,
+} from 'lucide-react'
 import { API_BASE_URL } from '../config.js'
 import {
   createZone,
@@ -8,7 +25,51 @@ import {
   listProducts,
   listZones,
 } from '../api/videos.js'
+import { getAlertText } from '../api/intervention.js'
+import { useSpeech } from '../hooks/useSpeech.js'
 import CustomRuleBuilder from './CustomRuleBuilder.jsx'
+
+// Turns a technical identifier ("appliances_fridge_box") into a readable
+// product name ("Appliances Fridge Box") for the catalog card — the raw id
+// stays visible underneath, in muted text, for anyone who needs it.
+function humanize(id) {
+  if (!id) return ''
+  return id
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(' ')
+    .map((w) => (w.length ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ')
+}
+
+const PRODUCT_ICON = (classNameRaw) => {
+  const c = (classNameRaw || '').toLowerCase()
+  if (c.includes('appliance') || c.includes('fridge') || c.includes('machine')) return SettingsIcon
+  return Package
+}
+
+const MASS_STYLE = {
+  heavy: 'border-danger/40 bg-danger/10 text-danger',
+  medium: 'border-signal/50 bg-signal/15 text-[#8a5f00]',
+  light: 'border-ok/40 bg-ok/10 text-ok',
+}
+
+const FRAGILITY_STYLE = {
+  high: 'border-danger/40 bg-danger/10 text-danger',
+  medium: 'border-signal/50 bg-signal/15 text-[#8a5f00]',
+  low: 'border-line bg-paper text-ink-soft',
+}
+
+const ZONE_META = {
+  dock_edge: { icon: AlertTriangle, label: 'Dock Edge', style: 'text-danger bg-danger/10 border-danger/30' },
+  wet_floor: { icon: Droplets, label: 'Wet Floor', style: 'text-sky-600 bg-sky-500/10 border-sky-500/30' },
+  pedestrian_walkway: { icon: Footprints, label: 'Walkway', style: 'text-ink-soft bg-paper border-line' },
+  traffic_lane: { icon: TrafficCone, label: 'Traffic Lane', style: 'text-orange-600 bg-orange-500/10 border-orange-500/30' },
+  restricted_area: { icon: Lock, label: 'Restricted Area', style: 'text-danger bg-danger/10 border-danger/30' },
+}
+function zoneMeta(zoneType) {
+  return ZONE_META[zoneType] || { icon: ShieldQuestion, label: zoneType || 'Zone', style: 'text-ink-soft bg-paper border-line' }
+}
 
 export default function SupervisorSettings() {
   const [products, setProducts] = useState([])
@@ -157,32 +218,39 @@ export default function SupervisorSettings() {
   }
 
   const tabs = [
-    ['rules', 'custom rules'],
-    ['products', `product catalog (${products.length})`],
-    ['zones', `hazard zones (${zones.length})`],
-    ['manifests', `manifests (${manifests.length})`],
+    ['rules', 'Custom Rules', ListChecks],
+    ['products', `Product Catalog (${products.length})`, Boxes],
+    ['zones', `Hazard Zones (${zones.length})`, MapPinned],
+    ['manifests', `Cameras (${manifests.length})`, Camera],
+    ['alerts', 'Voice Alerts', Volume2],
   ]
 
   return (
     <div className="flex flex-col gap-6">
       <section>
-        <h1 className="font-display text-display-lg font-semibold text-ink">settings</h1>
-        <p className="mt-1 text-body text-ink-soft">
-          Manage product metadata, camera-calibrated hazard zones, and operational source manifests.
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-ink text-paper">
+            <SettingsIcon size={15} />
+          </span>
+          <h1 className="text-xl font-bold text-ink">Warehouse Configuration</h1>
+        </div>
+        <p className="mt-1 text-small text-ink-soft">
+          The products, hazard zones, and rules TRACE actively checks against — changes apply immediately, no restart needed.
         </p>
       </section>
 
       {error && <div className="border border-danger bg-danger/5 p-3 text-small text-danger">{error}</div>}
 
       <div className="flex flex-wrap gap-px border border-line bg-line">
-        {tabs.map(([key, label]) => (
+        {tabs.map(([key, label, Icon]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
-            className={`px-4 py-2 text-small font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-4 py-2 text-small font-medium transition-colors cursor-pointer ${
               activeTab === key ? 'bg-ink text-paper' : 'bg-surface text-ink-soft hover:text-ink'
             }`}
           >
+            <Icon size={13} />
             {label}
           </button>
         ))}
@@ -192,83 +260,84 @@ export default function SupervisorSettings() {
 
       {activeTab === 'products' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
-          <div className="border border-line bg-surface p-4">
-            <h2 className="mb-3 text-small font-semibold text-ink">configured SKU specifications</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-small">
-                <thead>
-                  <tr className="border-b border-line text-caption text-ink-faint">
-                    <th className="py-2 font-medium">SKU id</th>
-                    <th className="py-2 font-medium">class</th>
-                    <th className="py-2 font-medium">mass class</th>
-                    <th className="py-2 font-medium">fragility</th>
-                    <th className="py-2 font-medium">orientation</th>
-                    <th className="py-2 font-medium">max stack <span className="font-normal text-ink-faint">(not enforced)</span></th>
-                    <th className="py-2 text-right font-medium">action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {products.map((p) => (
-                    <tr key={p.product_id} className="hover:bg-paper">
-                      <td className="py-2 font-mono font-medium text-ink">{p.product_id}</td>
-                      <td className="py-2 text-ink-soft">{p.class_name}</td>
-                      <td className="py-2 font-mono">
-                        <span
-                          className={`border px-1.5 py-0.5 text-label font-medium ${
-                            p.mass_class === 'heavy'
-                              ? 'border-danger/40 bg-danger/10 text-danger'
-                              : p.mass_class === 'medium'
-                                ? 'border-signal/40 bg-signal/10 text-[#8a5f00]'
-                                : 'border-line bg-paper text-ink-soft'
-                          }`}
-                        >
-                          {p.mass_class}
-                        </span>
-                      </td>
-                      <td className="py-2 text-ink-soft">{p.fragility}</td>
-                      <td className="py-2 font-mono text-ink-soft">{p.required_orientation || 'unconstrained'}</td>
-                      <td className="py-2 font-mono text-ink-soft">{p.max_stack_height || '—'}</td>
-                      <td className="py-2 text-right">
+          <div>
+            <h2 className="mb-3 text-small font-semibold text-ink">
+              {products.length} product{products.length === 1 ? '' : 's'} registered
+            </h2>
+            {products.length === 0 ? (
+              <div className="border border-dashed border-line bg-surface p-6 text-center text-small text-ink-soft">
+                No products registered yet. Add one on the right so TRACE knows how it should be handled.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {products.map((p) => {
+                  const Icon = PRODUCT_ICON(p.class_name)
+                  return (
+                    <div key={p.product_id} className="border border-line bg-surface p-3.5 shadow-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-paper border border-line text-ink-soft">
+                            <Icon size={15} />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="truncate text-small font-bold text-ink">{humanize(p.product_id)}</div>
+                            <div className="truncate font-mono text-[11px] text-ink-faint">{p.product_id}</div>
+                          </div>
+                        </div>
+
                         {deleteConfirmId === p.product_id ? (
-                          <div className="inline-flex items-center gap-1.5">
-                            <button type="button" onClick={() => handleDeleteProduct(p.product_id)} className="bg-danger px-1.5 py-0.5 text-label font-medium text-paper hover:opacity-90">
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button type="button" onClick={() => handleDeleteProduct(p.product_id)} className="bg-danger px-1.5 py-0.5 text-label font-medium text-paper hover:opacity-90 cursor-pointer">
                               confirm
                             </button>
-                            <button type="button" onClick={() => setDeleteConfirmId(null)} className="bg-paper px-1.5 py-0.5 text-label text-ink-soft hover:bg-line">
+                            <button type="button" onClick={() => setDeleteConfirmId(null)} className="bg-paper px-1.5 py-0.5 text-label text-ink-soft hover:bg-line cursor-pointer">
                               cancel
                             </button>
                           </div>
                         ) : (
-                          <button type="button" onClick={() => setDeleteConfirmId(p.product_id)} className="text-caption text-ink-faint hover:text-danger">
-                            delete
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmId(p.product_id)}
+                            title="Remove product"
+                            className="shrink-0 text-ink-faint hover:text-danger cursor-pointer"
+                          >
+                            <Trash2 size={14} />
                           </button>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        <span className={`border px-1.5 py-0.5 text-label font-medium capitalize ${MASS_STYLE[p.mass_class] || MASS_STYLE.light}`}>
+                          {p.mass_class} weight
+                        </span>
+                        <span className={`border px-1.5 py-0.5 text-label font-medium capitalize ${FRAGILITY_STYLE[p.fragility] || FRAGILITY_STYLE.low}`}>
+                          {p.fragility} fragility
+                        </span>
+                        {p.required_orientation ? (
+                          <span className="border border-line bg-paper px-1.5 py-0.5 text-label font-medium text-ink-soft">
+                            {p.required_orientation === 'vertical' ? 'This side up' : 'Must lie flat'}
+                          </span>
+                        ) : (
+                          <span className="border border-line bg-paper px-1.5 py-0.5 text-label font-medium text-ink-faint">
+                            Any orientation
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
-          <FormPanel title="register new product / SKU" message={formMsg}>
+          <FormPanel title="Add a product" message={formMsg}>
             <form onSubmit={handleCreateProduct} className="flex flex-col gap-2.5">
-              <Input label="product id (unique)" placeholder="e.g. appliances_fridge_box" value={newSku.product_id} onChange={(v) => setNewSku({ ...newSku, product_id: v })} mono required />
-              <Input label="class name" placeholder="e.g. carton / appliance" value={newSku.class_name} onChange={(v) => setNewSku({ ...newSku, class_name: v })} required />
-              <Select label="mass class" value={newSku.mass_class} onChange={(v) => setNewSku({ ...newSku, mass_class: v })} options={[['light', 'light (< 10 kg)'], ['medium', 'medium (10–25 kg)'], ['heavy', 'heavy (> 25 kg)']]} />
-              <Select label="required orientation" value={newSku.required_orientation || ''} onChange={(v) => setNewSku({ ...newSku, required_orientation: v || null })} options={[['', 'unconstrained'], ['vertical', 'vertical (this side up)'], ['horizontal', 'horizontal (flatpack)']]} />
-              <Input label="max stack height" type="number" value={newSku.max_stack_height} onChange={(v) => setNewSku({ ...newSku, max_stack_height: Number(v) })} />
-              {/* CLAUDE.md §30: stored and exported, but no lens reads it. Counting
-                  stack tiers needs vertical support-chain depth that single-camera
-                  2D geometry cannot resolve reliably, so TRACE says so rather than
-                  implying the limit is being checked. Orientation, by contrast, is
-                  enforced by the conformance lens and as a planner hard constraint. */}
-              <p className="-mt-1 text-caption text-ink-faint">
-                Stored on the SKU and included in exports, but not currently enforced —
-                no risk lens evaluates stack height. Required orientation is enforced.
-              </p>
-              <button type="submit" className="mt-2 border border-ink bg-ink py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft">
-                register SKU metadata
+              <Input label="Product ID (unique, no spaces)" placeholder="e.g. appliances_fridge_box" value={newSku.product_id} onChange={(v) => setNewSku({ ...newSku, product_id: v })} mono required />
+              <Input label="Category" placeholder="e.g. carton, appliance" value={newSku.class_name} onChange={(v) => setNewSku({ ...newSku, class_name: v })} required />
+              <Select label="Weight class" value={newSku.mass_class} onChange={(v) => setNewSku({ ...newSku, mass_class: v })} options={[['light', 'Light (< 10 kg)'], ['medium', 'Medium (10–25 kg)'], ['heavy', 'Heavy (> 25 kg)']]} />
+              <Select label="Required orientation" value={newSku.required_orientation || ''} onChange={(v) => setNewSku({ ...newSku, required_orientation: v || null })} options={[['', 'Any orientation'], ['vertical', 'This side up'], ['horizontal', 'Must lie flat']]} />
+              <button type="submit" className="mt-2 border border-ink bg-ink py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft cursor-pointer">
+                Add to catalog
               </button>
             </form>
           </FormPanel>
@@ -277,72 +346,102 @@ export default function SupervisorSettings() {
 
       {activeTab === 'zones' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
-          <div className="border border-line bg-surface p-4">
-            <h2 className="mb-3 text-small font-semibold text-ink">calibrated camera hazard zones</h2>
-            <div className="flex flex-col gap-3">
-              {zones.map((z) => (
-                <div key={z.zone_id} className="flex items-start justify-between border border-line bg-paper p-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-small font-medium text-ink">{z.zone_id}</span>
-                      <span className="border border-line bg-surface px-1.5 py-0.5 text-label text-ink-soft">{z.zone_type}</span>
-                    </div>
-                    <p className="mt-1 text-caption text-ink-faint">
-                      polygon vertices ({z.polygon.length} points):{' '}
-                      <span className="font-mono">{JSON.stringify(z.polygon.map(([x, y]) => [Number(x.toFixed(2)), Number(y.toFixed(2))]))}</span>
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-caption text-ink-soft">
-                      severity: <span className="font-mono tabular-nums">{z.severity_multiplier}x</span>
-                    </span>
-                    {deleteConfirmZoneId === z.zone_id ? (
-                      <div className="inline-flex items-center gap-1.5">
-                        <button type="button" onClick={() => handleDeleteZone(z.zone_id)} className="bg-danger px-1.5 py-0.5 text-label font-medium text-paper hover:opacity-90">
-                          confirm
-                        </button>
-                        <button type="button" onClick={() => setDeleteConfirmZoneId(null)} className="bg-paper px-1.5 py-0.5 text-label text-ink-soft hover:bg-line">
-                          cancel
-                        </button>
+          <div>
+            <h2 className="mb-3 text-small font-semibold text-ink">
+              {zones.length} hazard zone{zones.length === 1 ? '' : 's'} marked on camera
+            </h2>
+            {zones.length === 0 ? (
+              <div className="border border-dashed border-line bg-surface p-6 text-center text-small text-ink-soft">
+                No hazard zones marked yet. Draw one on the right (e.g. a wet-floor spill area or a dock edge).
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {zones.map((z) => {
+                  const meta = zoneMeta(z.zone_type)
+                  const Icon = meta.icon
+                  return (
+                    <div key={z.zone_id} className="flex items-start justify-between border border-line bg-surface p-3.5 shadow-xs">
+                      <div className="flex items-start gap-2.5">
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border ${meta.style}`}>
+                          <Icon size={15} />
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-small font-bold text-ink">{meta.label}</span>
+                            <span className="font-mono text-[11px] text-ink-faint">{z.zone_id}</span>
+                          </div>
+                          <p className="mt-0.5 text-caption text-ink-soft">
+                            {z.severity_multiplier}× severity on any hazard detected inside this area
+                          </p>
+                          <details className="mt-1">
+                            <summary className="cursor-pointer text-[11px] text-ink-faint hover:text-ink-soft">
+                              boundary ({z.polygon.length} points)
+                            </summary>
+                            <span className="block font-mono text-[10px] text-ink-faint mt-0.5">
+                              {JSON.stringify(z.polygon.map(([x, y]) => [Number(x.toFixed(2)), Number(y.toFixed(2))]))}
+                            </span>
+                          </details>
+                        </div>
                       </div>
-                    ) : (
-                      <button type="button" onClick={() => setDeleteConfirmZoneId(z.zone_id)} className="text-caption text-ink-faint hover:text-danger">
-                        delete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                      {deleteConfirmZoneId === z.zone_id ? (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button type="button" onClick={() => handleDeleteZone(z.zone_id)} className="bg-danger px-1.5 py-0.5 text-label font-medium text-paper hover:opacity-90 cursor-pointer">
+                            confirm
+                          </button>
+                          <button type="button" onClick={() => setDeleteConfirmZoneId(null)} className="bg-paper px-1.5 py-0.5 text-label text-ink-soft hover:bg-line cursor-pointer">
+                            cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmZoneId(z.zone_id)}
+                          title="Remove zone"
+                          className="shrink-0 text-ink-faint hover:text-danger cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
-          <FormPanel title="register calibrated zone" message={zoneMsg}>
+          <FormPanel title="Mark a hazard zone" message={zoneMsg}>
             <form onSubmit={handleCreateZone} className="flex flex-col gap-2.5">
-              <Input label="zone id (unique)" placeholder="e.g. dock_edge_bay_3" value={newZone.zone_id} onChange={(v) => setNewZone({ ...newZone, zone_id: v })} mono required />
-              <Select label="zone type" value={newZone.zone_type} onChange={(v) => setNewZone({ ...newZone, zone_type: v })} options={[['dock_edge', 'dock_edge'], ['wet_floor', 'wet_floor'], ['pedestrian_walkway', 'pedestrian_walkway'], ['traffic_lane', 'traffic_lane'], ['restricted_area', 'restricted_area']]} />
-              <Input label="severity multiplier" type="number" step="0.1" value={newZone.severity_multiplier} onChange={(v) => setNewZone({ ...newZone, severity_multiplier: v })} required />
+              <Input label="Zone name (unique)" placeholder="e.g. dock_edge_bay_3" value={newZone.zone_id} onChange={(v) => setNewZone({ ...newZone, zone_id: v })} mono required />
+              <Select
+                label="Hazard type"
+                value={newZone.zone_type}
+                onChange={(v) => setNewZone({ ...newZone, zone_type: v })}
+                options={Object.entries(ZONE_META).map(([val, m]) => [val, m.label])}
+              />
+              <Input label="Severity multiplier" type="number" step="0.1" value={newZone.severity_multiplier} onChange={(v) => setNewZone({ ...newZone, severity_multiplier: v })} required />
               <div>
-                <label className="mb-1 block text-caption text-ink-soft">normalized polygon JSON</label>
+                <label className="mb-1 block text-caption text-ink-soft">
+                  Area boundary <span className="text-ink-faint">(pick a preset, or edit the coordinates)</span>
+                </label>
+                <div className="mb-1.5 flex flex-wrap items-center gap-1">
+                  <button type="button" onClick={() => setNewZone({ ...newZone, polygon_text: '[[0.0, 0.75], [1.0, 0.75], [1.0, 1.0], [0.0, 1.0]]' })} className="border border-line px-1.5 py-0.5 text-caption text-ink-soft hover:bg-paper cursor-pointer">
+                    bottom strip
+                  </button>
+                  <button type="button" onClick={() => setNewZone({ ...newZone, polygon_text: '[[0.3, 0.3], [0.7, 0.3], [0.7, 0.7], [0.3, 0.7]]' })} className="border border-line px-1.5 py-0.5 text-caption text-ink-soft hover:bg-paper cursor-pointer">
+                    center region
+                  </button>
+                </div>
                 <textarea
-                  rows={3}
+                  rows={2}
                   required
                   value={newZone.polygon_text}
                   onChange={(e) => setNewZone({ ...newZone, polygon_text: e.target.value })}
                   className="w-full border border-line bg-surface p-1.5 font-mono text-caption text-ink focus:border-ink"
                   placeholder="[[0.0, 0.75], [1.0, 0.75], [1.0, 1.0], [0.0, 1.0]]"
                 />
-                <div className="mt-1 flex flex-wrap items-center gap-1">
-                  <span className="text-caption text-ink-faint">presets:</span>
-                  <button type="button" onClick={() => setNewZone({ ...newZone, polygon_text: '[[0.0, 0.75], [1.0, 0.75], [1.0, 1.0], [0.0, 1.0]]' })} className="border border-line px-1.5 py-0.5 text-caption text-ink-soft hover:bg-paper">
-                    dock edge strip
-                  </button>
-                  <button type="button" onClick={() => setNewZone({ ...newZone, polygon_text: '[[0.3, 0.3], [0.7, 0.3], [0.7, 0.7], [0.3, 0.7]]' })} className="border border-line px-1.5 py-0.5 text-caption text-ink-soft hover:bg-paper">
-                    center region
-                  </button>
-                </div>
               </div>
-              <button type="submit" className="mt-2 border border-ink bg-ink py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft">
-                register calibrated zone
+              <button type="submit" className="mt-2 border border-ink bg-ink py-1.5 text-small font-medium text-paper transition-colors hover:bg-ink-soft cursor-pointer">
+                Mark this zone
               </button>
             </form>
           </FormPanel>
@@ -350,23 +449,30 @@ export default function SupervisorSettings() {
       )}
 
       {activeTab === 'manifests' && (
-        <div className="border border-line bg-surface p-4">
-          <h2 className="mb-3 text-small font-semibold text-ink">camera source to operational manifest links</h2>
+        <div>
+          <h2 className="mb-3 text-small font-semibold text-ink">
+            Cameras with an operating profile ({manifests.length})
+          </h2>
+          <p className="mb-3 text-caption text-ink-soft max-w-2xl">
+            Each camera bay can be linked to a default product and its own hazard zones — set up automatically
+            for the supplied footage, and extendable to a new camera via the API.
+          </p>
           <div className="flex flex-col gap-3">
             {manifests.length === 0 ? (
-              <p className="text-small text-ink-soft">No dynamic manifests registered via API.</p>
+              <div className="border border-dashed border-line bg-surface p-6 text-center text-small text-ink-soft">
+                No camera bay profiles configured yet.
+              </div>
             ) : (
               manifests.map((m) => (
-                <div key={m.source_id} className="flex items-start justify-between border border-line bg-paper p-3">
+                <div key={m.source_id} className="flex items-start gap-2.5 border border-line bg-surface p-3.5 shadow-xs">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-paper border border-line text-ink-soft">
+                    <Camera size={15} />
+                  </span>
                   <div>
-                    <span className="text-small font-medium text-ink">{m.bay_name}</span>
-                    <span className="ml-2 font-mono text-caption text-ink-faint">({m.manifest_id})</span>
-                    <p className="mt-1 text-caption text-ink-soft">
-                      source id: <span className="font-mono">{m.source_id}</span>
-                    </p>
-                    <p className="mt-0.5 text-caption text-ink-faint">
-                      primary product: <span className="font-mono">{m.primary_product_id || 'none'}</span> ·{' '}
-                      {m.product_count} products · {m.zone_count} zones
+                    <span className="text-small font-bold text-ink">{m.bay_name}</span>
+                    <p className="mt-0.5 text-caption text-ink-soft">
+                      Default product: <strong className="text-ink font-medium">{m.primary_product_id ? humanize(m.primary_product_id) : 'none set'}</strong>
+                      {' · '}{m.product_count} product{m.product_count === 1 ? '' : 's'} · {m.zone_count} hazard zone{m.zone_count === 1 ? '' : 's'}
                     </p>
                   </div>
                 </div>
@@ -375,6 +481,101 @@ export default function SupervisorSettings() {
           </div>
         </div>
       )}
+
+      {activeTab === 'alerts' && <AlertLanguageSettings />}
+    </div>
+  )
+}
+
+function AlertLanguageSettings() {
+  const voice = useSpeech()
+  const [preview, setPreview] = useState(null)
+  const [previewing, setPreviewing] = useState(false)
+
+  async function handlePreview() {
+    setPreviewing(true)
+    setPreview(null)
+    try {
+      const result = await getAlertText(null, voice.lang)
+      setPreview(result)
+      voice.speak({ scenario: null, immediate_action: null, alert_id: 'settings_preview' }, { force: true })
+    } catch (err) {
+      setPreview({ error: err.message })
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[420px_1fr]">
+      <div className="flex flex-col gap-3 border border-line bg-surface p-4">
+        <h2 className="text-small font-semibold text-ink">alert language</h2>
+        <p className="text-caption text-ink-soft">
+          The language TRACE uses for spoken safety alerts. Applies to every intervention alert —
+          the spoken text always matches what was actually detected.
+        </p>
+
+        {!voice.supported ? (
+          <div className="border border-line bg-paper p-2.5 text-caption text-ink-soft">
+            Audio playback is not available in this browser. Alerts still appear as text.
+          </div>
+        ) : (
+          <>
+            <Select
+              label="language"
+              value={voice.lang}
+              onChange={voice.setLang}
+              options={voice.langs.map((l) => [l.code, l.label])}
+            />
+
+            <label className="flex items-center gap-2 text-small text-ink">
+              <input
+                type="checkbox"
+                checked={voice.enabled}
+                onChange={(e) => voice.setEnabled(e.target.checked)}
+                className="h-4 w-4"
+              />
+              Speak Critical and High-risk alerts aloud
+            </label>
+            <p className="text-[11px] text-ink-faint">
+              Medium and Low-risk events stay visual-only, so voice alerts don&apos;t talk over every detection.
+            </p>
+
+            <button
+              type="button"
+              onClick={handlePreview}
+              disabled={previewing}
+              className="mt-1 self-start border border-line bg-paper px-3 py-1.5 text-caption font-semibold text-ink hover:border-ink disabled:opacity-50"
+            >
+              {previewing ? 'loading preview…' : 'play a sample alert'}
+            </button>
+
+            {preview && !preview.error && (
+              <div className="border border-line bg-paper p-2.5 text-caption text-ink">
+                <span className="text-ink-faint">spoken text: </span>
+                {preview.text}
+              </div>
+            )}
+            {preview?.error && (
+              <div className="border border-danger bg-danger/5 p-2.5 text-caption text-danger">{preview.error}</div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="border border-line bg-surface p-4 text-caption text-ink-soft">
+        <h2 className="mb-2 text-small font-semibold text-ink">how this works</h2>
+        <p>
+          TRACE renders the selected language as real speech from the same detected-event pipeline that
+          drives Active Hazards and the Safe Action Planner — the spoken instruction always corresponds to
+          the actual event, never a generic warning.
+        </p>
+        <p className="mt-2">
+          Critical alerts speak immediately. High-risk alerts speak when intervention is warranted. Medium
+          and Low-risk events are shown but not read aloud, and a repeated detection of the same hazard is
+          spoken once, not on every frame it is observed.
+        </p>
+      </div>
     </div>
   )
 }

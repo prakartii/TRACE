@@ -1,753 +1,606 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
-import { ArrowLeft, RotateCcw } from 'lucide-react'
-import { listEvents } from '../api/events.js'
-import { listVideos } from '../api/videos.js'
-import { getEventTrajectory, getTrajectoryWhatIf } from '../api/whatif.js'
-import { useLiveViewContext } from '../LiveViewContext.jsx'
 import {
-  getScenarioConfig,
-  getVideoScenarioInfo,
-  resolveIncidentTitle,
-  formatTimestamp,
-} from '../lib/scenarios.js'
-import { humanizeExplanation } from '../lib/format.js'
-import WorkflowNav from '../components/WorkflowNav.jsx'
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Eye,
+  FileCheck,
+  FlaskConical,
+  Info,
+  RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react'
+import { getSupportedWhatIfEvents, getSafetyWhatIfSimulation } from '../api/whatif.js'
+import { streamUrl } from '../api/videos.js'
+import { useLiveViewContext } from '../LiveViewContext.jsx'
+import WhatIfScenarioVisualizer from '../components/video/WhatIfScenarioVisualizer.jsx'
 
-// A known-good sequence kept as a quick-select. It is only offered when the
-// backend actually reports an event with this id — never as a value that gets
-// silently substituted into the display. #73 (carton overhang past the pallet
-// deck) is the clearest end-to-end demo: the recorded overhang is scored High
-// and a feasible inward-shift alternative measurably corrects it.
-const CANONICAL_DEMO = { eventId: 73, label: 'Event #73 — carton overhang' }
+const BAND_BADGES = {
+  Low: 'border-ok/40 bg-ok/10 text-ok',
+  Medium: 'border-signal/50 bg-signal/15 text-[#8a5f00]',
+  High: 'border-danger/40 bg-danger/10 text-danger',
+  Critical: 'border-danger bg-danger text-paper font-bold',
+}
 
-// Structural/conformance scenarios the backend will actually simulate
-// (mirrors backend/planner/actions.py::WHAT_IF_ELIGIBLE_SCENARIOS). Worker-
-// positioning and environmental-zone incidents are deliberately refused, so
-// the screen defaults to — and highlights — the events that can be simulated.
-const WHATIF_ELIGIBLE = new Set([
-  'heavy_on_light_stacking',
-  'pallet_overhang',
-  'box_overhang',
-  'unsupported_bending_placement',
-  'wrong_product_orientation',
-  'image_space_support_hypothesis',
-])
+const BAND_ORDER = ['Low', 'Medium', 'High', 'Critical']
+const BAND_SCALE_COLOR = {
+  Low: 'bg-ok',
+  Medium: 'bg-signal',
+  High: 'bg-orange-500',
+  Critical: 'bg-danger',
+}
 
-const isEligible = (ev) => !!ev && WHATIF_ELIGIBLE.has(ev.scenario)
+// Parses a "High Risk -> Low Risk" style string into its two band names.
+// Never fabricates a band that wasn't actually in the source string.
+function parseBandTransition(text, fallbackBand) {
+  if (typeof text === 'string') {
+    const m = text.match(/(Low|Medium|High|Critical)\s*Risk\s*(?:->|→)\s*(Low|Medium|High|Critical)\s*Risk/i)
+    if (m) {
+      const cap = (s) => s[0].toUpperCase() + s.slice(1).toLowerCase()
+      return { before: cap(m[1]), after: cap(m[2]) }
+    }
+  }
+  return { before: fallbackBand || 'Medium', after: null }
+}
 
-function pickDefaultEvent(events, preferVideoId = null) {
-  if (!events?.length) return null
-  const pool = preferVideoId ? events.filter((e) => e.video_id === preferVideoId) : events
-  const canonical = !preferVideoId && events.find((e) => e.event_id === CANONICAL_DEMO.eventId && isEligible(e))
+/**
+ * Honest "before -> after" risk visualization: TRACE's stability model is
+ * qualitative (Low/Medium/High/Critical bands), never a fabricated 0-100
+ * number, so this scale marks real band positions rather than inventing a
+ * score (CLAUDE.md honesty rule: never invent metrics).
+ */
+function RiskTransitionScale({ before, after }) {
+  const beforeIdx = BAND_ORDER.indexOf(before)
+  const afterIdx = after ? BAND_ORDER.indexOf(after) : -1
+
   return (
-    canonical ||
-    pool.find(isEligible) ||
-    events.find(isEligible) ||
-    pool[0] ||
-    events[0] ||
-    null
+    <div className="border border-line bg-paper p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-ink-faint">
+          Risk Band Transition
+        </span>
+        {after && (
+          <div className="flex items-center gap-2 text-small font-bold">
+            <span className={`px-2 py-0.5 text-label uppercase ${BAND_BADGES[before]}`}>{before}</span>
+            <ArrowRight size={14} className="text-ink-faint" />
+            <span className={`px-2 py-0.5 text-label uppercase ${BAND_BADGES[after]}`}>{after}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="relative">
+        <div className="flex h-3 w-full overflow-hidden rounded-full border border-line-strong">
+          {BAND_ORDER.map((b) => (
+            <div key={b} className={`flex-1 ${BAND_SCALE_COLOR[b]} opacity-80`} />
+          ))}
+        </div>
+        <div className="mt-1 flex text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+          {BAND_ORDER.map((b) => (
+            <div key={b} className="flex-1 text-center">{b}</div>
+          ))}
+        </div>
+
+        {/* Observed marker */}
+        {beforeIdx >= 0 && (
+          <div
+            className="absolute -top-2.5 flex -translate-x-1/2 flex-col items-center"
+            style={{ left: `${(beforeIdx + 0.5) * (100 / BAND_ORDER.length)}%` }}
+          >
+            <span className="text-[9px] font-bold uppercase tracking-wider text-danger">Observed</span>
+            <span className="mt-3.5 h-2.5 w-2.5 rotate-45 border-2 border-danger bg-paper" />
+          </div>
+        )}
+
+        {/* Counterfactual marker */}
+        {afterIdx >= 0 && (
+          <div
+            className="absolute -bottom-6 flex -translate-x-1/2 flex-col items-center"
+            style={{ left: `${(afterIdx + 0.5) * (100 / BAND_ORDER.length)}%` }}
+          >
+            <span className="h-2.5 w-2.5 rotate-45 border-2 border-ok bg-paper" />
+            <span className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-ok">What-If</span>
+          </div>
+        )}
+      </div>
+      {afterIdx >= 0 && <div className="h-4" />}
+    </div>
   )
-}
-
-const DASH = '—'
-const pct = (v) => (typeof v === 'number' && Number.isFinite(v) ? `${v.toFixed(1)}%` : DASH)
-const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(d) : DASH)
-
-const BAND_TEXT = {
-  Low: 'text-ok',
-  Medium: 'text-signal',
-  High: 'text-danger',
-  Critical: 'text-danger',
-}
-
-function placementPoint(points) {
-  if (!points || !points.length) return null
-  return points.find((p) => p.is_placement_moment) || points[0]
 }
 
 export default function WhatIfReplay() {
   const { replayTarget, navigateTo } = useLiveViewContext()
 
-  const [videos, setVideos] = useState([])
-  const [recentEvents, setRecentEvents] = useState([])
-  const [selectedVideoId, setSelectedVideoId] = useState(replayTarget?.videoId || '')
+  const [supportedEvents, setSupportedEvents] = useState([])
+  const [selectedBay, setSelectedBay] = useState('')
   const [selectedEventId, setSelectedEventId] = useState(replayTarget?.eventId || null)
-  const [targetTimestamp, setTargetTimestamp] = useState(replayTarget?.timestamp ?? 0)
-
   const [simulation, setSimulation] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [selectedCandidateId, setSelectedCandidateId] = useState(null)
-  const [hoveredIdx, setHoveredIdx] = useState(null)
-  const [showTechnical, setShowTechnical] = useState(false)
+  const [showEvidence, setShowEvidence] = useState(false)
 
-  // 1. Initial load
+  // 1. Load authoritative supported events list
   useEffect(() => {
     let active = true
-    Promise.all([listVideos(), listEvents({ limit: 40 })]).then(([vidList, evList]) => {
-      if (!active) return
-      setVideos(vidList || [])
-      setRecentEvents(evList || [])
-      if (replayTarget?.eventId) return
-      const def = pickDefaultEvent(evList)
-      if (def) {
-        setSelectedEventId(def.event_id)
-        setSelectedVideoId(def.video_id)
-        setTargetTimestamp(def.timestamp || 0)
-      }
-    })
+    getSupportedWhatIfEvents()
+      .then((list) => {
+        if (!active) return
+        const evs = list || []
+        setSupportedEvents(evs)
+        if (evs.length > 0) {
+          // If navigated in with replayTarget, match it; else pick first or canonical
+          const target = replayTarget?.eventId
+            ? evs.find((e) => e.event_id === replayTarget.eventId)
+            : null
+          const initial = target || evs[0]
+          if (initial) {
+            setSelectedEventId(initial.event_id)
+            setSelectedBay(initial.video_id)
+          }
+        }
+      })
+      .catch((err) => {
+        if (!active) return
+        setError(err.message || 'Failed to load supported What-If simulations.')
+      })
     return () => {
       active = false
     }
-  }, [])
-
-  // Sync when navigated in from Incident Replay
-  useEffect(() => {
-    if (!replayTarget?.eventId) return
-    setSelectedEventId(replayTarget.eventId)
-    if (replayTarget.videoId) setSelectedVideoId(replayTarget.videoId)
-    if (replayTarget.timestamp != null) setTargetTimestamp(replayTarget.timestamp)
-    setSelectedCandidateId(null)
   }, [replayTarget])
 
-  // 2. Run the simulation
-  const fetchSimulation = useCallback(
-    async (candidateId = null) => {
-      if (!selectedEventId && !selectedVideoId) return
-      setLoading(true)
-      setError(null)
-      try {
-        const res = selectedEventId
-          ? await getEventTrajectory(selectedEventId, candidateId, 'pilot')
-          : await getTrajectoryWhatIf({
-              videoId: selectedVideoId,
-              timestamp: targetTimestamp,
-              alternativeCandidate: candidateId,
-              model: 'pilot',
-            })
-        setSimulation(res)
-        setSelectedCandidateId(res?.candidate_id && res.candidate_id !== 'none' ? res.candidate_id : null)
-      } catch (err) {
-        setError(err.message || 'Failed to compute trajectory simulation')
-        setSimulation(null)
-      } finally {
-        setLoading(false)
-      }
-    },
-    [selectedVideoId, selectedEventId, targetTimestamp],
-  )
+  // 2. Fetch the simulation whenever selectedEventId changes
+  const loadSimulation = useCallback(async (eventId) => {
+    if (!eventId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await getSafetyWhatIfSimulation(eventId)
+      setSimulation(data)
+    } catch (err) {
+      setError(err.message || 'Failed to compute What-If simulation.')
+      setSimulation(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    if (selectedEventId || selectedVideoId) fetchSimulation(null)
-  }, [selectedEventId, selectedVideoId, fetchSimulation])
+    if (selectedEventId) {
+      loadSimulation(selectedEventId)
+    }
+  }, [selectedEventId, loadSimulation])
 
-  const activeEvent = useMemo(
-    () => recentEvents.find((e) => e.event_id === selectedEventId) || replayTarget?.event || null,
-    [recentEvents, selectedEventId, replayTarget],
-  )
-  const scenarioConfig = getScenarioConfig(activeEvent?.scenario || simulation?.candidate_label || '')
-  const videoInfo = getVideoScenarioInfo(selectedVideoId || activeEvent?.video_id || '')
-  const incidentTitle = activeEvent ? resolveIncidentTitle(activeEvent) : 'What-if trajectory simulation'
-  const demoAvailable = recentEvents.some((e) => e.event_id === CANONICAL_DEMO.eventId)
+  // Unique bays for the camera bay filter
+  const availableBays = useMemo(() => {
+    const map = new Map()
+    for (const ev of supportedEvents) {
+      if (!map.has(ev.video_id)) {
+        map.set(ev.video_id, ev.video_title || 'Optical Inspection Bay')
+      }
+    }
+    return Array.from(map.entries()).map(([id, title]) => ({ id, title }))
+  }, [supportedEvents])
 
-  const available = !!simulation?.simulation_available
-  const origPoints = simulation?.original_trajectory || []
-  const simPoints = simulation?.simulated_trajectory || []
-  const origK = placementPoint(origPoints)
-  const simK = placementPoint(simPoints)
+  // Filtered events based on selected camera bay
+  const filteredEvents = useMemo(() => {
+    if (!selectedBay) return supportedEvents
+    return supportedEvents.filter((e) => e.video_id === selectedBay)
+  }, [supportedEvents, selectedBay])
 
-  const candidates = simulation?.available_candidates || []
-  const activeCandidate =
-    candidates.find((c) => c.id === selectedCandidateId) || candidates[0] || null
-  const activeFeasible = !activeCandidate || (activeCandidate.feasibility && activeCandidate.hard_constraints_passed)
-  const gain = typeof simulation?.stability_gain_at_placement === 'number'
-    ? simulation.stability_gain_at_placement
-    : null
-  // "No measurable change" is an honest outcome, not a success — surfaced when
-  // the alternative barely moves the geometric score at the intervention frame.
-  const negligibleChange = available && gain != null && Math.abs(gain) < 1
-
-  const loadCanonicalDemo = () => {
-    setSelectedEventId(CANONICAL_DEMO.eventId)
-    setSelectedCandidateId(null)
+  // Quick switch handler
+  const handleEventChange = (newId) => {
+    const numId = Number(newId)
+    setSelectedEventId(numId)
+    const match = supportedEvents.find((e) => e.event_id === numId)
+    if (match && match.video_id !== selectedBay) {
+      setSelectedBay(match.video_id)
+    }
   }
 
-  // --- Chart geometry: the two curves are the backend series, verbatim. ---
-  const chart = useMemo(() => {
-    if (!origPoints.length && !simPoints.length) return null
-    const all = [...origPoints, ...simPoints]
-    const ts = all.map((p) => p.timestamp)
-    const minT = Math.min(...ts)
-    const maxT = Math.max(...ts)
-    const spanT = Math.max(0.1, maxT - minT)
+  const activeEvent = useMemo(
+    () => supportedEvents.find((e) => e.event_id === selectedEventId) || null,
+    [supportedEvents, selectedEventId],
+  )
 
-    const W = 800
-    const H = 220
-    const padX = 46
-    const padY = 22
-    const plotW = W - padX * 2
-    const plotH = H - padY * 2
-    const sx = (t) => padX + ((t - minT) / spanT) * plotW
-    const sy = (s) => H - padY - (Math.max(0, Math.min(100, s)) / 100) * plotH
-
-    const toCoords = (pts) =>
-      pts.map((p, idx) => ({
-        x: sx(p.timestamp),
-        y: sy(p.stability_score),
-        t: p.timestamp,
-        score: p.stability_score,
-        band: p.band,
-        isMoment: p.is_placement_moment,
-        idx,
-      }))
-    const path = (coords) =>
-      coords.reduce((acc, c, i) => (i === 0 ? `M ${c.x},${c.y}` : `${acc} L ${c.x},${c.y}`), '')
-
-    const o = toCoords(origPoints)
-    const s = toCoords(simPoints)
-    return { W, H, padX, padY, plotW, sy, minT, maxT, o, s, origPath: path(o), simPath: path(s) }
-  }, [origPoints, simPoints])
-
-  const hoveredOrig = hoveredIdx != null ? chart?.o?.[hoveredIdx] : null
-  const hoveredSim = hoveredIdx != null ? chart?.s?.[hoveredIdx] : null
+  const videoUrl = simulation?.video_id ? streamUrl(simulation.video_id) : null
 
   return (
-    <div className="flex flex-col gap-6 pb-12">
-      {/* 5-step safety workflow banner */}
-      <WorkflowNav
-        currentStep={4}
-        navigateTo={navigateTo}
-        context={{
-          eventId: selectedEventId,
-          videoId: selectedVideoId,
-          timestamp: targetTimestamp,
-        }}
-      />
-
-      {/* header */}
-      <section className="flex flex-wrap items-start justify-between gap-4">
+    <div className="flex flex-col gap-6 pb-14 font-sans text-ink">
+      {/* Header */}
+      <section className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
         <div>
-          <button
-            type="button"
-            onClick={() => navigateTo('Incident Replay', { eventId: selectedEventId, videoId: selectedVideoId, timestamp: targetTimestamp })}
-            className="inline-flex items-center gap-1 text-small font-medium text-ink-soft hover:text-ink cursor-pointer"
-          >
-            <ArrowLeft size={14} />
-            return to incident replay
-          </button>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <h1 className="font-display text-display-lg font-semibold text-ink">
-              What-if trajectory simulation
+          <div className="flex items-center gap-2 text-caption text-ink-soft">
+            <button
+              type="button"
+              onClick={() =>
+                navigateTo('Incident Replay', {
+                  eventId: selectedEventId,
+                  videoId: simulation?.video_id,
+                  timestamp: simulation?.timestamp,
+                })
+              }
+              className="inline-flex items-center gap-1 font-medium hover:text-ink cursor-pointer"
+            >
+              <ArrowLeft size={13} />
+              Step 3: Forensic Replay
+            </button>
+            <span>/</span>
+            <span className="font-semibold text-ink">Step 4: What-If Safety Simulation</span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-bold tracking-tight text-ink uppercase">
+              What-If Safety Simulation
             </h1>
-            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-medium uppercase tracking-wider text-ok">
-              decision support
+            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-bold uppercase tracking-wider text-ok">
+              Pre-Action Counterfactual Test
             </span>
           </div>
-          <p className="mt-2 max-w-2xl text-body text-ink-soft">
-            TRACE re-scores an alternative cargo placement across the recorded sequence. This is an
-            image-space geometric comparison, not a physical dynamics simulation.
+          <p className="mt-1 max-w-2xl text-small text-ink-soft">
+            See how a safer action changes the observed hazard before workers intervene physically.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {demoAvailable && (
-            <button
-              type="button"
-              onClick={loadCanonicalDemo}
-              className="border border-signal/50 bg-signal/10 px-3.5 py-2 text-small font-semibold text-[#8a5f00] transition-colors hover:bg-signal/20 cursor-pointer"
-            >
-              Load Overhang Incident (#73)
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => navigateTo('Action Center', { eventId: selectedEventId, videoId: selectedVideoId })}
-            className="inline-flex items-center gap-1.5 border border-ok/40 bg-ok/10 px-3.5 py-2 text-small font-semibold text-ok transition-colors hover:bg-ok/20 cursor-pointer"
-          >
-            Go to Safe Action Plan (Step 5) →
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={loading}
-            onClick={() => fetchSimulation(selectedCandidateId)}
-            className="inline-flex items-center gap-2 border border-ink bg-ink px-4 py-2 text-small font-semibold text-paper transition-colors hover:bg-ink-soft disabled:opacity-50"
+            onClick={() => loadSimulation(selectedEventId)}
+            className="inline-flex items-center gap-1.5 border border-line bg-surface px-3 py-1.5 text-caption font-semibold text-ink transition-colors hover:bg-paper disabled:opacity-50 cursor-pointer"
+            title="Refresh counterfactual simulation"
           >
             {loading ? (
-              <span className="h-4 w-4 animate-spin motion-reduce:animate-none border-2 border-paper border-t-transparent" />
+              <span className="h-3.5 w-3.5 animate-spin border-2 border-ink border-t-transparent" />
             ) : (
-              <RotateCcw size={15} />
+              <RotateCcw size={13} />
             )}
-            {loading ? 're-simulating…' : 're-run model'}
+            <span>Re-run Simulation</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              navigateTo('Action Center', {
+                eventId: selectedEventId,
+                videoId: simulation?.video_id,
+                timestamp: simulation?.timestamp,
+              })
+            }
+            className="inline-flex items-center gap-1.5 border border-ok bg-ok px-4 py-2 text-small font-bold text-paper shadow-sm transition-opacity hover:opacity-90 cursor-pointer"
+          >
+            <span>Step 5: Safe Action Plan</span>
+            <ArrowRight size={14} />
           </button>
         </div>
       </section>
 
-      {/* source bar */}
-      <section className="grid grid-cols-1 gap-px border border-line bg-line md:grid-cols-3">
-        <Field label="camera / zone source">
-          <select
-            value={selectedVideoId}
-            onChange={(e) => {
-              const vid = e.target.value
-              setSelectedVideoId(vid)
-              // Prefer a simulatable incident from the chosen source rather
-              // than dropping straight into manual-timestamp mode.
-              const ev = pickDefaultEvent(recentEvents, vid)
-              if (ev && ev.video_id === vid) {
-                setSelectedEventId(ev.event_id)
-                setTargetTimestamp(ev.timestamp || 0)
-              } else {
-                setSelectedEventId(null)
-              }
-            }}
-            className="border border-line bg-surface px-2.5 py-1.5 text-small text-ink focus:border-ink"
-          >
-            <option value="">select a source…</option>
-            {videos.map((v) => {
-              const info = getVideoScenarioInfo(v.id || v.filename)
-              return (
-                <option key={v.id} value={v.id}>
-                  {info.scenarioTitle} — {info.cameraName}
-                </option>
-              )
-            })}
-          </select>
-        </Field>
-        <Field label="selected incident">
-          <select
-            value={selectedEventId || ''}
-            onChange={(e) => {
-              const val = e.target.value ? Number(e.target.value) : null
-              setSelectedEventId(val)
-              const ev = recentEvents.find((x) => x.event_id === val)
-              if (ev) {
-                setSelectedVideoId(ev.video_id)
-                setTargetTimestamp(ev.timestamp)
-              }
-            }}
-            className="border border-line bg-surface px-2.5 py-1.5 text-small text-ink focus:border-ink"
-          >
-            <option value="">manual timestamp mode (needs a structural incident)…</option>
-            {recentEvents.map((ev) => (
-              <option key={ev.event_id} value={ev.event_id}>
-                {isEligible(ev) ? '' : '⚠ '}event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) — {resolveIncidentTitle(ev)}
-                {isEligible(ev) ? '' : ' [not simulatable]'}
-              </option>
-            ))}
-          </select>
-          <span className="text-caption text-ink-faint">
-            ⚠ = worker-positioning / zone incident — what-if applies to cargo placement only.
-            Manual mode needs a recorded structural incident for context.
-          </span>
-        </Field>
-        <Field label="intervention moment">
+      {/* Authoritative Dropdown Selector Bar */}
+      <section className="flex flex-wrap items-center justify-between gap-3 border border-line bg-surface p-3 text-caption shadow-xs">
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Camera Bay Selector */}
           <div className="flex items-center gap-2">
-            <input
-              type="number"
-              step="0.5"
-              min="0"
-              value={targetTimestamp}
-              disabled={!!selectedEventId}
-              onChange={(e) => setTargetTimestamp(parseFloat(e.target.value) || 0)}
-              className="w-28 border border-line bg-surface px-2.5 py-1.5 font-mono text-small tabular-nums text-ink focus:border-ink disabled:opacity-60"
-            />
-            <span className="font-mono text-caption tabular-nums text-ink-faint">
-              {simulation?.intervention_timestamp != null
-                ? `used t = ${formatTimestamp(simulation.intervention_timestamp)}`
-                : `(${formatTimestamp(targetTimestamp)})`}
+            <span className="font-semibold text-ink-soft">Camera Bay:</span>
+            <select
+              value={selectedBay}
+              onChange={(e) => {
+                const b = e.target.value
+                setSelectedBay(b)
+                const firstInBay = supportedEvents.find((x) => x.video_id === b)
+                if (firstInBay) {
+                  setSelectedEventId(firstInBay.event_id)
+                }
+              }}
+              className="border border-line bg-paper px-2.5 py-1 text-small font-medium text-ink focus:border-ink cursor-pointer rounded-xs"
+            >
+              <option value="">All Monitored Bays ({availableBays.length})</option>
+              {availableBays.map((bay) => (
+                <option key={bay.id} value={bay.id}>
+                  {bay.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Valid Supported Hazard Selector */}
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-ink-soft">Hazard Incident:</span>
+            <select
+              value={selectedEventId || ''}
+              onChange={(e) => handleEventChange(e.target.value)}
+              className="border border-line bg-paper px-2.5 py-1 text-small font-medium text-ink focus:border-ink cursor-pointer rounded-xs max-w-md truncate"
+            >
+              {filteredEvents.map((ev) => (
+                <option key={ev.event_id} value={ev.event_id}>
+                  {ev.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Status Indicator */}
+        {simulation && (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-caption font-mono text-ink-soft">
+              <span>Timestamp:</span>
+              <span className="font-bold text-ink">t = {simulation.timestamp?.toFixed(1)}s</span>
+            </div>
+            <span className={`px-2 py-0.5 text-label font-bold uppercase rounded-xs ${BAND_BADGES[simulation.band] || 'bg-line text-ink'}`}>
+              {simulation.band} Risk
             </span>
           </div>
-        </Field>
+        )}
       </section>
 
+      {/* Error state */}
       {error && (
-        <div className="border border-danger bg-danger/5 p-4 font-mono text-caption text-danger">
-          [simulation error] {error}
+        <div className="border border-danger/40 bg-danger/10 p-4 text-small text-danger">
+          <span className="font-bold">Error:</span> {error}
         </div>
       )}
 
+      {/* Loading state */}
       {loading && !simulation && (
-        <div className="border border-line bg-surface p-6 text-small text-ink-soft">Running simulation…</div>
-      )}
-
-      {/* refusal notice */}
-      {simulation && !available && (
-        <div className="border border-signal/40 bg-signal/5 p-5">
-          <h2 className="font-mono text-title font-semibold text-[#8a5f00]">what-if not applicable</h2>
-          <p className="mt-1 text-small text-ink-soft">
-            {simulation.simulation_notice ||
-              'This incident cannot be simulated as a cargo placement counterfactual.'}
-          </p>
-          {simulation.limitations?.length > 0 && (
-            <p className="mt-2 font-mono text-caption text-ink-faint">
-              {simulation.limitations.join(' · ')}
-            </p>
-          )}
-          {demoAvailable && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border border-line bg-surface p-3.5">
-              <p className="text-caption text-ink-soft">
-                Monocular perception does not support physical biomechanics simulation for worker or
-                environmental zone hazards.
-              </p>
-              <button
-                type="button"
-                onClick={loadCanonicalDemo}
-                className="bg-ink px-3.5 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft"
-              >
-                View Overhang What-If (Event #73)
-              </button>
-            </div>
-          )}
+        <div className="flex items-center justify-center gap-3 border border-line bg-surface p-12 text-small font-medium text-ink">
+          <span className="h-5 w-5 animate-spin border-2 border-ink border-t-transparent rounded-full" />
+          <span>Generating evidence-anchored safety simulation…</span>
         </div>
       )}
 
-      {/* active simulation */}
-      {simulation && available && (
-        <div className="flex flex-col gap-8">
-          {simulation.confidence === 'low' && (
-            <div className="border border-signal/40 bg-signal/5 p-3 text-caption text-[#8a5f00]">
-              <span className="font-semibold">low confidence:</span> only {origPoints.length} usable
-              frame{origPoints.length === 1 ? '' : 's'} where the same cargo track is continuously
-              visible. Treat the curve shape as indicative only.
-            </div>
-          )}
+      {/* Main What-If Visual Counterfactual Flow */}
+      {simulation && (
+        <div className="flex flex-col gap-6">
+          {/* Core Question Callout */}
+          <div className="border border-line bg-paper p-3 text-center">
+            <p className="text-small font-medium text-ink">
+              <span className="text-signal font-bold uppercase tracking-wider text-caption mr-2">Core Question:</span>
+              “If we changed this unsafe action, what would likely happen instead?”
+            </p>
+          </div>
 
-          {/* step 1 — observed state */}
-          <section className="border border-danger/40 bg-surface">
-            <div className="h-1 bg-danger" />
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-              <span className="font-mono text-caption font-semibold text-danger">
-                step 1 · the observed state
-              </span>
-              <div className="flex items-center gap-2 text-caption text-ink-soft">
-                <span>location: <span className="font-medium text-ink">{videoInfo.cameraName}</span></span>
-                <span>·</span>
-                <span className="font-mono font-medium tabular-nums text-ink">
-                  t = {formatTimestamp(simulation.intervention_timestamp)}
-                </span>
-              </div>
-            </div>
-            <div className="p-5">
-              <h2 className="font-display text-display-md font-semibold text-ink">{incidentTitle}</h2>
-
-              <div className="mt-4 grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-3">
-                <Metric
-                  label="support coverage"
-                  value={pct(origK?.breakdown?.support_alignment)}
-                  hint="horizontal footprint overlap with deck"
-                />
-                <Metric
-                  label="overhang penalty"
-                  value={pct(origK?.breakdown?.overhang_penalty)}
-                  hint="protrusion past the support edge"
-                />
-                <Metric
-                  label="observed stability"
-                  value={origK ? `${num(origK.stability_score)} / 100` : DASH}
-                  hint={origK ? `band: ${origK.band}` : 'no detection at this frame'}
-                />
-              </div>
-
-              {(activeEvent?.explanation || scenarioConfig?.whyItMatters) && (
-                <div className="mt-3 border-l-2 border-danger bg-danger/5 px-3 py-2 text-small text-ink">
-                  <span className="font-medium">why it matters:</span>{' '}
-                  {humanizeExplanation(
-                    activeEvent?.explanation || scenarioConfig.whyItMatters || '',
-                    activeEvent?.scenario,
-                    activeEvent?.entity_id,
-                  )}
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* step 2 — alternatives */}
-          <section className="border border-line bg-surface">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-              <span className="font-mono text-caption font-semibold text-ink">
-                step 2 · alternative placements ({candidates.length})
-              </span>
-              <span className="text-caption text-ink-faint">click one to re-score the trajectory</span>
-            </div>
-
-            {candidates.length === 0 ? (
-              <p className="p-5 text-small text-ink-soft">
-                No feasible alternative placement was generated for this frame.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-px bg-line md:grid-cols-3">
-                {candidates.map((c, i) => {
-                  const isSelected = activeCandidate?.id === c.id
-                  const feasible = c.feasibility && c.hard_constraints_passed
-                  const rank = candidates
-                    .filter((x) => x.feasibility && x.hard_constraints_passed)
-                    .indexOf(c)
-                  const badge = !feasible
-                    ? { text: 'not feasible', cls: 'bg-signal/15 text-[#8a5f00]' }
-                    : rank === 0
-                      ? { text: 'best geometric score', cls: 'bg-ok text-paper' }
-                      : { text: `alternative ${rank + 1}`, cls: 'bg-steel text-paper' }
-                  return (
-                    <button
-                      key={c.id || i}
-                      type="button"
-                      onClick={() => {
-                        setSelectedCandidateId(c.id)
-                        fetchSimulation(c.id)
-                      }}
-                      className={`flex flex-col gap-2 p-4 text-left transition-colors ${
-                        isSelected ? 'bg-ok/5' : 'bg-surface hover:bg-paper'
-                      }`}
-                    >
-                      <span className={`self-start px-2 py-0.5 text-label font-medium ${badge.cls}`}>
-                        {badge.text}
-                      </span>
-                      <h3 className="text-small font-semibold leading-snug text-ink">
-                        {c.description || c.id}
-                      </h3>
-                      <div className="mt-auto flex items-baseline justify-between border-t border-line pt-2">
-                        <span className="text-caption text-ink-soft">candidate score</span>
-                        <div className="flex items-baseline gap-1.5">
-                          <span className={`font-mono text-title font-semibold tabular-nums ${BAND_TEXT[c.band] || 'text-ink'}`}>
-                            {num(c.score)} / 100
-                          </span>
-                          {typeof c.score_delta === 'number' && (
-                            <span className="border border-line bg-paper px-1 py-0.5 font-mono text-label font-medium text-ink-soft">
-                              {c.score_delta >= 0 ? '+' : ''}
-                              {num(c.score_delta, 1)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {!feasible && c.limitations?.length > 0 && (
-                        <p className="text-caption leading-snug text-[#8a5f00]">
-                          {c.limitations.filter((l) => !l.startsWith('This score')).slice(0, 2).join(' ')}
-                        </p>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* step 3 — predicted outcome for the selected candidate */}
-          <section className={`border bg-surface ${!activeFeasible ? 'border-signal/40' : negligibleChange ? 'border-line' : 'border-ok/40'}`}>
-            <div className={`h-1 ${!activeFeasible ? 'bg-signal' : negligibleChange ? 'bg-line-strong' : 'bg-ok'}`} />
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-              <span className={`font-mono text-caption font-semibold ${!activeFeasible ? 'text-[#8a5f00]' : negligibleChange ? 'text-ink-soft' : 'text-ok'}`}>
-                step 3 · {!activeFeasible ? 'this alternative is not feasible' : negligibleChange ? 'no measurable stability change' : 'predicted outcome'} — {activeCandidate?.description || simulation.candidate_label}
-              </span>
-            </div>
-            <div className="p-5">
-              {!activeFeasible && (
-                <div className="mb-4 border-l-2 border-signal bg-signal/5 px-3 py-2 text-small text-[#8a5f00]">
-                  <span className="font-medium">Not a recommendation.</span> This placement fails a
-                  physical / boundary constraint
-                  {activeCandidate?.limitations?.length
-                    ? `: ${activeCandidate.limitations.filter((l) => !l.startsWith('This score')).slice(0, 2).join(' ')}`
-                    : '.'}{' '}
-                  The scores below are shown for comparison only.
-                </div>
-              )}
-              {activeFeasible && negligibleChange && (
-                <div className="mb-4 border-l-2 border-line-strong bg-paper px-3 py-2 text-small text-ink-soft">
-                  This alternative does not measurably change the geometric stability score at the
-                  intervention frame ({gain >= 0 ? '+' : ''}{num(gain, 1)} pts). The recommended
-                  action still applies as a {activeEvent?.scenario === 'wrong_product_orientation' ? 'conformance' : 'placement'} correction.
-                </div>
-              )}
-              <div className="grid grid-cols-1 gap-px border border-line bg-line sm:grid-cols-3">
-                <BeforeAfter label="stability" before={origK?.stability_score} after={simK?.stability_score} suffix=" / 100" />
-                <BeforeAfter label="overhang penalty" before={origK?.breakdown?.overhang_penalty} after={simK?.breakdown?.overhang_penalty} suffix="%" />
-                <BeforeAfter label="support coverage" before={origK?.breakdown?.support_alignment} after={simK?.breakdown?.support_alignment} suffix="%" />
-              </div>
-
-              <div className="mt-4 text-small text-ink-soft">
-                <span className="font-mono">{simulation.risk_transition}</span>
-                {gain != null && (
-                  <span className={`ml-2 font-semibold ${activeFeasible && !negligibleChange ? 'text-ok' : 'text-ink-soft'}`}>
-                    ({gain >= 0 ? '+' : ''}
-                    {num(gain, 1)} pts at the intervention frame)
-                  </span>
+          {/* Headline Risk Transition + Key Evidence Numbers */}
+          {(() => {
+            const { before, after } = parseBandTransition(
+              simulation.result?.risk_transition,
+              simulation.band,
+            )
+            const featuredSignals = (simulation.evidence?.signals || []).slice(0, 4)
+            return (
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr]">
+                <RiskTransitionScale before={before} after={after} />
+                {featuredSignals.length > 0 && (
+                  <div className="border border-line bg-paper p-4">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-ink-faint mb-2">
+                      Measured Evidence
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {featuredSignals.map((sig, idx) => {
+                        const [label, value] = sig.split(':').map((s) => s.trim())
+                        return (
+                          <div key={idx} className="border border-line/70 bg-surface px-2 py-1.5">
+                            <div className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">{label}</div>
+                            <div className="font-mono text-small font-bold text-ink">{value || sig}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
+            )
+          })()}
 
-              {/* chart — backend series, plotted verbatim */}
-              {chart && (
-                <div className="mt-4 border border-line bg-paper p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
-                    <div>
-                      <h3 className="text-small font-semibold text-ink">stability trajectory over time</h3>
-                      <span className="font-mono text-caption tabular-nums text-ink-faint">
-                        [{chart.minT.toFixed(1)}s – {chart.maxT.toFixed(1)}s] · {origPoints.length} frame
-                        {origPoints.length === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <Legend color="bg-danger" label="observed" />
-                      <Legend color="bg-ok" label="counterfactual" />
-                    </div>
+          {/* 3-Step Main Presentation Card */}
+          <div className="grid grid-cols-1 divide-y divide-line border border-line bg-surface shadow-xs lg:grid-cols-2 lg:divide-y-0 lg:divide-x">
+            {/* STEP 1: WHAT HAPPENED */}
+            <div className="flex flex-col justify-between p-6 bg-danger/5">
+              <div>
+                <div className="flex items-center justify-between border-b border-line pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-danger px-2 py-0.5 text-label font-bold uppercase tracking-wider text-paper">
+                      1. What Happened
+                    </span>
+                    <span className="text-caption font-semibold text-danger">Observed Action</span>
                   </div>
-
-                  <div className="relative overflow-x-auto">
-                    <svg viewBox={`0 0 ${chart.W} ${chart.H}`} className="max-h-60 w-full select-none">
-                      <rect x={chart.padX} y={chart.sy(40)} width={chart.plotW} height={chart.sy(0) - chart.sy(40)} fill="#f3e0da" opacity="0.5" />
-                      <rect x={chart.padX} y={chart.sy(60)} width={chart.plotW} height={chart.sy(40) - chart.sy(60)} fill="#f2e6cc" opacity="0.4" />
-                      <rect x={chart.padX} y={chart.sy(100)} width={chart.plotW} height={chart.sy(60) - chart.sy(100)} fill="#dce7db" opacity="0.4" />
-
-                      <path d={chart.origPath} fill="none" stroke="#B23A22" strokeWidth="2" strokeDasharray="4,2" />
-                      <path d={chart.simPath} fill="none" stroke="#3F6E4C" strokeWidth="2.5" />
-
-                      {chart.o.map((c, idx) => (
-                        <circle
-                          key={`o-${idx}`}
-                          cx={c.x}
-                          cy={c.y}
-                          r={hoveredIdx === idx ? 5 : 3.5}
-                          fill="#B23A22"
-                          stroke="#F6F2E9"
-                          strokeWidth="1.5"
-                          className="cursor-pointer"
-                          onMouseEnter={() => setHoveredIdx(idx)}
-                          onMouseLeave={() => setHoveredIdx(null)}
-                        />
-                      ))}
-                      {chart.s.map((c, idx) => (
-                        <circle
-                          key={`s-${idx}`}
-                          cx={c.x}
-                          cy={c.y}
-                          r={hoveredIdx === idx ? 5 : 4}
-                          fill="#3F6E4C"
-                          stroke="#F6F2E9"
-                          strokeWidth="1.5"
-                          className="cursor-pointer"
-                          onMouseEnter={() => setHoveredIdx(idx)}
-                          onMouseLeave={() => setHoveredIdx(null)}
-                        />
-                      ))}
-                    </svg>
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border border-line bg-surface p-2.5">
-                    {hoveredOrig ? (
-                      <div className="flex flex-wrap items-center gap-3 font-mono text-caption tabular-nums">
-                        <span className="font-medium text-ink">t = {formatTimestamp(hoveredOrig.t)}</span>
-                        <span className="text-danger">observed: {num(hoveredOrig.score, 1)}</span>
-                        {hoveredSim && (
-                          <>
-                            <span>→</span>
-                            <span className="font-medium text-ok">counterfactual: {num(hoveredSim.score, 1)}</span>
-                            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 font-medium text-ok">
-                              Δ {hoveredSim.score - hoveredOrig.score >= 0 ? '+' : ''}
-                              {num(hoveredSim.score - hoveredOrig.score, 1)}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-caption italic text-ink-faint">
-                        Hover a point to inspect per-frame stability.
-                      </span>
-                    )}
-                  </div>
-
-                  {simulation.comparison_caveat && (
-                    <p className="mt-2 border-l-2 border-line-strong pl-2 text-caption leading-relaxed text-ink-faint">
-                      {simulation.comparison_caveat}
-                    </p>
-                  )}
+                  <span className="font-mono text-caption text-ink-soft">
+                    Recorded t = {simulation.timestamp?.toFixed(1)}s
+                  </span>
                 </div>
-              )}
-            </div>
-          </section>
 
-          {/* technical disclosure */}
-          <section className="border border-line bg-surface">
+                <div className="mt-4">
+                  <h2 className="text-base font-bold text-ink">
+                    {simulation.observed?.headline}
+                  </h2>
+                  <p className="mt-2 text-small text-ink-soft leading-relaxed">
+                    {simulation.observed?.description}
+                  </p>
+                </div>
+
+                {/* Scenario-Specific Visual: BEFORE */}
+                <div className="mt-5">
+                  <span className="block text-[11px] font-bold uppercase tracking-wider text-ink-faint mb-2">
+                    Observed Unsafe State
+                  </span>
+                  <WhatIfScenarioVisualizer
+                    visualType={simulation.observed?.visual_type}
+                    mode="before"
+                    data={simulation.observed?.visual_data}
+                  />
+                </div>
+              </div>
+
+              {/* Observed Risk Summary */}
+              <div className="mt-5 rounded border border-danger/30 bg-danger/10 p-3">
+                <span className="block text-[11px] font-bold uppercase tracking-wider text-danger">
+                  Observed Hazard Exposure
+                </span>
+                <p className="mt-1 text-small text-ink">
+                  {simulation.observed?.risk_summary}
+                </p>
+              </div>
+            </div>
+
+            {/* STEP 2: WHAT-IF (Safer State) */}
+            <div className="flex flex-col justify-between p-6 bg-ok/5">
+              <div>
+                <div className="flex items-center justify-between border-b border-line pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-ok px-2 py-0.5 text-label font-bold uppercase tracking-wider text-paper">
+                      2. What-If
+                    </span>
+                    <span className="text-caption font-semibold text-ok">Safer Alternative Action</span>
+                  </div>
+                  <span className="rounded border border-ok/40 bg-ok/10 px-2 py-0.5 font-mono text-label font-bold text-ok">
+                    Verified Safer State
+                  </span>
+                </div>
+
+                <div className="mt-4">
+                  <h2 className="text-base font-bold text-ink">
+                    {simulation.counterfactual?.headline}
+                  </h2>
+                  <p className="mt-2 text-small text-ink-soft leading-relaxed">
+                    {simulation.counterfactual?.action}
+                  </p>
+                </div>
+
+                {/* Scenario-Specific Visual: AFTER */}
+                <div className="mt-5">
+                  <span className="block text-[11px] font-bold uppercase tracking-wider text-ink-faint mb-2">
+                    Simulated Safer Configuration
+                  </span>
+                  <WhatIfScenarioVisualizer
+                    visualType={simulation.counterfactual?.visual_type}
+                    mode="after"
+                    data={simulation.counterfactual?.visual_data}
+                  />
+                </div>
+              </div>
+
+              {/* Counterfactual Expected Change */}
+              <div className="mt-5 rounded border border-ok/30 bg-ok/10 p-3">
+                <span className="block text-[11px] font-bold uppercase tracking-wider text-ok">
+                  Expected Impact
+                </span>
+                <p className="mt-1 text-small text-ink">
+                  {simulation.counterfactual?.expected_outcome}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* STEP 3: EXPECTED RESULT BANNER */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border border-line bg-paper p-5 shadow-xs">
+            <div className="flex items-start gap-3 max-w-3xl">
+              <div className="mt-0.5 rounded-full bg-ok/10 p-1.5 text-ok">
+                <CheckCircle2 size={20} />
+              </div>
+              <div>
+                <span className="text-caption font-bold uppercase tracking-wider text-ok">
+                  3. Expected Result
+                </span>
+                <h3 className="mt-1 text-base font-bold text-ink">
+                  {simulation.result?.headline}
+                </h3>
+                <p className="mt-1 text-small text-ink-soft leading-relaxed">
+                  {simulation.result?.explanation}
+                </p>
+              </div>
+            </div>
+
             <button
               type="button"
-              onClick={() => setShowTechnical((v) => !v)}
-              className="flex w-full items-center justify-between px-4 py-3 text-small font-medium text-ink-soft hover:text-ink"
+              onClick={() =>
+                navigateTo('Action Center', {
+                  eventId: selectedEventId,
+                  videoId: simulation?.video_id,
+                  timestamp: simulation?.timestamp,
+                })
+              }
+              className="inline-flex items-center gap-2 border border-ok bg-ok px-5 py-2.5 text-small font-bold text-paper shadow-xs transition-opacity hover:opacity-90 cursor-pointer shrink-0"
             >
-              <span>model rationale &amp; limitations</span>
-              <span className="font-mono text-caption">{showTechnical ? 'collapse' : 'expand'}</span>
+              <span>Step 5: View Safe Action Plan &amp; Checklist</span>
+              <ArrowRight size={15} />
+            </button>
+          </div>
+
+          {/* Video Evidence Reference Card */}
+          {videoUrl && (
+            <div className="border border-line bg-surface p-4">
+              <div className="flex items-center justify-between border-b border-line pb-2 mb-3">
+                <span className="text-caption font-bold uppercase tracking-wider text-ink-soft">
+                  Optical Incident Evidence ({simulation.video_title})
+                </span>
+                <span className="font-mono text-caption text-ink-faint">
+                  t = {simulation.timestamp?.toFixed(1)}s
+                </span>
+              </div>
+              <div className="relative aspect-video max-h-72 w-full overflow-hidden rounded bg-ink flex items-center justify-center">
+                <video
+                  src={`${videoUrl}#t=${simulation.timestamp || 0}`}
+                  controls
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Optional Progressive Disclosure: Why TRACE Recommends This */}
+          <div className="border border-line bg-surface">
+            <button
+              type="button"
+              onClick={() => setShowEvidence((v) => !v)}
+              className="flex w-full items-center justify-between bg-paper px-4 py-3 text-small font-semibold text-ink-soft hover:text-ink cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Info size={15} className="text-ink-soft" />
+                <span>Why TRACE recommends this (Auditable Evidence Basis)</span>
+              </div>
+              <div className="flex items-center gap-1 font-mono text-caption text-ink-faint">
+                <span>{showEvidence ? '▲ collapse' : '▼ expand'}</span>
+              </div>
             </button>
 
-            {showTechnical && (
-              <div className="flex flex-col gap-3 border-t border-line p-4">
-                {simulation.explanation && (
-                  <div className="border-l-2 border-ok bg-ok/5 p-3 text-small text-ink">
-                    {simulation.explanation}
+            {showEvidence && (
+              <div className="flex flex-col gap-4 border-t border-line p-5 text-small text-ink-soft leading-relaxed">
+                <div>
+                  <span className="block font-bold text-ink">Operational Rule &amp; Standards Basis:</span>
+                  <p className="mt-1">{simulation.evidence?.why_trace_recommends}</p>
+                </div>
+
+                {simulation.evidence?.signals?.length > 0 && (
+                  <div>
+                    <span className="block font-bold text-ink">Observed Perception Signals:</span>
+                    <ul className="mt-1 list-inside list-disc space-y-0.5 text-caption">
+                      {simulation.evidence.signals.map((sig, idx) => (
+                        <li key={idx} className="font-mono">{sig}</li>
+                      ))}
+                    </ul>
                   </div>
                 )}
-                {simulation.limitations?.length > 0 && (
-                  <ul className="list-inside list-disc space-y-1 border border-line bg-paper p-3 text-caption text-ink-soft">
-                    {simulation.limitations.map((l, i) => (
-                      <li key={i}>{l}</li>
-                    ))}
-                  </ul>
-                )}
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="border border-line bg-paper p-3 text-caption">
+                    <span className="font-bold text-ink">Epistemic Status:</span>
+                    <p className="mt-0.5 text-ink-soft">{simulation.evidence?.epistemic_level}</p>
+                  </div>
+                  <div className="border border-line bg-paper p-3 text-caption">
+                    <span className="font-bold text-ink">Catalog Reference:</span>
+                    <p className="mt-0.5 text-ink-soft font-mono">{simulation.evidence?.rule_reference}</p>
+                  </div>
+                </div>
+
+                <div className="border-l-2 border-line-strong bg-paper/50 p-3 text-[11px] text-ink-faint italic">
+                  Decision-support notice: TRACE counterfactuals are evidence-grounded transformations of observed warehouse events.
+                  Supervisor verification is recommended prior to physical execution.
+                </div>
               </div>
             )}
-          </section>
+          </div>
         </div>
-      )}
-    </div>
-  )
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="flex flex-col gap-1 bg-surface p-3">
-      <span className="text-label font-medium text-ink-faint">{label}</span>
-      {children}
-    </label>
-  )
-}
-
-function Legend({ color, label }) {
-  return (
-    <span className="flex items-center gap-1.5 text-caption text-ink-soft">
-      <span className={`h-1 w-4 ${color}`} />
-      {label}
-    </span>
-  )
-}
-
-function Metric({ label, value, hint }) {
-  return (
-    <div className="bg-paper p-3">
-      <span className="text-label font-medium text-ink-faint">{label}</span>
-      <p className="mt-1 font-display text-display-md font-semibold tabular-nums text-danger">{value}</p>
-      <p className="text-caption text-ink-faint">{hint}</p>
-    </div>
-  )
-}
-
-function BeforeAfter({ label, before, after, suffix = '' }) {
-  const b = typeof before === 'number' && Number.isFinite(before)
-  const a = typeof after === 'number' && Number.isFinite(after)
-  return (
-    <div className="flex flex-col gap-1 bg-paper p-3">
-      <span className="text-label font-medium text-ink-faint">{label}</span>
-      <div className="flex items-baseline gap-2 font-mono tabular-nums">
-        <span className="text-title font-semibold text-danger line-through">
-          {b ? before.toFixed(1) : DASH}
-          {b ? suffix : ''}
-        </span>
-        <span className="text-caption text-ink-faint">→</span>
-        <span className="text-display-md font-semibold text-ok">
-          {a ? after.toFixed(1) : DASH}
-          {a ? suffix : ''}
-        </span>
-      </div>
-      {b && a && (
-        <span className="text-caption font-medium text-ok">
-          {after - before >= 0 ? '+' : ''}
-          {(after - before).toFixed(1)}
-          {suffix} change
-        </span>
       )}
     </div>
   )

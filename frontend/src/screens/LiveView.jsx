@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, Video } from 'lucide-react'
-import { getEntities, getFindings, getSamplingPolicy, getScene, getWhatIf, listVideos, streamUrl, uploadVideo } from '../api/videos.js'
+import { Loader2, ShieldCheck, Upload, Video } from 'lucide-react'
+import { getAnalyzeStatus, getEntities, getFindings, getSamplingPolicy, getScene, getWhatIf, listVideos, streamUrl, uploadVideo } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import FindingsPanel from '../components/video/FindingsPanel.jsx'
 import HypotheticalOverlay from '../components/video/HypotheticalOverlay.jsx'
@@ -13,8 +13,22 @@ import VideoViewport from '../components/video/VideoViewport.jsx'
 import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import LiveCameraPanel from '../components/video/LiveCameraPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
-import { getVideoScenarioInfo } from '../lib/scenarios.js'
-import WorkflowNav from '../components/WorkflowNav.jsx'
+import { useVideoTracks } from '../hooks/useVideoTracks.js'
+import { getScenarioConfig, getVideoScenarioInfo } from '../lib/scenarios.js'
+
+// Conceptual stages of the real backend sweep (perception -> four risk
+// lenses -> planner -> incident persistence, backend/video/ingest.py).
+// The backend only reports processing/complete/failed as a whole — there is
+// no per-stage signal — so this list is a truthful description of what the
+// pipeline is actually doing while we wait, cycled for visual feedback.
+// It never claims a fake completion percentage or a specific stage as done.
+const INGEST_STAGES = [
+  'Reading footage',
+  'Detecting activity',
+  'Understanding behaviour',
+  'Assessing safety',
+  'Building incident timeline',
+]
 
 function formatTime(sec) {
   if (typeof sec !== 'number' || isNaN(sec)) return '00:00.0'
@@ -24,7 +38,7 @@ function formatTime(sec) {
 }
 
 export default function LiveView() {
-  const { setLiveState, navigateTo } = useLiveViewContext()
+  const { setLiveState, navigateTo, replayTarget } = useLiveViewContext()
 
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -49,9 +63,12 @@ export default function LiveView() {
   const [selectedCandidateId, setSelectedCandidateId] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
+  const [ingestStatus, setIngestStatus] = useState(null) // status payload for the most recently uploaded video
+  const [ingestStageIdx, setIngestStageIdx] = useState(0)
 
   const videoRef = useRef(null)
   const modelName = pilotModelEnabled ? 'pilot' : 'stock'
+  const videoTracks = useVideoTracks(selectedId, modelName)
 
   // Always fetched: personnel boxes feed the by-default face redaction overlay,
   // independent of the `overlayEnabled` detection-box debug toggle.
@@ -112,7 +129,7 @@ export default function LiveView() {
       .then((list) => {
         if (cancelled) return
         setVideos(list)
-        setSelectedId((current) => current ?? list[0]?.id ?? null)
+        setSelectedId((current) => replayTarget?.videoId ?? current ?? list[0]?.id ?? null)
       })
       .catch((err) => !cancelled && setError(err.message))
       .finally(() => !cancelled && setLoading(false))
@@ -121,10 +138,23 @@ export default function LiveView() {
     }
   }, [])
 
+  useEffect(() => {
+    if (replayTarget?.videoId) {
+      setSelectedId(replayTarget.videoId)
+      if (replayTarget.timestamp !== undefined) {
+        setCurrentTime(replayTarget.timestamp)
+        if (videoRef.current) {
+          videoRef.current.currentTime = replayTarget.timestamp
+        }
+      }
+    }
+  }, [replayTarget])
+
   async function handleUpload(file) {
     if (!file) return
     setUploading(true)
     setUploadError(null)
+    setIngestStatus(null)
     try {
       const uploaded = await uploadVideo(file)
       const refreshed = await listVideos()
@@ -133,12 +163,46 @@ export default function LiveView() {
       setPlaying(false)
       setCurrentTime(0)
       setWhatIfSimulation(null)
+      setIngestStatus({ status: 'processing', video_id: uploaded.id })
     } catch (err) {
       setUploadError(err.message || 'Upload failed')
     } finally {
       setUploading(false)
     }
   }
+
+  // Poll the real backend ingestion sweep (backend/video/ingest.py) kicked
+  // off on upload. No fake percentages — only the genuine processing /
+  // complete / failed status and, once complete, the real scenario/event
+  // counts it found.
+  useEffect(() => {
+    if (!ingestStatus || ingestStatus.status !== 'processing') return undefined
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const s = await getAnalyzeStatus(ingestStatus.video_id)
+        if (!cancelled) setIngestStatus(s)
+      } catch {
+        /* transient — keep polling */
+      }
+    }
+    poll()
+    const interval = setInterval(poll, 2500)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [ingestStatus?.video_id, ingestStatus?.status])
+
+  // Cosmetic cycling through the real pipeline stages while processing —
+  // not tied to a fabricated completion fraction (CLAUDE.md honesty rule).
+  useEffect(() => {
+    if (!ingestStatus || ingestStatus.status !== 'processing') return undefined
+    const t = setInterval(() => {
+      setIngestStageIdx((i) => (i + 1) % INGEST_STAGES.length)
+    }, 1400)
+    return () => clearInterval(t)
+  }, [ingestStatus?.status])
 
   useEffect(() => {
     const el = videoRef.current
@@ -190,12 +254,6 @@ export default function LiveView() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* 5-step safety workflow banner */}
-      <WorkflowNav
-        currentStep={1}
-        navigateTo={navigateTo}
-        context={{ videoId: selectedId, timestamp: currentTime }}
-      />
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_300px]">
       <div className="flex flex-col gap-6">
@@ -249,7 +307,15 @@ export default function LiveView() {
             duration={duration}
             onTogglePlay={handleTogglePlay}
             onSeekRatio={handleSeekRatio}
-            onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+            onLoadedMetadata={(event) => {
+              setDuration(event.currentTarget.duration)
+              if (event.currentTarget.clientWidth && event.currentTarget.clientHeight) {
+                setVideoBoxSize({
+                  width: event.currentTarget.clientWidth,
+                  height: event.currentTarget.clientHeight,
+                })
+              }
+            }}
             onTimeUpdate={(event) => {
               const t = event.currentTarget.currentTime
               setCurrentTime(t)
@@ -270,7 +336,9 @@ export default function LiveView() {
                 blur while detections are unavailable. */}
             <FaceRedactionOverlay
               entities={entities}
-              degraded={!perception.data || !!perception.error}
+              getEntitiesAtTime={videoTracks.getEntitiesAtTime}
+              currentTime={currentTime}
+              videoRef={videoRef}
               sourceWidth={selectedVideo.metadata.width}
               sourceHeight={selectedVideo.metadata.height}
               displayWidth={videoBoxSize.width}
@@ -310,77 +378,82 @@ export default function LiveView() {
           </div>
         )}
 
-        {selectedVideo && (
-          <div className="flex items-center justify-between border border-line border-t-0 bg-surface px-3 py-1.5 text-caption text-ink-soft">
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-ok" />
-              <span className="font-medium text-ink">Worker Privacy Active:</span>
-              <span>Personnel faces obscured by default</span>
+        {/* Compact Viewport Controls & Privacy Status */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-surface px-4 py-2 text-caption">
+          <div className="flex items-center gap-4">
+            <details className="relative">
+              <summary className="cursor-pointer font-medium text-ink-soft hover:text-ink select-none flex items-center gap-1.5">
+                <span>Vision Overlays ({entities.length} tracked)</span>
+                <span className="font-mono text-[10px]">▾</span>
+              </summary>
+              <div className="absolute left-0 top-full mt-1.5 z-20 w-64 border border-line bg-surface p-3 shadow-md space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={overlayEnabled}
+                    disabled={!selectedVideo}
+                    onChange={(e) => {
+                      setOverlayEnabled(e.target.checked)
+                      if (e.target.checked) setPilotModelEnabled(true)
+                    }}
+                    className="accent-ink"
+                  />
+                  <span className="font-medium text-ink">Object Detections</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={sceneEnabled}
+                    disabled={!selectedVideo}
+                    onChange={(e) => setSceneEnabled(e.target.checked)}
+                    className="accent-ink"
+                  />
+                  <span className="font-medium text-ink">Support &amp; Stacking Relations</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={findingsEnabled}
+                    disabled={!selectedVideo}
+                    onChange={(e) => setFindingsEnabled(e.target.checked)}
+                    className="accent-ink"
+                  />
+                  <span className="font-medium text-ink">Active Hazard Evaluation</span>
+                </label>
+              </div>
+            </details>
+
+            <span className="text-ink-faint">|</span>
+
+            <span className="flex items-center gap-1.5 text-ink-soft">
+              <span className="h-1.5 w-1.5 rounded-full bg-ok" />
+              <span>Face Privacy Active</span>
             </span>
-            <span className="font-mono text-[11px] text-ink-faint">live stream</span>
-          </div>
-        )}
-
-        {/* Streamlined Controls Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border border-line bg-surface px-4 py-2.5 text-caption">
-          <div className="flex flex-wrap items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={overlayEnabled}
-                disabled={!selectedVideo}
-                onChange={(e) => {
-                  setOverlayEnabled(e.target.checked)
-                  if (e.target.checked) setPilotModelEnabled(true)
-                }}
-                className="accent-ink"
-              />
-              <span className="font-medium text-ink">Object Detection</span>
-              <span className="text-ink-faint">({entities.length} tracked)</span>
-            </label>
-
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={sceneEnabled}
-                disabled={!selectedVideo}
-                onChange={(e) => setSceneEnabled(e.target.checked)}
-                className="accent-ink"
-              />
-              <span className="font-medium text-ink">Stacking &amp; Alignment Overlays</span>
-            </label>
-
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={findingsEnabled}
-                disabled={!selectedVideo}
-                onChange={(e) => setFindingsEnabled(e.target.checked)}
-                className="accent-ink"
-              />
-              <span className="font-medium text-ink">Live Hazard Warnings</span>
-            </label>
           </div>
 
-          <button
-            type="button"
-            onClick={() => navigateTo('Incident Replay', { videoId: selectedId })}
-            className="font-medium text-ink-soft hover:text-ink hover:underline text-caption"
-          >
-            Replay in Forensics →
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigateTo('Incident Replay', { videoId: selectedId, timestamp: currentTime })}
+              className="font-semibold text-ink hover:underline text-caption cursor-pointer"
+            >
+              Investigate Incident Evidence (Step 3) →
+            </button>
+          </div>
         </div>
 
         {findingsEnabled && (
-          <div className="border border-line bg-surface p-4">
-            <FindingsPanel
-              findings={findings.data}
-              loading={findings.loading}
-              error={findings.error}
-              currentTime={currentTime}
-              onSimulateWhatIf={handleSimulateWhatIf}
-            />
-          </div>
+          <FindingsPanel
+            findings={findings.data}
+            loading={findings.loading}
+            error={findings.error}
+            currentTime={currentTime}
+            onSimulateWhatIf={handleSimulateWhatIf}
+            onReviewHazard={() => navigateTo('Incidents', { videoId: selectedId, timestamp: currentTime })}
+            onReplayIncident={() => navigateTo('Incident Replay', { videoId: selectedId, timestamp: currentTime })}
+          />
         )}
 
         {(whatIfSimulation || whatIfLoading || whatIfError) && (
@@ -436,10 +509,10 @@ export default function LiveView() {
           />
           <Upload size={15} className="text-ink-soft" />
           <span className="text-caption font-medium text-ink">
-            {uploading ? 'Ingesting footage…' : 'Add camera footage'}
+            {uploading ? 'Uploading…' : 'Add camera footage'}
           </span>
           <span className="text-caption text-ink-faint">
-            Drop in an MP4 — detection &amp; risk analysis run automatically
+            Drop in an MP4 — TRACE runs the full detection &amp; risk sweep automatically
           </span>
         </label>
         {uploadError && (
@@ -447,6 +520,57 @@ export default function LiveView() {
         )}
 
         <LiveCameraPanel />
+
+        {ingestStatus?.status === 'processing' && (
+          <div className="mt-2 border border-line bg-paper p-3">
+            <div className="flex items-center gap-2 text-caption font-bold uppercase tracking-wider text-ink">
+              <Loader2 size={13} className="animate-spin text-accent" />
+              Processing Video
+            </div>
+            <ul className="mt-2 space-y-1">
+              {INGEST_STAGES.map((stage, i) => (
+                <li
+                  key={stage}
+                  className={`flex items-center gap-1.5 text-caption ${
+                    i === ingestStageIdx ? 'font-semibold text-ink' : 'text-ink-faint'
+                  }`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${i === ingestStageIdx ? 'bg-accent' : 'bg-line-strong'}`} />
+                  {stage}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {ingestStatus?.status === 'complete' && (
+          <div className="mt-2 border border-ok/40 bg-ok/5 p-3">
+            <div className="flex items-center gap-2 text-caption font-bold uppercase tracking-wider text-ok">
+              <ShieldCheck size={13} />
+              Analysis Complete
+            </div>
+            <p className="mt-1 text-caption text-ink">
+              {ingestStatus.events_found > 0
+                ? `${ingestStatus.events_found} safety event${ingestStatus.events_found === 1 ? '' : 's'} detected across ${ingestStatus.scenarios?.length ?? 0} scenario${ingestStatus.scenarios?.length === 1 ? '' : 's'}.`
+                : (ingestStatus.message || 'No supported safety scenario detected in this video.')}
+            </p>
+            {ingestStatus.scenarios?.length > 0 && (
+              <ul className="mt-1.5 space-y-0.5">
+                {ingestStatus.scenarios.slice(0, 6).map((s) => (
+                  <li key={s.scenario} className="text-caption text-ink-soft">
+                    · {getScenarioConfig(s.scenario).title} ({s.band}, {s.count})
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {ingestStatus?.status === 'failed' && (
+          <div className="mt-2 border border-danger bg-danger/5 p-3 text-caption text-danger">
+            Analysis failed: {ingestStatus.error || 'unknown error'}
+          </div>
+        )}
       </div>
     </div>
     </div>

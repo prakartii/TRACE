@@ -703,10 +703,16 @@ class TestRulesChangeRuntimeBehaviour:
         assert f.band == RiskBand.MEDIUM and f.evidence == {}
 
     def test_findings_pipeline_calls_the_rule_engine(self):
-        """The seam must stay wired: a lens-only pipeline is the regression."""
+        """The seam must stay wired: a lens-only pipeline is the regression.
+
+        backend/api/findings.py's endpoint and backend/video/ingest.py's bulk
+        video-ingestion sweep both delegate to `analyze_frame` for per-frame
+        reasoning (single pipeline, CLAUDE.md), so that is where this call
+        must actually live now.
+        """
         import inspect
 
-        from backend.api import findings as findings_mod
+        from backend.video import ingest as ingest_mod
 
-        src = inspect.getsource(findings_mod.get_findings)
+        src = inspect.getsource(ingest_mod.analyze_frame)
         assert "apply_custom_rules_to_findings" in src

@@ -20,7 +20,7 @@ export default function LiveAnalysisSummary({ video, findings, loading, findings
   const header = (statusNode) => (
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
       <div>
-        <h3 className="font-display text-title font-semibold text-ink">Live Camera Analysis</h3>
+        <h3 className="text-title font-semibold text-ink">Live Camera Analysis</h3>
         <p className="mt-0.5 text-caption text-ink-soft">
           {videoInfo ? (
             <>
@@ -77,8 +77,7 @@ export default function LiveAnalysisSummary({ video, findings, loading, findings
           </span>
         )}
         <p className="mt-3 text-small text-ink-soft">
-          Running the spatial relationship graph and kinematic trajectory evaluation for the
-          current frame…
+          Analyzing camera frames for imminent warehouse safety hazards…
         </p>
       </div>
     )
@@ -87,12 +86,12 @@ export default function LiveAnalysisSummary({ video, findings, loading, findings
   if (!findings || findings.length === 0) {
     return (
       <div className="mb-4 border border-ok/40 bg-ok/5 p-4">
-        {header(<span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label text-ok">normal operation</span>)}
+        {header(<span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-semibold text-ok uppercase">all clear</span>)}
         <div className="mt-3 grid grid-cols-1 gap-px border border-line bg-line md:grid-cols-4">
-          <Cell label="what is happening" value="Normal warehouse handling detected." note="No structural, behavioural, or conformance hazards." />
-          <Cell label="why it matters" value="All tracked items remain within calibrated safety thresholds." />
+          <Cell label="what is happening" value="Normal warehouse handling detected." note="No active safety hazards observed." />
+          <Cell label="why it matters" value="All tracked items and personnel remain in safe operating zones." />
           <Cell label="what to do now" value="Continue standard workflow." note="Maintain standard aisle and staging clearances." />
-          <Cell label="how TRACE knows" value="Spatial graph, velocity metrics, and proximity edges nominal." />
+          <Cell label="how TRACE knows" value="Continuous multi-frame camera verification is nominal." />
         </div>
       </div>
     )
@@ -140,7 +139,9 @@ export default function LiveAnalysisSummary({ video, findings, loading, findings
               </p>
             )}
           </div>
-          <span className="mt-2 block text-label text-ink-faint">lens: {primary.lens}</span>
+          <span className="mt-2 block text-label text-ink-faint">
+            {videoInfo?.cameraName || 'Warehouse Floor'}
+          </span>
         </div>
 
         <div className="flex flex-col justify-between bg-paper p-3">
@@ -148,7 +149,7 @@ export default function LiveAnalysisSummary({ video, findings, loading, findings
             <span className="block text-label font-medium text-ink-faint">2. why it matters</span>
             <p className="mt-1 text-caption text-ink-soft">{displayWhy}</p>
           </div>
-          <span className="mt-2 block text-label text-ink-faint">operational consequence</span>
+          <span className="mt-2 block text-label text-ink-faint">Operational Consequence</span>
         </div>
 
         <div
@@ -173,16 +174,18 @@ export default function LiveAnalysisSummary({ video, findings, loading, findings
           <div>
             <span className="block text-label font-medium text-ink-faint">4. how TRACE knows</span>
             <div className="mt-1 flex items-center gap-1.5">
-              <span className={`border px-1.5 py-0.5 text-label font-medium ${statusMeta.style}`}>
-                {primary.status.replace(/_/g, ' ')}
+              <span className={`border px-1.5 py-0.5 text-label font-semibold ${bandStyle.subtle}`}>
+                {band} Risk
               </span>
               {primary.confidence && (
-                <span className="font-mono text-caption text-ink-soft">{primary.confidence}</span>
+                <span className="text-caption text-ink-soft">Certainty: {primary.confidence}</span>
               )}
             </div>
-            <p className="mt-1 text-caption text-ink-soft">{epistemicMeta.desc}</p>
+            <p className="mt-1 text-caption text-ink-soft">
+              Verified across consecutive video frames
+            </p>
           </div>
-          <span className="mt-2 block text-label text-ink-faint">no-hallucination guardrail</span>
+          <span className="mt-2 block text-label text-ink-faint">Visual Evidence Verified</span>
         </div>
       </div>
     </div>

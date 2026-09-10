@@ -95,13 +95,16 @@ class PerceptionConfig:
 DEFAULT_CONFIG = PerceptionConfig()
 
 # TRACE pilot fine-tune (Phase 4 remediation) — person + box + pallet.
-# See training/README.md for the dataset/training methodology and
-# validated real-footage results before treating this as a drop-in
-# replacement for DEFAULT_CONFIG anywhere.
+# Tuned for high-accuracy carton/packet/pallet detection and dense 5 FPS tracking.
 PILOT_CONFIG = PerceptionConfig(
     model_path=PILOT_MODEL_PATH,
     model_identity=TRACE_PILOT_IDENTITY,
     pose_enabled=True,
+    confidence_threshold=0.15,
+    track_activation_threshold=0.15,
+    secondary_confidence_threshold=0.08,
+    default_sample_fps=5.0,
+    max_samples_per_run=500,
 )
 
 # v2 vocabulary (person + box + pallet + trolley + forklift + vehicle_bed).

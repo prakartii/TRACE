@@ -53,6 +53,12 @@ export default function SessionRatingPrompt({ delayMs = 12000 }) {
     try {
       await submitSessionRating(rating, getSessionId())
       setSubmitted(true)
+      try {
+        localStorage.setItem(LS_DONE, '1')
+      } catch {
+        /* ignore */
+      }
+      setTimeout(() => setVisible(false), 2200)
     } catch (err) {
       setError(err.message || 'Could not record rating')
       setSelected(0)

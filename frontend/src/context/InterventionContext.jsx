@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import { API_BASE_URL } from '../config.js'
 import { useSpeech } from '../hooks/useSpeech.js'
-import { spokenTextFor } from '../lib/voiceAlerts.js'
 import {
   listActiveInterventions,
   acknowledgeIntervention,
@@ -206,21 +205,33 @@ export function InterventionProvider({ children }) {
     setDismissedBannerIds((prev) => new Set([...prev, alertId]))
   }
 
-  // Top active banner alert: highest severity, not dismissed
-  const bannerAlert = activeAlerts.find(
-    (a) => !dismissedBannerIds.has(a.alert_id) && (a.severity === 'CRITICAL' || a.severity === 'HIGH')
-  ) || activeAlerts.find((a) => !dismissedBannerIds.has(a.alert_id)) || null
+  // Top active banner alert: prefer an alert that still actually needs
+  // action (state NEW) over one already acknowledged/in-progress, so
+  // acknowledging alert #1 advances the banner (and voice) to alert #2
+  // instead of continuing to show/speak the same acknowledged alert.
+  // Within that, highest severity first; never a dismissed alert.
+  const candidates = activeAlerts.filter((a) => !dismissedBannerIds.has(a.alert_id))
+  const bannerAlert =
+    candidates.find((a) => a.state === 'NEW' && (a.severity === 'CRITICAL' || a.severity === 'HIGH')) ||
+    candidates.find((a) => a.state === 'NEW') ||
+    candidates.find((a) => a.severity === 'CRITICAL' || a.severity === 'HIGH') ||
+    candidates[0] ||
+    null
 
-  // Multilingual voice alerts (GEG bonus). Speak a NEW banner alert once, in the
-  // configured language, from a fixed table of reviewed safety phrases.
+  // Regional Indian-language voice alerts. Speak a NEW banner alert once, in
+  // the supervisor's configured language, from the canonical backend phrase
+  // bank (backend/intervention/alert_phrases.py) — never a second, frontend
+  // -only translation table. Only CRITICAL/HIGH severity auto-speaks;
+  // MEDIUM/LOW hazards remain visual-only so voice alerts don't spam.
   const voice = useSpeech()
   const spokenAlertIdRef = useRef(null)
   useEffect(() => {
     if (!voice.enabled || !bannerAlert) return
     if (bannerAlert.state !== 'NEW') return
+    if (bannerAlert.severity !== 'CRITICAL' && bannerAlert.severity !== 'HIGH') return
     if (spokenAlertIdRef.current === bannerAlert.alert_id) return
     spokenAlertIdRef.current = bannerAlert.alert_id
-    voice.speak(spokenTextFor(bannerAlert, voice.lang))
+    voice.speak(bannerAlert)
   }, [bannerAlert, voice])
 
   return (

@@ -4,13 +4,17 @@ import { API_BASE_URL } from '../config.js'
  * Ask the grounded supervisor assistant a question. Answers are retrieved from
  * the TRACE event database; the response carries its grounding.
  * @param {string} question
+ * @param {string|null} videoId - the currently-open video in the caller's UI,
+ *   used as a grounding hint for deictic questions ("what did TRACE find in
+ *   this video?") so a newly uploaded clip is answerable by id, not only by
+ *   name-matching against the fixed canonical camera labels.
  * @returns {Promise<object>}
  */
-export async function askAssistant(question) {
+export async function askAssistant(question, videoId = null) {
   const res = await fetch(`${API_BASE_URL}/api/assistant/ask`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, video_id: videoId || null }),
   })
   if (!res.ok) {
     let msg = `Assistant request failed (HTTP ${res.status})`

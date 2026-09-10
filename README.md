@@ -32,15 +32,15 @@ For the exhaustive gap analysis between target specification (`ARCHITECTURE.md`)
 - **Tracking Lifecycle & Adaptive Sampling UI:** Bounding box badges render `TRACKED`, `REACQUIRED` (prominent emerald highlight), and `TEMPORARILY_LOST` states; Live View and Metadata Panel expose backend-resolved 3.0 FPS / 6.0 FPS adaptive rates with kinematic rationale.
 - **Validated Challenge Scenarios:** 14 audited operational scenarios systematically benchmarked across 8 real warehouse challenge videos (`PHASE_8_REPORT.md`).
 
-#### 2. Partially Implemented
-- **Safe Action Planner Screen:** Standalone `PlannerView.jsx` reads active findings from Live View; the operational counter-proposal planner is actively integrated within `LiveView.jsx` and `IncidentReplay.jsx`.
-- **Structural 2D Canvas View:** Vectors and scene graph nodes render directly over video in Live View and Incident Replay; standalone 2D canvas is a placeholder.
+- **Structural 2D View (Digital Twin):** Synchronized frame-by-frame 2D top-down blueprint alongside CCTV video, dense 5.0 FPS tracking, precomputed zero-latency disk cache (<50ms retrieval), continuous linear interpolation with nearest-neighbor track-recovery fallback, SVG depth layering (pallets on floor deck -> depth-ordered cartons -> workers on top), and real-time inventory count badge (`screens/StructuralView.jsx`).
+- **Grounded AI Safety Assistant:** Direct auditable assistant connected to SQLite audit logs and safety protocols. Formatted warehouse cards (Safety Protocol, Immediate Action, Supervisor Tip & Recommendation), 3-factor counterfactual stability formula, and interactive collapsible dropdown accordion for Related Event Records with single-record `<select>` filter (`screens/AiAssistant.jsx`, `backend/assistant/`).
+- **Operational Dashboard & Heat Maps:** Real-time KPI dashboard tracking verified damage preventions, near-miss events, hourly risk heatmaps, and bay risk distribution (`screens/Dashboard.jsx`).
+- **Supervisor Rules & Catalog:** Live SKU catalog management, polygon hazard zone editor, and custom operational safety rules (`screens/SupervisorSettings.jsx`, `backend/rules/`).
+- **Worker Privacy & Responsible AI:** Dynamic face redaction toggle, auto-purge retention scheduler, and identity-blind ethics preventing punitive worker profiling (`screens/ResponsibleAiPanel.jsx`).
 
-#### 3. Placeholders / Future Phases
-- Aggregate operational **Dashboard & Heat Maps** (`DashboardView.jsx`).
-- **Grounded AI Assistant** chat interface (`AssistantView.jsx`).
-- Interactive **Micro-Training** custom rule builder (`MicroTrainingView.jsx`).
-- Multi-frame continuous sequence What-If video trajectory replay.
+#### 2. Advanced / Roadmap Extensions
+- Multi-frame continuous sequence generative What-If video trajectory replay.
+- Edge device hardware deployment package for embedded warehouse camera gateways.
 
 ## Model weights
 

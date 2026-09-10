@@ -1,15 +1,13 @@
+import { useEffect, useRef, useState } from 'react'
+import { computeRenderedVideoBounds, parseBbox } from '../../lib/faceGeometry.js'
+
 // Renders detection + tracking boxes over the video (Phase 3, class
 // colors added in Phase 4 once box/pallet became real detectable
 // classes — see training/README.md). Purely presentational — all
 // detection/tracking happens server-side (backend/perception/).
 // Coordinates in `entities[].bbox` are absolute pixels in the source
 // video's native resolution (sourceWidth/Height); this component scales
-// them into the video element's displayed size.
-//
-// Colors distinguish entity class only — restrained, not a risk/hazard
-// signal (CLAUDE.md: no color-coded "AI" effects, and a detection is
-// never a hazard claim). Muted, desaturated tones rather than bright
-// primaries to stay within the existing industrial/professional palette.
+// them into the video element's displayed size with exact letterbox alignment.
 const CLASS_COLOR = {
   person: '#18181b', // ink — personnel
   box: '#C28208', // signal amber — carton / cargo
@@ -50,17 +48,23 @@ function getEntityOperationalLabel(entity, allEntities) {
     const otherBoxes = allEntities.filter((e) => e.entity_class === 'box' && e.id !== entity.id)
     if (otherBoxes.length > 0) {
       const isAboveAnother = otherBoxes.some((other) => {
-        const verticalContact = entity.bbox.y2 <= other.bbox.y2 && entity.bbox.y1 < other.bbox.y1
-        const overlapX1 = Math.max(entity.bbox.x1, other.bbox.x1)
-        const overlapX2 = Math.min(entity.bbox.x2, other.bbox.x2)
+        const b1 = parseBbox(entity.bbox)
+        const b2 = parseBbox(other.bbox)
+        if (!b1 || !b2) return false
+        const verticalContact = b1.y2 <= b2.y2 && b1.y1 < b2.y1
+        const overlapX1 = Math.max(b1.x1, b2.x1)
+        const overlapX2 = Math.min(b1.x2, b2.x2)
         return verticalContact && overlapX2 - overlapX1 > 15
       })
       if (isAboveAnother) return 'Upper Carton'
 
       const isBelowAnother = otherBoxes.some((other) => {
-        const verticalContact = entity.bbox.y2 >= other.bbox.y2 && entity.bbox.y1 > other.bbox.y1
-        const overlapX1 = Math.max(entity.bbox.x1, other.bbox.x1)
-        const overlapX2 = Math.min(entity.bbox.x2, other.bbox.x2)
+        const b1 = parseBbox(entity.bbox)
+        const b2 = parseBbox(other.bbox)
+        if (!b1 || !b2) return false
+        const verticalContact = b1.y2 >= b2.y2 && b1.y1 > b2.y1
+        const overlapX1 = Math.max(b1.x1, b2.x1)
+        const overlapX2 = Math.min(b1.x2, b2.x2)
         return verticalContact && overlapX2 - overlapX1 > 15
       })
       if (isBelowAnother) return 'Supporting Carton'
@@ -74,75 +78,105 @@ function getEntityOperationalLabel(entity, allEntities) {
 export default function PerceptionOverlay({
   entities,
   frame,
-  sourceWidth,
-  sourceHeight,
-  displayWidth,
-  displayHeight,
+  sourceWidth = 1280,
+  sourceHeight = 720,
+  displayWidth = 0,
+  displayHeight = 0,
 }) {
+  const containerRef = useRef(null)
+  const [measuredSize, setMeasuredSize] = useState({ width: 0, height: 0 })
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return undefined
+
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        setMeasuredSize({ width: rect.width, height: rect.height })
+      }
+    }
+    updateSize()
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect
+          if (width > 0 && height > 0) {
+            setMeasuredSize({ width, height })
+          }
+        }
+      })
+      observer.observe(el)
+      return () => observer.disconnect()
+    }
+  }, [])
+
   const resolvedEntities = entities || frame?.entities || (Array.isArray(frame) ? frame : [])
 
-  if (!resolvedEntities?.length || !sourceWidth || !sourceHeight || !displayWidth || !displayHeight) {
+  const effectiveWidth = measuredSize.width || displayWidth || 0
+  const effectiveHeight = measuredSize.height || displayHeight || 0
+
+  if (!resolvedEntities?.length) {
     return null
   }
 
-  const scaleX = displayWidth / sourceWidth
-  const scaleY = displayHeight / sourceHeight
+  const { offsetX, offsetY, renderWidth, renderHeight, scaleX, scaleY } =
+    computeRenderedVideoBounds(effectiveWidth, effectiveHeight, sourceWidth, sourceHeight)
 
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {resolvedEntities.map((entity) => {
-        const { x1, y1, x2, y2 } = entity.bbox
-        const left = x1 * scaleX
-        const top = y1 * scaleY
-        const width = (x2 - x1) * scaleX
-        const height = (y2 - y1) * scaleY
-        const color = CLASS_COLOR[entity.entity_class] ?? DEFAULT_COLOR
-        const opLabel = getEntityOperationalLabel(entity, resolvedEntities)
-        const shortTrackId = formatShortTrackId(entity.track_id)
-        const keypoints = entity.keypoints
+    <div ref={containerRef} className="pointer-events-none absolute inset-0 overflow-hidden">
+      {effectiveWidth > 0 && effectiveHeight > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            left: `${offsetX}px`,
+            top: `${offsetY}px`,
+            width: `${renderWidth}px`,
+            height: `${renderHeight}px`,
+            pointerEvents: 'none',
+            overflow: 'hidden',
+          }}
+        >
+          {resolvedEntities.map((entity) => {
+            const box = parseBbox(entity.bbox)
+            if (!box) return null
 
-        return (
-          <div
-            key={entity.id}
-            className="absolute border-[1.5px]"
-            style={{ left, top, width, height, borderColor: color }}
-          >
-            {keypoints && keypoints.length > 0 && (
-              <Skeleton
-                keypoints={keypoints}
-                originX={x1}
-                originY={y1}
-                scaleX={scaleX}
-                scaleY={scaleY}
-                color={color}
-              />
-            )}
-            <span
-              className="absolute left-0 top-0 -translate-y-full inline-flex items-center gap-1.5 whitespace-nowrap px-1.5 py-0.5 text-caption leading-tight text-white font-sans"
-              style={{ backgroundColor: color }}
-            >
-              <span className="font-bold">{opLabel}</span>
-              {shortTrackId && (
-                <span className="font-mono text-[9px] opacity-80">{shortTrackId}</span>
-              )}
-              <span className="font-mono text-[9px] opacity-80">{Math.round(entity.confidence * 100)}%</span>
-              {entity.tracking_status && entity.tracking_status !== 'TRACKED' && (
+            const left = box.x1 * scaleX
+            const top = box.y1 * scaleY
+            const width = (box.x2 - box.x1) * scaleX
+            const height = (box.y2 - box.y1) * scaleY
+            const color = CLASS_COLOR[entity.entity_class] ?? DEFAULT_COLOR
+            const opLabel = getEntityOperationalLabel(entity, resolvedEntities)
+            const keypoints = entity.keypoints
+
+            return (
+              <div
+                key={entity.id}
+                className="absolute border-[1.5px]"
+                style={{ left, top, width, height, borderColor: color }}
+              >
+                {keypoints && keypoints.length > 0 && (
+                  <Skeleton
+                    keypoints={keypoints}
+                    originX={box.x1}
+                    originY={box.y1}
+                    scaleX={scaleX}
+                    scaleY={scaleY}
+                    color={color}
+                  />
+                )}
                 <span
-                  className={`px-1 py-[1px] text-[8.5px] font-bold tracking-wide ${
-                    entity.tracking_status === 'REACQUIRED'
-                      ? 'bg-emerald-500 text-white ring-1 ring-white'
-                      : entity.tracking_status === 'TEMPORARILY_LOST'
-                        ? 'bg-amber-400 text-neutral-950 font-semibold'
-                        : 'bg-white/20 text-neutral-100'
-                  }`}
+                  className="absolute left-0 top-0 -translate-y-full inline-flex items-center whitespace-nowrap px-1.5 py-0.5 text-[11px] font-semibold leading-tight text-white font-sans rounded-xs shadow-xs"
+                  style={{ backgroundColor: color }}
                 >
-                  {entity.tracking_status}
+                  {opLabel}
                 </span>
-              )}
-            </span>
-          </div>
-        )
-      })}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

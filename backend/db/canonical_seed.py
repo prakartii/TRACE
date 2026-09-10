@@ -194,8 +194,8 @@ CANONICAL_SCENARIOS_DATA: list[dict[str, Any]] = [
         "confidence": ConfidenceLevel.HIGH.value,
         "entity_id": "f15ad7e2295d190b:carton_orientation",
         "epistemic_level": EpistemicLevel.OBSERVED.value,
-        "title": "Non-compliant package orientation against SKU manifest",
-        "explanation": "Carton positioned horizontally across vehicle bed (burned-in challenge tag: 'Vertical product kept horizontally') violating warehouse SKU manifest rule requiring strictly vertical upright placement. Non-upright storage causes internal fluid leak or component damage.",
+        "title": "Non-compliant package orientation against handling specification",
+        "explanation": "Carton positioned horizontally across vehicle bed (burned-in challenge tag: 'Vertical product kept horizontally') violating product handling specification requiring strictly vertical upright placement. Non-upright storage causes internal fluid leak or component damage.",
         "evidence": {
             "aspect_ratio": 1.72,
             "required_orientation": "vertical",
@@ -341,7 +341,7 @@ CANONICAL_SCENARIOS_DATA: list[dict[str, Any]] = [
         "entity_id": "d2984c4eb1cf6b86:solo_worker",
         "epistemic_level": EpistemicLevel.INFERRED.value,
         "title": "Ergonomic lift hazard: heavy SKU handled by single worker",
-        "explanation": "Single worker maneuvering heavy mass-class cargo crate (42kg) without team lift assistance or mechanical aid. Exceeds single-person safe lifting threshold, elevating risk of spinal injury and dropped cargo.",
+        "explanation": "Single worker maneuvering heavy mass-class cargo crate without team lift assistance or mechanical aid. Exceeds single-person safe lifting threshold, elevating risk of spinal injury and dropped cargo.",
         "evidence": {
             "worker_count": 1,
             "mass_class": "heavy",
@@ -436,6 +436,16 @@ def sync_canonical_events(conn: sqlite3.Connection) -> None:
         epistemic = data["epistemic_level"]
         dedup_key = f"{vid}:{scen}:{ts:.3f}:{ent}"
 
+        # Generate and attach the planner recommendation
+        rec = plan_action(
+            scenario=scen,
+            status=FindingStatus(status),
+            confidence=ConfidenceLevel(conf),
+            evidence=data["evidence"],
+            limitations=data["limitations"],
+        )
+        rec_json = rec.model_dump_json()
+
         factor_payload = {
             "factor_breakdown": {
                 "optical_stability": score / 100.0,
@@ -445,7 +455,8 @@ def sync_canonical_events(conn: sqlite3.Connection) -> None:
             "explanation": data["explanation"],
             "limitations": data["limitations"],
             "entities": [ent],
-            "recommended_action": data.get("title"),
+            "title": data.get("title") or rec.risk_title,
+            "recommended_action": data.get("action") or rec.action,
         }
         factor_json = json.dumps(factor_payload)
         clip_ref = f"/api/videos/{vid}/stream"
@@ -498,16 +509,6 @@ def sync_canonical_events(conn: sqlite3.Connection) -> None:
                 ),
             )
         target_event_id = ev_id
-
-        # Generate and attach the planner recommendation
-        rec = plan_action(
-            scenario=scen,
-            status=FindingStatus(status),
-            confidence=ConfidenceLevel(conf),
-            evidence=data["evidence"],
-            limitations=data["limitations"],
-        )
-        rec_json = rec.model_dump_json()
 
         cur.execute("SELECT rec_id FROM planner_recommendations WHERE event_id = ?", (target_event_id,))
         rec_row = cur.fetchone()

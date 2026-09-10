@@ -30,7 +30,7 @@ export default function VideoLibrary({ videos = [], selectedId, onSelect, loadin
   if (canonicalVideos.length === 0) {
     return (
       <p className="text-small text-ink-soft">
-        No videos found in <code className="text-caption">data/challenge_videos/</code>.
+        No camera feeds available.
       </p>
     )
   }
@@ -38,8 +38,8 @@ export default function VideoLibrary({ videos = [], selectedId, onSelect, loadin
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between px-1 text-label text-ink-faint">
-        <span>monitored camera feeds</span>
-        <span className="font-mono">{canonicalVideos.length} scenarios</span>
+        <span className="font-semibold uppercase tracking-wider">Switch Camera</span>
+        <span className="font-mono">{canonicalVideos.length} online</span>
       </div>
 
       <ul className="flex flex-col gap-2">
@@ -74,21 +74,21 @@ export default function VideoLibrary({ videos = [], selectedId, onSelect, loadin
                   <button
                     type="button"
                     onClick={() => onSelect(video.id)}
-                    className={`border px-2.5 py-1 text-caption font-medium transition-colors ${
+                    className={`border px-2.5 py-1 text-caption font-medium transition-colors cursor-pointer ${
                       active
-                        ? 'border-ink bg-ink text-paper'
-                        : 'border-line bg-paper text-ink-soft hover:text-ink'
+                        ? 'border-ink bg-ink text-paper font-semibold'
+                        : 'border-line bg-paper text-ink hover:border-ink'
                     }`}
                   >
-                    {active ? 'selected feed' : 'inspect feed'}
+                    {active ? 'Active Feed' : 'Select Bay'}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => navigateTo('Incident Replay', { videoId: video.id })}
-                    className="inline-flex items-center gap-1 text-caption font-medium text-ink-soft hover:text-ink hover:underline"
+                    className="inline-flex items-center gap-1 text-caption font-medium text-ink-soft hover:text-ink hover:underline cursor-pointer"
                   >
-                    replay incidents
+                    Evidence Replay
                     <ArrowRight size={12} />
                   </button>
                 </div>

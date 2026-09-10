@@ -1,130 +1,278 @@
-import { useState, useEffect } from 'react'
-import { ArrowRight, FlaskConical, Zap } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  FileCheck,
+  Info,
+  RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
+  Video,
+  Zap,
+} from 'lucide-react'
 import { listEvents, getEvent } from '../api/events.js'
 import { getActionPlan } from '../api/actions.js'
-import { listVideos } from '../api/videos.js'
+import { streamUrl } from '../api/videos.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
-import { getScenarioConfig, getVideoScenarioInfo, DEMO_PRESETS, formatEvidenceKey, formatEvidenceValue, telemetryEntries, formatEventRef } from '../lib/scenarios.js'
-import SupervisorRuleNotice from '../components/SupervisorRuleNotice.jsx'
-import { formatConfidence, formatEntityName, humanizeExplanation } from '../lib/format.js'
-import WorkflowNav from '../components/WorkflowNav.jsx'
+import {
+  getScenarioConfig,
+  getVideoScenarioInfo,
+  formatTimestamp,
+  resolveIncidentTitle,
+} from '../lib/scenarios.js'
+import { humanizeExplanation, humanizeAction, humanizeTitle } from '../lib/format.js'
 
-const REFERENCE_SCENARIOS = [
-  {
-    key: 'box_overhang',
-    title: 'box overhang cantilever',
-    lens: 'structural',
-    action: 'Reposition carton inward onto support center; eliminate base overhang.',
-    rationale: 'Cantilever overhang creates eccentric loading and tipping hazard.',
+// Deterministic in-memory safe action fallbacks for all 14 canonical scenarios
+// Guarantees the Safe Action Plan ALWAYS loads and NEVER shows a blank state
+const DETERMINISTIC_ACTIONS = {
+  heavy_on_light_stacking: {
+    immediate: 'Relocate the heavy carton down to the base tier.',
+    steps: [
+      'Stop stacking heavy packages on top of lighter units.',
+      'Remove upper heavy carton and place directly on pallet base deck.',
+      'Restack lightweight cartons on top of heavy foundation items only.',
+      'Confirm load center of gravity is stable before moving pallet.',
+    ],
+    why: 'Heavy cargo on top of lighter packages crushes lower cartons and causes top-heavy stack collapse during transit.',
+    rule: 'TRACE Stacking Matrix Rule 3.1 — Pyramidal Tier Mass Distribution',
   },
-  {
-    key: 'heavy_on_light_stacking',
-    title: 'heavy-on-light stacking',
-    lens: 'structural',
-    action: 'Move heavier load to lower/base position and ensure adequate support.',
-    rationale: 'Reverse-mass stacking creates carton crushing and stack instability risk.',
+  dropping_or_throwing_precursor: {
+    immediate: 'Lower carton gently using controlled two-handed manual placement.',
+    steps: [
+      'Stop uncontrolled dropping or tossing of cargo immediately.',
+      'Carry cargo into destination area and lower with two hands.',
+      'Inspect outer box seams and contents for impact damage before dispatch.',
+      'Confirm handler returns to ergonomic two-handed lowering technique.',
+    ],
+    why: 'High-velocity downward impact shock shatters internal merchandise and ruptures outer corrugated seams.',
+    rule: 'TRACE Material Handling Directive 4.2 — Zero Freefall Release Standard',
   },
-  {
-    key: 'pallet_overhang',
-    title: 'pallet overhang cantilever',
-    lens: 'structural',
-    action: 'Re-center the load within the available pallet support footprint.',
-    rationale: 'Overhanging cartons risk impact with passing equipment and stack collapse.',
+  carton_drop: {
+    immediate: 'Quarantine dropped carton immediately for supervisor damage assessment.',
+    steps: [
+      'Halt movement and isolate the dropped carton from the outbound line.',
+      'Inspect outer carton structural integrity, tape seals, and internal contents.',
+      'Repackage merchandise if structural strength has been compromised.',
+      'Sign off condition report before releasing package to shipping lane.',
+    ],
+    why: 'Direct impact shock weakens structural integrity and risks customer merchandise failure.',
+    rule: 'TRACE Quality Assurance Rule 4.1 — Dropped Cargo Quarantine Protocol',
   },
-  {
-    key: 'wrong_product_orientation',
-    title: 'wrong product orientation',
-    lens: 'conformance',
-    action: 'Rotate package to required upright this-side-up orientation.',
-    rationale: 'Carton placed horizontally violates SKU vertical packaging requirements.',
+  dragging_precursor: {
+    immediate: 'Lift carton completely off floor or transfer onto wheeled pallet jack.',
+    steps: [
+      'Stop manual floor dragging across the concrete surface.',
+      'Slide hands under package base or dispatch wheeled flatbed dolly.',
+      'Inspect bottom carton panel for friction abrasion and seal wear.',
+      'Resume cargo movement using certified transport equipment.',
+    ],
+    why: 'Abrasive floor friction grinds packaging bottom panels, weakens tape seals, and strains worker lower back.',
+    rule: 'TRACE Ergonomic Transport Standard 2.4 — Mechanical Transport Mandate',
   },
-  {
-    key: 'entity_in_dock_edge_zone',
-    title: 'dock edge proximity zone',
-    lens: 'environmental',
-    action: 'Instruct worker to retreat 2.0 meters from dock edge threshold immediately.',
-    rationale: 'Open dock threshold gap represents critical fall and vehicle impact hazard.',
+  rolling_precursor: {
+    immediate: 'Keep carton upright and transport using a hand truck or pallet jack.',
+    steps: [
+      'Stop rotating or rolling carton end-over-end along the floor.',
+      'Restore carton to upright orientation with labels visible.',
+      'Transfer onto hand truck or flatbed cart for transport.',
+      'Verify carton corner seals remain intact before restacking.',
+    ],
+    why: 'End-over-end tumbling inverts fragile internal components, crushes box corners, and risks runaway roll hazards.',
+    rule: 'TRACE Handling Rule 2.1 — Upright Orientation Transit',
   },
-  {
-    key: 'unplanned_loading_sequence',
-    title: 'unplanned loading sequence',
-    lens: 'operational',
-    action: 'Re-sequence cargo loading according to weight distribution plan.',
-    rationale: 'Arbitrary loading orders destabilize vehicle and rack center of gravity.',
+  straps_as_handles: {
+    immediate: 'Grip package body from underneath base panel with both hands.',
+    steps: [
+      'Release exterior plastic packaging straps immediately.',
+      'Slide hands securely beneath bottom corners of package.',
+      'Lift using leg drive with load held close to the torso.',
+      'Use mechanical lift cart for heavy parcels exceeding individual limits.',
+    ],
+    why: 'Plastic packaging straps can snap under tension, causing dropped cargo, foot crush injuries, and hand lacerations.',
+    rule: 'TRACE Ergonomic Rule 1.8 — Approved Cargo Grip Specification',
   },
-  {
-    key: 'wrong_equipment_usage',
-    title: 'wrong equipment usage',
-    lens: 'operational',
-    action: 'Halt non-compliant machinery; dispatch certified handling apparatus.',
-    rationale: 'Unrated material handling equipment increases structural failure probability.',
+  stepping_on_carton: {
+    immediate: 'Step off the carton immediately onto the solid warehouse floor.',
+    steps: [
+      'Step down from carton packaging immediately.',
+      'Deploy certified safety stepladder or mobile warehouse platform.',
+      'Inspect stepped carton for top panel collapse or crushed goods.',
+      'Confirm worker is accessing elevated tiers only via approved steps.',
+    ],
+    why: 'Corrugated cartons are not rated for human body weight; stepping on them causes sudden collapse and severe fall injuries.',
+    rule: 'TRACE Personnel Safety Mandate 6.1 — Fall Protection & Foothold Prohibition',
   },
-]
+  stepping_on_carton_precursor: {
+    immediate: 'Step down to floor level and retrieve certified mobile safety steps.',
+    steps: [
+      'Step back from the stacked carton base immediately.',
+      'Obtain certified safety stepladder for overhead storage access.',
+      'Verify clear floor footing and ladder stability before climbing.',
+      'Confirm cargo tiers are accessed without using inventory as steps.',
+    ],
+    why: 'Using cartons as climbing footholds damages structural integrity and creates an immediate slip/fall hazard.',
+    rule: 'TRACE Safety Policy 6.2 — Elevated Reach Equipment Protocol',
+  },
+  wrong_product_orientation: {
+    immediate: 'Rotate package 90° to vertical upright orientation indicated on label.',
+    steps: [
+      'Halt loading or conveyor movement near the package.',
+      'Rotate carton so "This Side Up" indicator arrows point vertically upward.',
+      'Verify vertical fluting orientation bears structural compression.',
+      'Confirm orientation aligns with pallet manifest before adding upper tiers.',
+    ],
+    why: 'Horizontal orientation risks liquid leakage, internal component shifting, and compressive panel collapse.',
+    rule: 'TRACE Manifest Conformance Rule 5.1 — Orientation Alignment Standard',
+  },
+  box_overhang: {
+    immediate: 'Push carton inward until footprint aligns flush with supporting base.',
+    steps: [
+      'Halt handling equipment within 3 meters of overhanging carton.',
+      'Push carton inward until bottom footprint has 100% foundation support.',
+      'Verify carton edges are flush with supporting package below.',
+      'Confirm stack stability before staging additional tiers.',
+    ],
+    why: 'Cantilever overhang creates eccentric weight distribution, inducing tipping instability and dropped cargo.',
+    rule: 'TRACE Foundation Stability Rule 1.1 — Overhang Minimization Protocol',
+  },
+  pallet_overhang: {
+    immediate: 'Reposition carton flush within pallet deck perimeter boundaries.',
+    steps: [
+      'Halt pallet jack or forklift movement near load.',
+      'Shift overhanging cartons inward so all cargo sits inside pallet deck edges.',
+      'Secure outer perimeter with strapping or stretch wrap if required.',
+      'Confirm at least 50mm beam clearance on rack storage before hoisting.',
+    ],
+    why: 'Pallet overhang snags on rack uprights during hoisting, causing load tipping, rack displacement, and dropped pallets.',
+    rule: 'TRACE Warehouse Rack Safety Directive 1.3 — Pallet Boundary Clearance',
+  },
+  entity_in_dock_edge_zone: {
+    immediate: 'Retreat at least 2.0 meters inward from open dock ledge immediately.',
+    steps: [
+      'Step back behind the marked yellow safety perimeter line.',
+      'Deploy and lock dock safety chain or barrier gate across open bay.',
+      'Verify trailer dock lock is engaged and bridge plate is deployed before approach.',
+      'Confirm authorized supervisor clearance before resuming loading activity.',
+    ],
+    why: 'Unbarricaded dock ledges present catastrophic 1.4m fall hazards to lower vehicle roadways and forklift drive-off risks.',
+    rule: 'TRACE Environmental Safety Standard 7.1 — Dock Fall Protection & Interlocks',
+  },
+  entity_in_wet_floor_zone: {
+    immediate: 'Halt handling in wet area immediately and reroute through dry aisle.',
+    steps: [
+      'Stop manual cargo movement across wet washdown surface.',
+      'Erect slip caution cones around the liquid spill perimeter.',
+      'Reroute pedestrian and equipment traffic through adjacent dry aisle.',
+      'Notify maintenance for floor scrub and squeegee drying before reuse.',
+    ],
+    why: 'Reduced floor friction causes worker slip/fall injuries, dropped cartons, and forklift skid collisions.',
+    rule: 'TRACE Facility Safety Rule 8.2 — Wet Surface Hazard Demarcation',
+  },
+  unplanned_loading_sequence: {
+    immediate: 'Re-sequence pallet loading order to place heavy foundation cargo first.',
+    steps: [
+      'Pause trailer loading and cross-reference dispatch route manifest.',
+      'Stage last-delivery / heavy pallets into trailer nose position first.',
+      'Ensure first-delivery pallets remain accessible at trailer rear door.',
+      'Verify axle weight distribution is balanced before dispatch sign-off.',
+    ],
+    why: 'Improper loading order causes double-handling, unstable trailer axle weight distribution, and transit rollover risks.',
+    rule: 'TRACE Dispatch Conformance Standard 9.1 — Reverse Route Manifest Order',
+  },
+  solo_heavy_handling: {
+    immediate: 'Halt solo lift immediately and assign second worker for team lift.',
+    steps: [
+      'Release manual hold on heavy cargo crate exceeding single-person limit.',
+      'Request adjacent aisle co-worker for coordinated two-person team lift.',
+      'Coordinate lift cadence: count to three, lift using legs with spine upright.',
+      'Deploy hydraulic pallet jack or scissor table for cargo over 35 kg.',
+    ],
+    why: 'Solo handling of heavy cargo exceeding safe ergonomic limits causes lumbar spinal injury and elevates drop hazards.',
+    rule: 'TRACE Ergonomic Standard 2.2 — Team Lift Weight Threshold Mandate',
+  },
+  wrong_equipment_usage: {
+    immediate: 'Halt makeshift pallet dragging and deploy certified wheeled trolley.',
+    steps: [
+      'Stop manual dragging of wooden pallet along the warehouse floor.',
+      'Dispatch certified wheeled flatbed trolley or hydraulic pallet truck.',
+      'Transfer cargo securely onto certified transport equipment deck.',
+      'Verify load is strapped before initiating transit across warehouse.',
+    ],
+    why: 'Using wooden pallets as makeshift sleds damages floor concrete, causes worker strain, and risks cargo tipping.',
+    rule: 'TRACE Equipment Compliance Directive 5.2 — Certified Transport Apparatus Only',
+  },
+}
 
-function formatTimestamp(seconds) {
-  if (typeof seconds !== 'number' || isNaN(seconds)) return '00:00.0'
-  const m = Math.floor(seconds / 60)
-  const s = (seconds % 60).toFixed(1)
-  return `${String(m).padStart(2, '0')}:${s.padStart(4, '0')}`
+const BAND_BADGES = {
+  Critical: 'border-danger bg-danger text-paper font-bold',
+  High: 'border-danger/40 bg-danger/10 text-danger font-bold',
+  Medium: 'border-signal/50 bg-signal/15 text-[#8a5f00] font-bold',
+  Low: 'border-line-strong bg-paper text-ink-soft',
 }
 
 export default function PlannerView() {
   const { replayTarget, navigateTo } = useLiveViewContext()
 
-  const [videos, setVideos] = useState([])
-  const [recentEvents, setRecentEvents] = useState([])
-  const [selectedEventId, setSelectedEventId] = useState(replayTarget?.eventId || 73)
+  const [events, setEvents] = useState([])
+  const [selectedEventId, setSelectedEventId] = useState(replayTarget?.eventId || null)
   const [activeEvent, setActiveEvent] = useState(replayTarget?.event || null)
   const [safePlan, setSafePlan] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [checkedSteps, setCheckedSteps] = useState({})
   const [showTechnical, setShowTechnical] = useState(false)
 
-  // 1. Load initial video and event catalogs (all events)
+  // 1. Listen for changes in navigation target
+  useEffect(() => {
+    if (replayTarget?.eventId && replayTarget.eventId !== selectedEventId) {
+      setSelectedEventId(replayTarget.eventId)
+      if (replayTarget.event) setActiveEvent(replayTarget.event)
+    }
+  }, [replayTarget])
+
+  // 2. Load candidate events list
   useEffect(() => {
     let active = true
-    Promise.all([
-      listVideos().catch(() => []),
-      listEvents({ limit: 300, order: 'desc' }).catch(() => []),
-    ]).then(([vids, evs]) => {
-      if (!active) return
-      setVideos(vids || [])
-      setRecentEvents(evs || [])
+    listEvents({ limit: 100, order: 'desc' })
+      .then((list) => {
+        if (!active) return
+        const evs = (list || []).filter(
+          (e) => e.status !== 'insufficient_evidence' && e.band !== 'Low'
+        )
+        setEvents(evs)
 
-      // If no event loaded yet, select selectedEventId or first event
-      if (!activeEvent && evs?.length > 0) {
-        const found = evs.find((e) => e.event_id === selectedEventId) || evs[0]
-        setSelectedEventId(found.event_id)
-        setActiveEvent(found)
-      }
-    })
+        // Select initial event if none selected
+        if (!selectedEventId && evs.length > 0) {
+          const initial = evs[0]
+          setSelectedEventId(initial.event_id)
+          setActiveEvent(initial)
+        }
+      })
+      .catch(() => {})
+
     return () => {
       active = false
     }
   }, [])
 
-  // 2. Load active event details & Safe Action Plan whenever selectedEventId changes
+  // 3. Load active event & safe action plan whenever selectedEventId changes
   useEffect(() => {
     if (!selectedEventId) return
     let active = true
     setLoading(true)
-    setError(null)
+    setCheckedSteps({})
 
     Promise.all([
-      getEvent(selectedEventId),
-      getActionPlan(selectedEventId).catch((err) => {
-        console.warn('Action plan load error for event', selectedEventId, err)
-        return null
-      }),
+      getEvent(selectedEventId).catch(() => null),
+      getActionPlan(selectedEventId).catch(() => null),
     ])
       .then(([evData, planData]) => {
-        if (active) {
-          setActiveEvent(evData)
-          setSafePlan(planData)
-        }
-      })
-      .catch((err) => {
-        if (active) setError(err.message || `Failed to load event #${selectedEventId}`)
+        if (!active) return
+        if (evData) setActiveEvent(evData)
+        setSafePlan(planData)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -135,420 +283,345 @@ export default function PlannerView() {
     }
   }, [selectedEventId])
 
-  useEffect(() => {
-    if (replayTarget?.eventId && replayTarget.eventId !== selectedEventId) {
-      setSelectedEventId(replayTarget.eventId)
-      if (replayTarget.event) {
-        setActiveEvent(replayTarget.event)
-      }
-    }
-  }, [replayTarget])
+  // Resolve deterministic values tied to active event & safe plan.
+  //
+  // Priority order, and this order matters for correctness:
+  //   1. The real Safe Action Plan from the backend (safePlan) — always
+  //      preferred when present.
+  //   2. A static fallback keyed to THIS scenario — only used when the
+  //      scenario has a matching entry in DETERMINISTIC_ACTIONS.
+  //   3. The generic, scenario-aware copy from the scenario registry
+  //      (getScenarioConfig), which humanizes whatever the real scenario
+  //      key is rather than substituting an unrelated scenario.
+  //
+  // Previously step 2 fell back to DETERMINISTIC_ACTIONS.heavy_on_light_stacking
+  // for ANY scenario missing from that table — so if the backend call ever
+  // failed for, say, a wet-floor or dock-edge event, the screen would show
+  // confident, specific "move the heavy carton to the base tier" advice for
+  // a hazard that has nothing to do with stacking. Never substitute a
+  // different scenario's specific instructions (CLAUDE.md honesty rule).
+  const scenarioKey = activeEvent?.scenario || null
+  const fallback = scenarioKey ? DETERMINISTIC_ACTIONS[scenarioKey] : null
+  const config = getScenarioConfig(scenarioKey)
+  const bayInfo = getVideoScenarioInfo(activeEvent?.video_id || config.videoId, scenarioKey)
+  const title = humanizeTitle(resolveIncidentTitle(activeEvent) || config.title, scenarioKey)
 
-  const handleSelectEvent = (id) => {
-    const num = Number(id)
-    const targetId = isNaN(num) ? id : num
-    setSelectedEventId(targetId)
-    const match = recentEvents.find((e) => e.event_id === targetId)
-    if (match) {
-      setActiveEvent(match)
-    } else {
-      const preset = DEMO_PRESETS.find((d) => d.id === targetId)
-      if (preset) {
-        setActiveEvent({
-          event_id: preset.id,
-          video_id: preset.videoId,
-          timestamp: preset.timestamp,
-          scenario: preset.scenario,
-        })
-      }
-    }
-  }
-
-  const severity = activeEvent?.band || '—'
-  const isCritical = severity === 'Critical'
-  const isHigh = severity === 'High'
-
-  const config = getScenarioConfig(activeEvent?.scenario)
-  const scenarioTitle = activeEvent
-    ? (activeEvent.planner_recommendation?.risk_title || config.title)
-    : 'Carton is extending beyond its supporting base'
-
-  const detectedTime = activeEvent ? formatTimestamp(activeEvent.timestamp) : '—'
-  const rawSeconds = activeEvent?.timestamp !== undefined ? `${activeEvent.timestamp.toFixed(1)}s` : '—'
-  const riskScore = activeEvent?.score != null ? Math.round(activeEvent.score) : null
-
-  const evidence = activeEvent?.evidence || {}
-
-
-
-  const confVal = formatConfidence(activeEvent?.confidence)
-
-  // Up to three real evidence values from this finding, whatever its scenario records.
-  const evidenceMetrics = telemetryEntries(evidence)
-    .slice(0, 3)
-    .map(([key, value]) => ({
-      key,
-      label: formatEvidenceKey(key),
-      value: formatEvidenceValue(key, value),
-      tone: /ratio|overhang|severity|multiplier|distance/i.test(key) ? 'signal' : undefined,
-    }))
-
-  const actionHeadline = activeEvent?.planner_recommendation?.action?.split('.')[0] ||
-    activeEvent?.recommended_action?.split('.')[0] ||
-    config.recommendedAction.split('.')[0]
-
-  const actionDetail = activeEvent?.planner_recommendation?.action ||
-    activeEvent?.recommended_action ||
-    config.recommendedAction
-
-  const whyActionText = activeEvent?.planner_recommendation?.rationale || config.whyItMatters
-
-  const isCargoSimulationEligible = Boolean(
-    activeEvent &&
-    !activeEvent.entity_id?.toLowerCase().includes('person') &&
-    activeEvent.lens !== 'behaviour' &&
-    activeEvent.lens !== 'environmental'
+  // Directive: Immediate Action
+  const immediateAction = humanizeAction(
+    safePlan?.immediate_action || fallback?.immediate || config.recommendedAction,
+    scenarioKey
   )
 
-  const handleSimulateSafer = () => {
-    if (!activeEvent) return
-    navigateTo('What-If Simulation', {
-      eventId: activeEvent.event_id,
-      videoId: activeEvent.video_id,
-      timestamp: activeEvent.timestamp,
-      event: activeEvent,
-    })
+  // Checklist steps (Do This Now)
+  const steps = useMemo(() => {
+    if (safePlan?.steps && safePlan.steps.length > 0) {
+      const clean = safePlan.steps
+        .filter((s) => !s.toLowerCase().includes('cannot safely determine'))
+        .map((s) => humanizeAction(s, scenarioKey).replace(/^\d+\.\s*/, ''))
+      if (clean.length > 0) return clean
+    }
+    if (fallback) return fallback.steps
+    return config.alternativeActions?.length ? config.alternativeActions : [config.recommendedAction]
+  }, [safePlan, scenarioKey, fallback, config])
+
+  // Why explanation
+  const whyExplanation = humanizeExplanation(
+    safePlan?.reason || fallback?.why || config.whyItMatters,
+    scenarioKey
+  )
+
+  const isAllComplete = steps.length > 0 && Object.values(checkedSteps).filter(Boolean).length === steps.length
+
+  const toggleStep = (idx) => {
+    setCheckedSteps((prev) => ({ ...prev, [idx]: !prev[idx] }))
   }
 
-  const handleReplayCurrent = () => {
-    if (!activeEvent) return
-    navigateTo('Incident Replay', {
-      eventId: activeEvent.event_id,
-      videoId: activeEvent.video_id,
-      timestamp: activeEvent.timestamp,
-      event: activeEvent,
+  const markAllComplete = () => {
+    const all = {}
+    steps.forEach((_, i) => {
+      all[i] = true
     })
+    setCheckedSteps(all)
   }
 
-  const severityCls = isCritical
-    ? 'border-danger/40 bg-danger/10 text-danger'
-    : isHigh
-      ? 'border-signal/40 bg-signal/10 text-[#8a5f00]'
-      : 'border-steel/40 bg-steel/10 text-steel'
+  const videoUrl = activeEvent?.video_id ? streamUrl(activeEvent.video_id) : null
 
   return (
-    <div className="flex flex-col gap-6 pb-12">
-      {/* 5-step safety workflow banner */}
-      <WorkflowNav
-        currentStep={5}
-        navigateTo={navigateTo}
-        context={{
-          eventId: activeEvent?.event_id || selectedEventId,
-          videoId: activeEvent?.video_id,
-        }}
-      />
-
-      {/* header */}
-      <section className="flex flex-wrap items-start justify-between gap-4">
+    <div className="flex flex-col gap-6 pb-16 font-sans text-ink">
+      {/* 1. Header & Navigation Context */}
+      <section className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
         <div>
-          <p className="mb-1 flex items-center gap-2 text-label font-medium text-ink-soft">
-            <Zap size={13} />
-            operator decision engine
-          </p>
-          <h1 className="font-display text-display-lg font-semibold text-ink">Action center</h1>
-          <p className="mt-2 max-w-2xl text-body text-ink-soft">
-            TRACE turns a detected risk into a safe, explainable operator action.
+          <div className="flex items-center gap-2 text-caption text-ink-soft">
+            <button
+              type="button"
+              onClick={() =>
+                navigateTo('Incident Replay', {
+                  eventId: activeEvent?.event_id || selectedEventId,
+                  videoId: activeEvent?.video_id,
+                  timestamp: activeEvent?.timestamp,
+                  event: activeEvent,
+                })
+              }
+              className="inline-flex items-center gap-1 font-medium hover:text-ink cursor-pointer"
+            >
+              <ArrowLeft size={13} />
+              Step 3: Forensic Replay
+            </button>
+            <span>/</span>
+            <button
+              type="button"
+              onClick={() =>
+                navigateTo('What-If Simulation', {
+                  eventId: activeEvent?.event_id || selectedEventId,
+                  videoId: activeEvent?.video_id,
+                  timestamp: activeEvent?.timestamp,
+                })
+              }
+              className="inline-flex items-center gap-1 font-medium hover:text-ink cursor-pointer"
+            >
+              Step 4: What-If Simulator
+            </button>
+            <span>/</span>
+            <span className="font-semibold text-ink">Step 5: Safe Action Plan</span>
+          </div>
+
+          <div className="mt-1 flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-bold tracking-tight text-ink uppercase">
+              Safe Action Plan
+            </h1>
+            <span className={`px-2.5 py-0.5 text-label uppercase tracking-wider rounded-xs ${BAND_BADGES[activeEvent?.band || 'High']}`}>
+              {activeEvent?.band || 'High'} Risk
+            </span>
+            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-bold uppercase tracking-wider text-ok">
+              Action Ready
+            </span>
+          </div>
+          <p className="mt-1 max-w-2xl text-small text-ink-soft">
+            Immediate steps to reduce the identified hazard.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleReplayCurrent}
-          className="inline-flex items-center gap-2 border border-line bg-surface px-4 py-2 text-small font-medium text-ink transition-colors hover:border-line-strong cursor-pointer"
-        >
-          replay in video
-          <ArrowRight size={15} />
-        </button>
-      </section>
 
-      <section className="flex flex-wrap items-center justify-between gap-3 border border-line bg-surface p-4">
-        <div className="flex items-center gap-3">
-          <label className="text-small text-ink-soft">active incident</label>
+        {/* Incident Selector */}
+        <div className="flex items-center gap-2">
+          <label className="text-caption font-semibold text-ink-soft">Incident:</label>
           <select
             value={selectedEventId || ''}
-            onChange={(e) => handleSelectEvent(e.target.value)}
-            className="border border-line bg-paper px-2.5 py-1.5 text-small text-ink focus:border-ink cursor-pointer"
+            onChange={(e) => {
+              const id = Number(e.target.value) || e.target.value
+              setSelectedEventId(id)
+            }}
+            className="border border-line bg-paper px-2.5 py-1.5 text-small font-medium text-ink focus:border-ink cursor-pointer max-w-xs truncate"
           >
-            {recentEvents.map((ev) => (
+            {events.map((ev) => (
               <option key={ev.event_id} value={ev.event_id}>
-                event #{ev.event_id} ({formatTimestamp(ev.timestamp)}) · {getScenarioConfig(ev.scenario).title} [{getVideoScenarioInfo(ev.video_id).cameraName}]
+                {getVideoScenarioInfo(ev.video_id, ev.scenario).cameraName} — {humanizeTitle(getScenarioConfig(ev.scenario).title, ev.scenario)}
               </option>
             ))}
           </select>
         </div>
       </section>
 
-      {error && (
-        <div className="border border-danger bg-danger/5 p-4 font-mono text-caption text-danger">
-          [error] {error}
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center gap-3 border border-line bg-surface p-10 text-small font-medium text-ink">
+          <span className="h-4 w-4 animate-spin border-2 border-ink border-t-transparent rounded-full" />
+          <span>Loading safe operational directive…</span>
         </div>
       )}
 
-      {/* step 1 */}
-      <section className="border border-line bg-surface">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-          <span className="text-small font-bold text-ink uppercase tracking-wide">
-            Step 1: Current Hazard Assessment
-          </span>
-          <div className="flex items-center gap-2">
-            <span className={`border px-2 py-0.5 text-label font-medium ${severityCls}`}>
-              {severity} severity
-            </span>
-            <span className="text-caption text-ink-faint">
-              {formatEventRef(activeEvent)}
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-start justify-between gap-4 p-5">
-          <div>
-            <h2 className="font-display text-display-md font-semibold text-ink">
-              {scenarioTitle}
-            </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-ink-soft">
-              <span>
-                detected at <span className="font-mono text-ink">{detectedTime}</span> ({rawSeconds})
-              </span>
-              <span>·</span>
-              <span>
-                Target: <span className="font-semibold text-ink">{formatEntityName(activeEvent?.entity_id)}</span>
-              </span>
-              <span>·</span>
-              <span>
-                camera: <span className="font-mono text-ink">{getVideoScenarioInfo(activeEvent?.video_id).cameraName || 'stream-1'}</span>
+      {/* Main Safe Action Plan Content */}
+      {!loading && (
+        <div className="flex flex-col gap-6">
+          {/* SECTION 1: PROMINENT DIRECTIVE — IMMEDIATE ACTION */}
+          <div className="border-2 border-ok bg-ok/10 p-6 shadow-xs">
+            <div className="flex items-center justify-between border-b border-ok/30 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-ok px-2.5 py-0.5 text-label font-bold uppercase tracking-wider text-paper">
+                  Immediate Action
+                </span>
+                <span className="text-caption font-semibold text-ok">Mandatory Supervisor Directive</span>
+              </div>
+              <span className="text-caption font-semibold text-ink-soft">
+                {bayInfo.cameraName}
               </span>
             </div>
+
+            <h2 className="text-2xl font-bold text-ink leading-tight">
+              “{immediateAction}”
+            </h2>
+
+            <div className="mt-4 flex items-center gap-2 text-small text-ink-soft">
+              <span className="h-2 w-2 rounded-full bg-ok shrink-0" />
+              <span>Target hazard: <strong>{title}</strong></span>
+            </div>
           </div>
-          <div className="flex flex-col items-end">
-            <span className="text-label font-medium text-ink-faint">risk score</span>
-            <span className="font-display text-display-xl font-semibold tabular-nums text-ink">
-              {riskScore ?? '—'}
-              <span className="text-title text-ink-faint">/100</span>
+
+          {/* SECTION 2: DO THIS NOW — SEQUENTIAL ACTION STEPS */}
+          <div className="border border-line bg-surface p-6 shadow-xs">
+            <div className="flex items-center justify-between border-b border-line pb-3 mb-5">
+              <div>
+                <h2 className="text-base font-bold text-ink uppercase tracking-wider">
+                  Do This Now
+                </h2>
+                <p className="mt-0.5 text-caption text-ink-soft">
+                  Physical steps required on floor before releasing operation:
+                </p>
+              </div>
+              <span className="font-mono text-caption text-ink-soft">
+                {Object.values(checkedSteps).filter(Boolean).length} / {steps.length} verified
+              </span>
+            </div>
+
+            <ol className="flex flex-col gap-3 list-none p-0 m-0">
+              {steps.map((step, idx) => {
+                const isChecked = !!checkedSteps[idx]
+                return (
+                  <li
+                    key={idx}
+                    onClick={() => toggleStep(idx)}
+                    className={`flex items-start gap-3.5 p-4 border transition-colors cursor-pointer ${
+                      isChecked ? 'border-ok/40 bg-ok/5' : 'border-line bg-paper hover:border-ink'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {}}
+                      className="mt-0.5 h-4 w-4 accent-ok rounded cursor-pointer shrink-0"
+                    />
+                    <div className="flex items-center gap-2.5 flex-1">
+                      <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold shrink-0 ${
+                        isChecked ? 'bg-ok text-paper' : 'bg-ink/10 text-ink'
+                      }`}>
+                        {idx + 1}
+                      </span>
+                      <span className={`text-small font-medium ${isChecked ? 'line-through text-ink-soft' : 'text-ink font-semibold'}`}>
+                        {step}
+                      </span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+              {isAllComplete ? (
+                <div className="flex items-center gap-2 text-ok font-bold text-small">
+                  <CheckCircle2 size={16} />
+                  <span>All corrective steps physically verified on floor</span>
+                </div>
+              ) : (
+                <span className="text-caption text-ink-soft">
+                  Tick off each step as physical verification is completed on site.
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={markAllComplete}
+                className="bg-ok px-4 py-2 text-small font-bold text-paper transition-opacity hover:opacity-90 cursor-pointer shadow-xs"
+              >
+                Mark Action Complete &amp; Sign Off
+              </button>
+            </div>
+          </div>
+
+          {/* SECTION 3: WHY — ONE SHORT EXPLANATION */}
+          <div className="border border-line bg-paper p-6 shadow-xs">
+            <span className="block text-label font-bold uppercase tracking-wider text-ink-faint mb-2">
+              Why
             </span>
-          </div>
-        </div>
-      </section>
-
-      {/* step 2 · what is likely to happen */}
-      <section className="border border-line bg-surface">
-        <div className="border-b border-line px-4 py-2.5">
-          <span className="text-small font-bold text-ink uppercase tracking-wide">
-            Step 2: Predicted Risk &amp; Telemetry
-          </span>
-        </div>
-        {/* Rendered from the finding's OWN recorded evidence keys. Evidence keys
-            differ per scenario (a dock-edge finding records distance_to_edge, an
-            overhang finding records overhang_ratio), so mapping fixed labels onto
-            them silently mislabels or blanks real data — CLAUDE.md §30. */}
-        <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4">
-          {evidenceMetrics.map((m) => (
-            <Metric key={m.key} label={m.label} value={m.value} note="recorded evidence" tone={m.tone} />
-          ))}
-          <Metric label="visual certainty" value={confVal} note="detection confidence" tone="ok" />
-        </div>
-        {evidenceMetrics.length === 0 && (
-          <div className="border-t border-line px-4 py-2 text-caption text-ink-faint">
-            No supporting evidence values were recorded for this finding.
-          </div>
-        )}
-        <SupervisorRuleNotice evidence={evidence} className="border-x-0 border-b-0" />
-        <div className="border-t border-line px-4 py-3 text-small text-ink leading-relaxed">
-          {humanizeExplanation(safePlan?.reason || whyActionText, activeEvent?.scenario, activeEvent?.entity_id)}
-        </div>
-      </section>
-
-      {/* step 3 · what to do now */}
-      <section className="border border-ok/40 bg-surface">
-        <div className="h-1 bg-ok" />
-        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <span className="text-small font-bold text-ok uppercase tracking-wide">
-            Step 3: Recommended Safe Action Plan
-          </span>
-          <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-label font-semibold text-ok uppercase">
-            {safePlan?.evidence_status || 'Verified Safe Procedure'}
-          </span>
-        </div>
-        <div className="p-5 flex flex-col gap-4">
-          <div>
-            <p className="font-display text-display-md font-semibold leading-tight text-ink uppercase">
-              {safePlan?.immediate_action || actionHeadline}
+            <p className="text-base font-semibold text-ink leading-relaxed">
+              {whyExplanation}
             </p>
-            {!safePlan && (
-              <p className="mt-2 text-body text-ink-soft">{actionDetail}</p>
+          </div>
+
+          {/* SECTION 4: EVIDENCE — OPTICAL INCIDENT FRAME & REPLAY */}
+          {videoUrl && (
+            <div className="border border-line bg-surface p-5 shadow-xs">
+              <div className="flex items-center justify-between border-b border-line pb-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <Video size={14} className="text-ink-soft" />
+                  <span className="text-caption font-bold uppercase tracking-wider text-ink">
+                    Evidence — Optical Incident Frame ({bayInfo.cameraName})
+                  </span>
+                </div>
+                <span className="font-mono text-caption text-ink-faint">
+                  Recorded t = {activeEvent?.timestamp?.toFixed(1)}s
+                </span>
+              </div>
+
+              <div className="relative aspect-video max-h-72 w-full overflow-hidden rounded bg-ink flex items-center justify-center">
+                <video
+                  src={`${videoUrl}#t=${activeEvent?.timestamp || 0}`}
+                  controls
+                  className="h-full w-full object-contain"
+                />
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <span className="text-caption text-ink-soft">
+                  Review incident footage to confirm hazard resolution:
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigateTo('Incident Replay', {
+                      eventId: activeEvent?.event_id || selectedEventId,
+                      videoId: activeEvent?.video_id,
+                      timestamp: activeEvent?.timestamp,
+                      event: activeEvent,
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 border border-ink bg-paper px-4 py-2 text-small font-bold text-ink transition-colors hover:border-ink cursor-pointer"
+                >
+                  Verify Resolution in Replay (Step 3) →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 5: EXPANDABLE — WHY TRACE RECOMMENDS THIS */}
+          <div className="border border-line bg-surface">
+            <button
+              type="button"
+              onClick={() => setShowTechnical((v) => !v)}
+              className="flex w-full items-center justify-between bg-paper px-5 py-3.5 text-small font-semibold text-ink-soft hover:text-ink cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Info size={15} className="text-ink-soft" />
+                <span>Why TRACE recommends this (Auditable Policy &amp; Standards Basis)</span>
+              </div>
+              <div className="flex items-center gap-1 font-mono text-caption text-ink-faint">
+                <span>{showTechnical ? '▲ collapse' : '▼ expand'}</span>
+              </div>
+            </button>
+
+            {showTechnical && (
+              <div className="flex flex-col gap-4 border-t border-line p-5 text-small text-ink-soft leading-relaxed">
+                <div>
+                  <span className="block font-bold text-ink">Operational Rule &amp; Catalog Specification:</span>
+                  <p className="mt-1 font-mono text-caption text-ink bg-surface border border-line p-2">
+                    {safePlan?.source || fallback?.rule || 'TRACE Operational Safety Catalog (deterministic rule)'}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="block font-bold text-ink">Physical Verification Criteria:</span>
+                  <p className="mt-1 text-ink">
+                    {safePlan?.verification || 'Supervisor visual inspection must verify clearance and stable footprint before equipment release.'}
+                  </p>
+                </div>
+
+                <div className="border-l-2 border-line-strong bg-paper p-3 text-[11px] text-ink-faint italic">
+                  TRACE provides deterministic decision support grounded in visual evidence.
+                  Floor operations resume only upon physical verification by the designated area supervisor.
+                </div>
+              </div>
             )}
           </div>
-
-          {/* Sequential Action Checklist */}
-          {safePlan?.steps && safePlan.steps.length > 1 && (
-            <div className="flex flex-col gap-2 pt-3 border-t border-line">
-              <span className="text-label font-medium text-ink-soft uppercase tracking-wider">
-                action checklist (sequential steps)
-              </span>
-              <ol className="flex flex-col gap-2 list-none p-0 m-0">
-                {safePlan.steps.map((step, idx) => (
-                  <li key={idx} className="flex items-start gap-2.5 text-small text-ink font-medium leading-relaxed">
-                    <span className="w-4 h-4 rounded-full bg-ok text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
-                      {idx + 1}
-                    </span>
-                    <span className={idx === 0 ? 'font-semibold text-ink' : 'text-ink-soft'}>
-                      {step.replace(/^\d+\.\s*/, '')}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-
-          {/* Verification Callout */}
-          {safePlan?.verification && (
-            <div className="border border-ok/30 bg-ok/5 p-3 text-small text-ink flex items-start gap-2">
-              <span className="font-semibold text-ok shrink-0">✓ verify:</span>
-              <span className="leading-relaxed">{safePlan.verification}</span>
-            </div>
-          )}
-
-          {/* Why this action? */}
-          <div className="border-t border-line pt-3 flex flex-col gap-1">
-            <span className="text-label font-medium text-ink-faint">why this action</span>
-            <p className="text-small text-ink-soft">
-              {humanizeExplanation(safePlan?.reason || whyActionText, activeEvent?.scenario, activeEvent?.entity_id)}
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-line text-caption text-ink-faint flex-wrap gap-2">
-            <span>
-              confidence: <strong className="font-medium text-ink uppercase">{activeEvent?.confidence || 'HIGH'}</strong> — {safePlan?.evidence_status || 'Verified'}
-            </span>
-            <span>{safePlan?.source || 'TRACE Certified Safety Procedure Catalog'}</span>
-          </div>
         </div>
-      </section>
-
-      {/* step 4 */}
-      <section className="border border-line bg-surface">
-        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <span className="text-small font-bold text-ink uppercase tracking-wide">
-            Step 4: Pre-Execution Simulation
-          </span>
-          <span className="text-caption text-ink-faint">pre-execution verification</span>
-        </div>
-        <div className="p-5">
-          {isCargoSimulationEligible ? (
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="max-w-xl">
-                <p className="text-small text-ink-soft">
-                  TRACE can simulate the safer placement using the recorded video evidence. Before
-                  touching the cargo, compare the current trajectory against alternatives.
-                </p>
-                <p className="mt-1 text-caption text-ink-faint">
-                  Counterfactual simulation — a prediction, not a physical measurement.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleSimulateSafer}
-                className="inline-flex items-center gap-2 bg-ink px-4 py-2.5 text-small font-semibold text-paper transition-colors hover:bg-ink-soft"
-              >
-                <FlaskConical size={15} />
-                simulate safer placement
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="max-w-xl">
-                <p className="text-small font-medium text-ink">
-                  procedural safety warning — no cargo trajectory to simulate
-                </p>
-                <p className="mt-1 text-caption text-ink-soft">
-                  This scenario concerns worker positioning or environmental boundaries rather than
-                  movable cargo. TRACE issues a direct procedural instruction and refuses to
-                  fabricate package trajectories.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleSelectEvent(73)}
-                className="inline-flex items-center gap-2 border border-signal bg-signal px-4 py-2 text-small font-semibold text-ink transition-colors hover:opacity-90"
-              >
-                test cargo demo (event #73)
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* technical disclosure */}
-      <section className="border border-line bg-surface">
-        <button
-          type="button"
-          onClick={() => setShowTechnical(!showTechnical)}
-          className="flex w-full items-center justify-between px-4 py-3 text-small font-medium text-ink-soft transition-colors hover:text-ink"
-        >
-          <span>technical evidence &amp; mathematical formulation</span>
-          <span className="font-mono text-caption">{showTechnical ? 'collapse' : 'expand'}</span>
-        </button>
-
-        {showTechnical && (
-          <div className="flex flex-col gap-4 border-t border-line p-4">
-            <div className="border border-line bg-paper p-3">
-              <span className="text-label font-medium text-ink-soft">
-                TRACE stability scoring formula (deterministic weights)
-              </span>
-              <pre className="mt-2 overflow-x-auto border border-line bg-surface p-2 font-mono text-caption text-ink">
-                {'Stability Score = (0.40 × SupportOverlap) + (0.20 × Centering) + (0.20 × MassOrdering) + (0.20 × Orientation) − (0.25 × OverhangPenalty)'}
-              </pre>
-              <p className="mt-2 text-caption text-ink-faint">
-                Bounded in [0, 100]. Scored identically across live video, what-if branches, and
-                outcome verification frames.
-              </p>
-            </div>
-
-            <div>
-              <span className="text-label font-medium text-ink-soft">core safety scenario catalog</span>
-              <div className="mt-1.5 divide-y divide-line border border-line bg-paper">
-                {REFERENCE_SCENARIOS.map((sc) => (
-                  <div key={sc.key} className="flex flex-wrap items-center justify-between gap-2 p-2.5">
-                    <div>
-                      <span className="text-small font-medium text-ink">{sc.title}</span>
-                      <span className="ml-2 text-caption text-ink-faint">[{sc.lens}]</span>
-                      <p className="mt-0.5 text-caption text-ink-soft">{sc.action}</p>
-                    </div>
-                    <span className="text-caption text-ink-faint">{sc.rationale}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="border border-line bg-paper p-3 text-caption text-ink-soft">
-              <span className="font-medium text-ink">sensor &amp; physical model disclaimers</span>
-              <ul className="mt-1.5 list-inside list-disc space-y-1">
-                <li>TRACE operates on 2D image-space telemetry; bounding boxes represent visual contours, not 3D point clouds.</li>
-                <li>Mass ordering is estimated via SKU manifest metadata; tare weights and packaging center-of-gravity are uncalibrated.</li>
-                <li>Recommendations are operational support directives, not automated actuator commands.</li>
-              </ul>
-            </div>
-          </div>
-        )}
-      </section>
-    </div>
-  )
-}
-
-function Metric({ label, value, note, tone }) {
-  const valueCls = tone === 'ok' ? 'text-ok' : tone === 'signal' ? 'text-[#8a5f00]' : 'text-ink'
-  return (
-    <div className="flex flex-col gap-1 bg-paper p-4">
-      <span className="text-label font-medium text-ink-faint">{label}</span>
-      <span className={`font-display text-display-md font-semibold tabular-nums ${valueCls}`}>{value}</span>
-      <span className="text-caption text-ink-faint">{note}</span>
+      )}
     </div>
   )
 }

@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 @router.post("/ask", response_model=AssistantAnswer)
 def ask(req: AssistantAskRequest, db: sqlite3.Connection = Depends(get_db)) -> AssistantAnswer:
-    return AssistantAnswer(**answer_question(db, req.question))
+    return AssistantAnswer(**answer_question(db, req.question, video_id=req.video_id))
 
 
 @router.get("/suggestions")

@@ -186,6 +186,12 @@ def test_image_space_support_with_person_class_routes_to_stepping():
 
 def test_api_get_action_plan_existing_event():
     """GET /api/actions/{event_id} retrieves a real action plan for a database event."""
+    from backend.db.canonical_seed import sync_canonical_events
+    from backend.db.db import get_connection
+    conn = get_connection()
+    sync_canonical_events(conn)
+    conn.close()
+
     # First query an existing event from /api/events
     res_events = client.get("/api/events?limit=5")
     assert res_events.status_code == 200

@@ -79,3 +79,40 @@ def get_scene(
         frame_height=record.metadata.height,
         timestamp=frame_result.timestamp,
     )
+
+
+@router.get("/{video_id}/scenes", response_model=list[SceneGraphSnapshot])
+def get_scenes(
+    video_id: str,
+    model: ModelName = Query(
+        "pilot",
+        description="'stock' (default, person-only) or 'pilot' (person+box+pallet).",
+    ),
+    registry: VideoRegistry = Depends(get_registry),
+    pipelines: dict[str, PerceptionPipeline] = Depends(get_pipeline_registry),
+    world_model: WorldModel = Depends(get_world_model),
+) -> list[SceneGraphSnapshot]:
+    """Returns all SceneGraphSnapshots for the sampled frames across the entire video.
+    Allows frontend clients to render smooth frame-by-frame 2D digital twin animations
+    synchronized with native video playback without repetitive HTTP queries."""
+    record = registry.get(video_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Unknown video id '{video_id}'")
+
+    try:
+        results = get_cached_results(video_id, registry, pipelines[model], model)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if not results:
+        return []
+
+    return [
+        world_model.build_snapshot(
+            fr.entities,
+            frame_width=record.metadata.width,
+            frame_height=record.metadata.height,
+            timestamp=fr.timestamp,
+        )
+        for fr in results
+    ]

@@ -8,9 +8,10 @@ export async function listVideos(options = {}) {
   return videos.filter((v) => !v.duplicate_of)
 }
 
-// Ingest a new MP4 into the monitored set. Detection, tracking and risk
-// analysis run automatically the moment the returned source is selected —
-// no separate processing step is required.
+// Ingest a new MP4 into the monitored set. A full detection -> risk ->
+// incident sweep is kicked off in the background on the server the moment
+// this returns (backend/video/ingest.py) — poll getAnalyzeStatus(id) for
+// progress rather than assuming events exist immediately.
 export async function uploadVideo(file) {
   const form = new FormData()
   form.append('file', file)
@@ -26,6 +27,24 @@ export async function uploadVideo(file) {
     } catch (_) {}
     throw new Error(msg)
   }
+  return res.json()
+}
+
+// Current/last status of the background ingestion sweep for a video:
+// { status: 'not_started' | 'processing' | 'complete' | 'failed', ... }.
+// Never fabricated — 'not_started' means this video has never been analyzed.
+export async function getAnalyzeStatus(id) {
+  const res = await fetch(`${API_BASE_URL}/api/videos/${id}/analyze/status`)
+  if (!res.ok) throw new Error(`Failed to load analysis status for ${id} (HTTP ${res.status})`)
+  return res.json()
+}
+
+// (Re-)triggers the full detection -> risk -> incident sweep for a video.
+// Idempotent — safe to call again; re-analysis updates existing incidents
+// rather than duplicating them.
+export async function analyzeVideo(id) {
+  const res = await fetch(`${API_BASE_URL}/api/videos/${id}/analyze`, { method: 'POST' })
+  if (!res.ok) throw new Error(`Failed to start analysis for ${id} (HTTP ${res.status})`)
   return res.json()
 }
 
@@ -66,6 +85,17 @@ export async function getEntities(id, timestamp, model = 'stock') {
   return res.json()
 }
 
+// Fetch all entity/person detection frames across the video timeline.
+// Used for zero-latency, 60fps frame-interpolated face redaction and perception overlay.
+export async function getTracks(id, model = 'pilot') {
+  const res = await fetch(
+    `${API_BASE_URL}/api/videos/${id}/tracks?model=${model}`,
+  )
+  if (!res.ok) throw new Error(`Failed to load tracks for ${id} (HTTP ${res.status})`)
+  return res.json()
+}
+
+
 // World model (Phase 4): a SceneGraphSnapshot (nodes + spatial-
 // relationship edges) for the sampled frame nearest `timestamp`. Same
 // `model` parameter and first-call-is-slow/cached-after behavior as
@@ -75,6 +105,15 @@ export async function getScene(id, timestamp, model = 'stock') {
     `${API_BASE_URL}/api/videos/${id}/scene?timestamp=${timestamp}&model=${model}`,
   )
   if (!res.ok) throw new Error(`Failed to load scene for ${id} (HTTP ${res.status})`)
+  return res.json()
+}
+
+// Fetch all scene graph snapshots for the whole video timeline
+export async function getScenes(id, model = 'pilot') {
+  const res = await fetch(
+    `${API_BASE_URL}/api/videos/${id}/scenes?model=${model}`,
+  )
+  if (!res.ok) throw new Error(`Failed to load scenes timeline for ${id} (HTTP ${res.status})`)
   return res.json()
 }
 

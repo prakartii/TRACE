@@ -23,3 +23,11 @@ supervision==0.30.2
 # Optional: the grounded assistant's phrasing layer. When absent (or no
 # ANTHROPIC_API_KEY), the assistant returns the deterministic retrieval answer.
 anthropic>=0.69.0
+# Regional Indian-language voice alerts (backend/intervention/tts.py).
+# Chosen over the browser Web Speech API alone because SpeechSynthesis voice
+# availability is OS/browser dependent and silently falls back to whatever
+# default voice happens to be installed when the requested language has none
+# — which is what was producing non-Indian-language speech. gTTS renders the
+# actual requested language server-side; output is cached to disk per
+# (scenario, language) since the alert phrase bank is fixed text.
+gTTS==2.5.4

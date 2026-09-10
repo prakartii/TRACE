@@ -79,11 +79,11 @@ function AppContent() {
 
           {effectiveScreen === 'Dashboard' ? (
             <Dashboard />
-          ) : effectiveScreen === 'Scenario Coverage' || effectiveScreen === 'Operational Intelligence' ? (
+          ) : effectiveScreen === 'Scenario Coverage' || effectiveScreen === 'Operational Intelligence' || effectiveScreen === 'Safety Rules & Catalog' ? (
             <ScenarioCoverage />
           ) : effectiveScreen === 'Structural View' ? (
             <StructuralView />
-          ) : effectiveScreen === 'Incidents' || effectiveScreen === 'Event Feed' ? (
+          ) : effectiveScreen === 'Incidents' || effectiveScreen === 'Event Feed' || effectiveScreen === 'Active Hazards' ? (
             <EventFeed />
           ) : effectiveScreen === 'Incident Replay' ? (
             <IncidentReplay />

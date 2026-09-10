@@ -140,7 +140,7 @@ _SAFE_ACTION_CATALOG: dict[str, tuple[str, str, list[str], str, str]] = {
             "Verify this-side-up markings against manifest specification.",
             "Ensure top load is placed on approved carton orientation.",
         ],
-        "Confirm this-side-up arrow points upward and matches SKU manifest orientation.",
+        "Confirm this-side-up arrow points upward and matches product handling orientation.",
         "Non-compliant orientation risks internal liquid leakage, shifting, and sidewall compressive failure.",
     ),
     "max_stack_height_exceeded": (
@@ -339,7 +339,11 @@ def generate_safe_action_plan(event: Union[RiskEvent, dict[str, Any]]) -> SafeAc
             immediate_action=immediate_action,
             secondary_actions=secondary,
             steps=steps,
-            verification=f"Confirm supervisor has physically verified: {verification.lower().rstrip('.')}",
+            verification=(
+                f"Confirm supervisor has physically verified: {verification.lower().replace('confirm ', '', 1).rstrip('.')}."
+                if verification.lower().startswith("confirm ")
+                else f"Confirm supervisor has physically verified: {verification.lower().rstrip('.')}."
+            ),
             reason=reason_guardrail,
             evidence_status=status_label,
             evidence_summary=(
@@ -351,25 +355,6 @@ def generate_safe_action_plan(event: Union[RiskEvent, dict[str, Any]]) -> SafeAc
             source="TRACE Epistemic Guardrail (supervisor verification required)",
             limitations=limitations or ["Preliminary observation flagged for human verification."],
         )
-
-    # 2. Supported or Probable Findings: Grounded in Catalog
-    catalog_entry = _SAFE_ACTION_CATALOG.get(effective_scenario)
-    if catalog_entry is not None:
-        title, immediate, secondary, verification, reason = catalog_entry
-    elif planner_rec is not None and getattr(planner_rec, "action", None):
-        rec_action = planner_rec.action.replace("Immediate precaution: ", "").replace("Verification required: ", "")
-        title = getattr(planner_rec, "risk_title", None) or effective_scenario.replace("_", " ").title()
-        immediate = rec_action
-        secondary = list(getattr(planner_rec, "alternative_actions", []))[:2]
-        verification = f"Confirm {immediate.lower().rstrip('.')}"
-        reason = getattr(planner_rec, "rationale", "Uncorrected handling hazards directly escalate risk.")
-    else:
-        # Generic safe fallback for unmapped scenario
-        title = effective_scenario.replace("_", " ").title() if effective_scenario else "Recorded Operational Hazard"
-        immediate = "Pause operation and inspect the workstation."
-        secondary = ["Consult supervisor for task-specific handling procedure."]
-        verification = "Confirm supervisor has verified handling method before resuming."
-        reason = "Unmapped scenario requires standard supervisor verification to ensure handling safety."
 
     # Format structured steps (Immediate first, followed by secondary actions)
     steps = [immediate] + list(secondary)
