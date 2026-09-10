@@ -12,6 +12,7 @@ import SceneOverlay from '../components/video/SceneOverlay.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
 import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
+import { useVideoTracks } from '../hooks/useVideoTracks.js'
 import { useIntervention } from '../context/InterventionContext.jsx'
 import InterventionStatusChip from '../components/intervention/InterventionStatusChip.jsx'
 
@@ -299,6 +300,7 @@ export default function IncidentReplay() {
 
   const perception = useOverlayData(getEntities, true, selectedVideo?.id, currentTime, modelName)
   const scene = useOverlayData(getScene, sceneEnabled, selectedVideo?.id, currentTime, modelName)
+  const videoTracks = useVideoTracks(selectedVideo?.id, modelName)
 
   useEffect(() => {
     const el = videoRef.current
@@ -329,6 +331,12 @@ export default function IncidentReplay() {
   const handleLoadedMetadata = (event) => {
     const d = event.currentTarget.duration
     setDuration(d)
+    if (event.currentTarget.clientWidth && event.currentTarget.clientHeight) {
+      setVideoBoxSize({
+        width: event.currentTarget.clientWidth,
+        height: event.currentTarget.clientHeight,
+      })
+    }
     if (!hasSeekedToInitial && targetTimestamp > 0) {
       seekToTimestamp(targetTimestamp)
       setHasSeekedToInitial(true)
@@ -730,6 +738,9 @@ export default function IncidentReplay() {
                   <FaceRedactionOverlay
                     entities={perception.data?.entities}
                     frame={perception.data}
+                    getEntitiesAtTime={videoTracks.getEntitiesAtTime}
+                    currentTime={currentTime}
+                    videoRef={videoRef}
                     sourceWidth={selectedVideo?.metadata?.width || 1280}
                     sourceHeight={selectedVideo?.metadata?.height || 720}
                     displayWidth={videoBoxSize.width}

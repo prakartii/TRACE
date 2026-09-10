@@ -198,3 +198,21 @@ def test_invalid_model_name_returns_422(client):
     )
 
     assert response.status_code == 422
+
+
+def test_get_tracks_returns_timeline_frames(client):
+    video_id = _video_id(client)
+
+    response = client.get(f"/api/videos/{video_id}/tracks", params={"model": "stock"})
+    assert response.status_code == 200
+    frames = response.json()
+    assert isinstance(frames, list)
+    if frames:
+        assert "timestamp" in frames[0]
+        assert "entities" in frames[0]
+
+
+def test_get_tracks_unknown_video_returns_404(client):
+    response = client.get("/api/videos/unknown-nonexistent/tracks")
+    assert response.status_code == 404
+

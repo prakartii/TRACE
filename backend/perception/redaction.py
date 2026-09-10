@@ -65,10 +65,24 @@ def head_region(box: BBox, frame_w: int, frame_h: int, config: RedactionConfig) 
     x1, y1, x2, y2 = box
     bw = max(0.0, x2 - x1)
     bh = max(0.0, y2 - y1)
-    cx = (x1 + x2) / 2.0
+    if bw <= 0.0 or bh <= 0.0:
+        return (0, 0, 0, 0)
 
-    head_h = bh * config.head_fraction
-    half_w = (bw * config.head_width_fraction) / 2.0
+    cx = (x1 + x2) / 2.0
+    aspect = bw / bh
+
+    # Adaptive head fraction based on worker posture:
+    # Upright: head is top ~35%.
+    # Stooping/crouching (aspect >= 0.85): height is compressed, head/face occupies larger fraction of vertical profile.
+    if aspect >= 0.85:
+        head_frac = min(0.48, config.head_fraction * 1.35)
+        width_frac = max(config.head_width_fraction, 0.85)
+    else:
+        head_frac = config.head_fraction
+        width_frac = config.head_width_fraction
+
+    head_h = max(20.0, bh * head_frac)
+    half_w = max(14.0, (bw * width_frac) / 2.0)
     pad_x = half_w * 2.0 * config.pad
     pad_y = head_h * config.pad
 
@@ -84,6 +98,7 @@ def head_region(box: BBox, frame_w: int, frame_h: int, config: RedactionConfig) 
     if ix2 <= ix1 or iy2 <= iy1:
         return (0, 0, 0, 0)
     return (ix1, iy1, ix2, iy2)
+
 
 
 def _obscure_patch(patch: np.ndarray, config: RedactionConfig) -> np.ndarray:

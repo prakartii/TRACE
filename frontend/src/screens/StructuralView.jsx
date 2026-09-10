@@ -19,6 +19,7 @@ import { getFindings, getScenes, listVideos, listZones, listManifests, streamUrl
 import { getScenarioConfig, getVideoScenarioInfo } from '../lib/scenarios.js'
 import { useLiveViewContext } from '../LiveViewContext.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
+import { useVideoTracks } from '../hooks/useVideoTracks.js'
 import { humanizeAction, humanizeTitle } from '../lib/format.js'
 import FaceRedactionOverlay from '../components/video/FaceRedactionOverlay.jsx'
 
@@ -75,6 +76,7 @@ export default function StructuralView() {
   const videoContainerRef = useRef(null)
   const scenesCacheRef = useRef({})
   const [videoBoxSize, setVideoBoxSize] = useState({ width: 640, height: 360 })
+  const videoTracks = useVideoTracks(selectedId, 'pilot')
 
   // Measure video container for overlays
   useEffect(() => {
@@ -632,7 +634,15 @@ export default function StructuralView() {
                     muted
                     preload="auto"
                     className="h-full w-full object-contain"
-                    onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                    onLoadedMetadata={(e) => {
+                      setDuration(e.currentTarget.duration)
+                      if (e.currentTarget.clientWidth && e.currentTarget.clientHeight) {
+                        setVideoBoxSize({
+                          width: e.currentTarget.clientWidth,
+                          height: e.currentTarget.clientHeight,
+                        })
+                      }
+                    }}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
@@ -643,6 +653,9 @@ export default function StructuralView() {
                 {/* Face Privacy Redaction Overlay */}
                 <FaceRedactionOverlay
                   entities={personEntities}
+                  getEntitiesAtTime={videoTracks.getEntitiesAtTime}
+                  currentTime={currentTime}
+                  videoRef={videoRef}
                   sourceWidth={selectedVideo?.metadata?.width || 1280}
                   sourceHeight={selectedVideo?.metadata?.height || 720}
                   displayWidth={videoBoxSize.width}

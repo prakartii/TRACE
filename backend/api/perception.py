@@ -179,3 +179,30 @@ def get_entities(
         )
 
     return find_nearest_result(results, timestamp)
+
+
+@router.get("/{video_id}/tracks", response_model=list[PerceptionFrameResult])
+def get_tracks(
+    video_id: str,
+    model: ModelName = Query(
+        "pilot",
+        description="'stock' or 'pilot' (person+box+pallet fine-tune).",
+    ),
+    registry: VideoRegistry = Depends(get_registry),
+    pipelines: dict[str, PerceptionPipeline] = Depends(get_pipeline_registry),
+) -> list[PerceptionFrameResult]:
+    """Returns all PerceptionFrameResult frames across the video timeline.
+    Allows client-side 60fps playhead interpolation for face privacy redaction
+    and perception overlays without network lag."""
+    record = registry.get(video_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Unknown video id '{video_id}'")
+
+    try:
+        pipeline = pipelines.get(model) or pipelines["stock"]
+        results = get_cached_results(video_id, registry, pipeline, model)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return results or []
+

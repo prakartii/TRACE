@@ -12,6 +12,7 @@ import VideoLibrary from '../components/video/VideoLibrary.jsx'
 import VideoViewport from '../components/video/VideoViewport.jsx'
 import WhatIfPanel from '../components/video/WhatIfPanel.jsx'
 import { useOverlayData } from '../hooks/useOverlayData.js'
+import { useVideoTracks } from '../hooks/useVideoTracks.js'
 import { getScenarioConfig, getVideoScenarioInfo } from '../lib/scenarios.js'
 
 // Conceptual stages of the real backend sweep (perception -> four risk
@@ -66,6 +67,7 @@ export default function LiveView() {
 
   const videoRef = useRef(null)
   const modelName = pilotModelEnabled ? 'pilot' : 'stock'
+  const videoTracks = useVideoTracks(selectedId, modelName)
 
   // Always fetched: personnel boxes feed the by-default face redaction overlay,
   // independent of the `overlayEnabled` detection-box debug toggle.
@@ -304,7 +306,15 @@ export default function LiveView() {
             duration={duration}
             onTogglePlay={handleTogglePlay}
             onSeekRatio={handleSeekRatio}
-            onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+            onLoadedMetadata={(event) => {
+              setDuration(event.currentTarget.duration)
+              if (event.currentTarget.clientWidth && event.currentTarget.clientHeight) {
+                setVideoBoxSize({
+                  width: event.currentTarget.clientWidth,
+                  height: event.currentTarget.clientHeight,
+                })
+              }
+            }}
             onTimeUpdate={(event) => {
               const t = event.currentTarget.currentTime
               setCurrentTime(t)
@@ -325,6 +335,9 @@ export default function LiveView() {
                 blur while detections are unavailable. */}
             <FaceRedactionOverlay
               entities={entities}
+              getEntitiesAtTime={videoTracks.getEntitiesAtTime}
+              currentTime={currentTime}
+              videoRef={videoRef}
               sourceWidth={selectedVideo.metadata.width}
               sourceHeight={selectedVideo.metadata.height}
               displayWidth={videoBoxSize.width}

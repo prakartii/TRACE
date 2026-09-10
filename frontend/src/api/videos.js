@@ -85,6 +85,17 @@ export async function getEntities(id, timestamp, model = 'stock') {
   return res.json()
 }
 
+// Fetch all entity/person detection frames across the video timeline.
+// Used for zero-latency, 60fps frame-interpolated face redaction and perception overlay.
+export async function getTracks(id, model = 'pilot') {
+  const res = await fetch(
+    `${API_BASE_URL}/api/videos/${id}/tracks?model=${model}`,
+  )
+  if (!res.ok) throw new Error(`Failed to load tracks for ${id} (HTTP ${res.status})`)
+  return res.json()
+}
+
+
 // World model (Phase 4): a SceneGraphSnapshot (nodes + spatial-
 // relationship edges) for the sampled frame nearest `timestamp`. Same
 // `model` parameter and first-call-is-slow/cached-after behavior as
