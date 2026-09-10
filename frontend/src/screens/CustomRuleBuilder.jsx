@@ -362,15 +362,15 @@ function EvaluationPanel({ result, onClose }) {
 
       <div className="flex gap-6">
         <div>
-          <div className="font-display text-display-md font-semibold tabular-nums text-steel">{matched_count}</div>
+          <div className="text-xl font-semibold tabular-nums text-steel">{matched_count}</div>
           <div className="text-caption text-ink-soft">matched events</div>
         </div>
         <div>
-          <div className="font-display text-display-md font-semibold tabular-nums text-ink">{total_evaluated}</div>
+          <div className="text-xl font-semibold tabular-nums text-ink">{total_evaluated}</div>
           <div className="text-caption text-ink-soft">total evaluated</div>
         </div>
         <div>
-          <div className="font-display text-display-md font-semibold tabular-nums text-ink">
+          <div className="text-xl font-semibold tabular-nums text-ink">
             {total_evaluated > 0 ? `${((matched_count / total_evaluated) * 100).toFixed(1)}%` : '—'}
           </div>
           <div className="text-caption text-ink-soft">match rate</div>

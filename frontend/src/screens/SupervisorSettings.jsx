@@ -166,7 +166,7 @@ export default function SupervisorSettings() {
   return (
     <div className="flex flex-col gap-6">
       <section>
-        <h1 className="font-display text-display-lg font-semibold text-ink">settings</h1>
+        <h1 className="text-2xl font-bold text-ink">settings</h1>
         <p className="mt-1 text-body text-ink-soft">
           Manage product metadata, camera-calibrated hazard zones, and operational source manifests.
         </p>

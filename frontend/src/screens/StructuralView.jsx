@@ -423,7 +423,7 @@ export default function StructuralView() {
             <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-ink text-paper">
               <Boxes size={15} />
             </span>
-            <h1 className="font-display text-display font-semibold text-ink">2D Structural Digital Twin</h1>
+            <h1 className="text-xl font-bold text-ink">2D Structural Digital Twin</h1>
             <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-[11px] font-medium text-ok">
               {loadingScenes ? 'Loading Timeline…' : 'Frame Sync Active'}
             </span>

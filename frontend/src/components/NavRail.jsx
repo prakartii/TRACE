@@ -14,7 +14,7 @@ import {
 
 const SCREEN_META = {
   'Live View': {
-    label: '1. Live Camera Feeds',
+    label: '1. Live Feeds',
     icon: Video,
     badge: 'LIVE',
     badgeStyle: 'bg-danger text-paper font-semibold',
@@ -36,7 +36,7 @@ const SCREEN_META = {
     category: 'operations',
   },
   'Action Center': {
-    label: '5. Safe Action Center',
+    label: '5. Safe Action Plan',
     icon: Zap,
     category: 'operations',
   },

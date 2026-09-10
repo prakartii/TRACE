@@ -1,39 +1,39 @@
-import { Video, TriangleAlert, Rewind, GitCompareArrows, Zap, ChevronRight } from 'lucide-react'
+import { Video, TriangleAlert, Rewind, GitCompareArrows, Zap, ChevronRight, ArrowRight } from 'lucide-react'
 
 const STEPS = [
   {
     step: 1,
     screen: 'Live View',
     label: '1. Live Feeds',
-    shortDesc: 'Live camera monitoring',
+    shortDesc: 'What is happening right now',
     icon: Video,
   },
   {
     step: 2,
     screen: 'Incidents',
     label: '2. Active Hazards',
-    shortDesc: 'Hazard inbox & triage',
+    shortDesc: 'What needs supervisor attention',
     icon: TriangleAlert,
   },
   {
     step: 3,
     screen: 'Incident Replay',
     label: '3. Incident Replay',
-    shortDesc: 'Forensic optical review',
+    shortDesc: 'What actually happened',
     icon: Rewind,
   },
   {
     step: 4,
     screen: 'What-If Simulation',
     label: '4. What-If Simulator',
-    shortDesc: 'Test alternative placements',
+    shortDesc: 'What if we change the placement',
     icon: GitCompareArrows,
   },
   {
     step: 5,
     screen: 'Action Center',
     label: '5. Safe Action Plan',
-    shortDesc: 'Operator action checklist',
+    shortDesc: 'What the supervisor should do now',
     icon: Zap,
   },
 ]
@@ -41,85 +41,87 @@ const STEPS = [
 export default function WorkflowNav({ currentStep = 1, navigateTo, context = {} }) {
   if (!navigateTo) return null
 
+  const activeStepObj = STEPS.find((s) => s.step === currentStep) || STEPS[0]
   const nextStep = STEPS.find((s) => s.step === currentStep + 1)
   const prevStep = STEPS.find((s) => s.step === currentStep - 1)
 
   return (
-    <nav aria-label="Safety Investigation Workflow" className="flex flex-col gap-2 border border-line bg-surface p-3 text-small">
-      {/* 5-step progress track */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-caption font-semibold uppercase tracking-wider text-ink-faint">
-          <span>Safety Workflow:</span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+    <nav
+      aria-label="Intelligence Decision Workflow"
+      className="border border-line bg-surface px-4 py-3 text-small"
+    >
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+        {/* Step Track */}
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-ink-faint mr-1">
+            Workflow:
+          </span>
           {STEPS.map((s, idx) => {
             const isActive = s.step === currentStep
             const isCompleted = s.step < currentStep
             const Icon = s.icon
 
             return (
-              <div key={s.step} className="flex items-center gap-1 sm:gap-2">
+              <div key={s.step} className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   onClick={() => navigateTo(s.screen, context)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-caption font-medium transition-colors cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-caption font-medium transition-colors cursor-pointer rounded-xs ${
                     isActive
-                      ? 'bg-ink text-paper font-semibold shadow-sm'
+                      ? 'bg-ink text-paper font-semibold shadow-xs'
                       : isCompleted
-                      ? 'border border-line bg-paper text-ink hover:border-line-strong'
-                      : 'border border-transparent text-ink-soft hover:border-line hover:text-ink'
+                      ? 'border border-line bg-paper text-ink hover:border-ink'
+                      : 'border border-transparent text-ink-soft hover:text-ink'
                   }`}
-                  title={`${s.label}: ${s.shortDesc}`}
+                  title={`${s.label} — ${s.shortDesc}`}
                 >
-                  <Icon size={12} className={isActive ? 'text-signal' : isCompleted ? 'text-ok' : 'text-ink-faint'} />
+                  <Icon
+                    size={13}
+                    className={isActive ? 'text-signal' : isCompleted ? 'text-ok' : 'text-ink-faint'}
+                  />
                   <span>{s.label}</span>
                 </button>
                 {idx < STEPS.length - 1 && (
-                  <ChevronRight size={12} className="text-ink-faint shrink-0" />
+                  <ChevronRight size={13} className="text-ink-faint shrink-0" />
                 )}
               </div>
             )
           })}
         </div>
-      </div>
 
-      {/* Guidance bar for operators/judges */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2 text-caption">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-ink">
-            Step {currentStep} of 5:
-          </span>
-          <span className="text-ink-soft">
-            {currentStep === 1 && 'Observe live video feeds. When a hazard occurs, proceed to Active Hazards or Replay.'}
-            {currentStep === 2 && 'Review detected safety conditions and select an incident to inspect evidence.'}
-            {currentStep === 3 && 'Inspect video evidence at the moment of risk, evaluate telemetry, and verify resolution.'}
-            {currentStep === 4 && 'Simulate alternative cargo placements to verify stability before floor execution.'}
-            {currentStep === 5 && 'Execute certified, step-by-step corrective procedure to resolve warehouse hazard.'}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Next Step Primary Action */}
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
           {prevStep && (
             <button
               type="button"
               onClick={() => navigateTo(prevStep.screen, context)}
-              className="inline-flex items-center gap-1 text-ink-soft hover:text-ink font-medium cursor-pointer"
+              className="text-caption text-ink-soft hover:text-ink transition-colors cursor-pointer px-1.5 py-0.5"
             >
-              ← {prevStep.label}
+              ← Back
             </button>
           )}
-          {prevStep && nextStep && <span className="text-ink-faint">·</span>}
           {nextStep && (
             <button
               type="button"
               onClick={() => navigateTo(nextStep.screen, context)}
-              className="inline-flex items-center gap-1 text-ok hover:underline font-semibold cursor-pointer"
+              className="inline-flex items-center gap-1.5 bg-ink px-3 py-1.5 text-caption font-semibold text-paper transition-colors hover:bg-ink-soft cursor-pointer shadow-xs"
             >
-              Next: {nextStep.label} →
+              <span>Next: {nextStep.label}</span>
+              <ArrowRight size={13} />
             </button>
           )}
         </div>
+      </div>
+
+      {/* Purpose Banner */}
+      <div className="mt-2.5 flex items-center justify-between border-t border-line/70 pt-2 text-caption text-ink-soft">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-ink">Stage {currentStep} Focus:</span>
+          <span>{activeStepObj.shortDesc}</span>
+        </div>
+        <span className="hidden sm:inline font-mono text-[11px] text-ink-faint">
+          TRACE Decision Loop (Step {currentStep} of 5)
+        </span>
       </div>
     </nav>
   )

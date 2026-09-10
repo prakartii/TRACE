@@ -98,27 +98,10 @@ export default function PerceptionOverlay({
             style={{ left, top, width, height, borderColor: color }}
           >
             <span
-              className="absolute left-0 top-0 -translate-y-full inline-flex items-center gap-1.5 whitespace-nowrap px-1.5 py-0.5 text-caption leading-tight text-white font-sans"
+              className="absolute left-0 top-0 -translate-y-full inline-flex items-center whitespace-nowrap px-1.5 py-0.5 text-[11px] font-semibold leading-tight text-white font-sans rounded-xs shadow-xs"
               style={{ backgroundColor: color }}
             >
-              <span className="font-bold">{opLabel}</span>
-              {shortTrackId && (
-                <span className="font-mono text-[9px] opacity-80">{shortTrackId}</span>
-              )}
-              <span className="font-mono text-[9px] opacity-80">{Math.round(entity.confidence * 100)}%</span>
-              {entity.tracking_status && entity.tracking_status !== 'TRACKED' && (
-                <span
-                  className={`px-1 py-[1px] text-[8.5px] font-bold tracking-wide ${
-                    entity.tracking_status === 'REACQUIRED'
-                      ? 'bg-emerald-500 text-white ring-1 ring-white'
-                      : entity.tracking_status === 'TEMPORARILY_LOST'
-                        ? 'bg-amber-400 text-neutral-950 font-semibold'
-                        : 'bg-white/20 text-neutral-100'
-                  }`}
-                >
-                  {entity.tracking_status}
-                </span>
-              )}
+              {opLabel}
             </span>
           </div>
         )

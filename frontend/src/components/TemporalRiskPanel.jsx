@@ -54,7 +54,7 @@ function getHumanPredictionStory(pred) {
         when: 'Before final staging or dispatch palletizing.',
         recommendedResponse: 'Lift and rotate carton to upright orientation matching the manifest label.',
         derivationChain: [
-          'What we saw: Horizontal floor dragging followed by aspect ratio shift',
+          'What we saw: Horizontal floor dragging followed by package tipping sideways',
           'Pattern found: Dragging motion altered final package orientation',
           'What may happen: Staging orientation violation causing internal cargo damage',
         ],
@@ -69,8 +69,8 @@ function getHumanPredictionStory(pred) {
         when: 'During manual transit across the staging aisle.',
         recommendedResponse: 'Halt solo lifting; assign two-person team lift or dispatch mechanical lifting cart.',
         derivationChain: [
-          'What we saw: Heavy SKU handled by single operator followed by velocity spike',
-          'Pattern found: Solo heavy carry followed by kinematic instability',
+          'What we saw: Heavy cargo handled by single operator followed by sudden slip',
+          'Pattern found: Solo heavy carry followed by grip instability',
           'What may happen: Worker fatigue resulting in complete drop impact',
         ],
       }
@@ -380,7 +380,7 @@ export default function TemporalRiskPanel({
         <div className="flex items-center gap-3">
           <span className="h-2 w-2 animate-pulse motion-reduce:animate-none bg-signal" />
           <div>
-            <h3 className="font-display text-display-md font-semibold text-paper">
+            <h3 className="text-xl font-semibold text-paper">
               early warning & operational patterns
             </h3>
             <p className="mt-0.5 text-caption text-paper/60">

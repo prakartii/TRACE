@@ -42,7 +42,7 @@ export default function Header({ backendStatus }) {
     <header className="border-b border-line bg-surface">
       <div className="mx-auto flex max-w-[1240px] items-center justify-between px-6 py-3.5">
         <div className="flex items-baseline gap-3">
-          <span className="font-display text-[1.75rem] font-bold leading-none tracking-tight text-ink">
+          <span className="text-[1.75rem] font-bold leading-none tracking-tight text-ink">
             TRACE<span className="text-signal">.</span>
           </span>
           <span className="hidden text-small text-ink-soft sm:inline">
@@ -54,32 +54,10 @@ export default function Header({ backendStatus }) {
             <button
               type="button"
               onClick={() => setSelectedAlert && bannerAlert && setSelectedAlert(bannerAlert)}
-              className="flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-3 py-1 text-xs font-bold text-danger transition-transform hover:scale-105"
+              className="flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-3 py-1 text-caption font-bold text-danger transition-transform hover:scale-105 cursor-pointer"
             >
               <ShieldAlert className="h-3.5 w-3.5 animate-pulse" />
-              <span>{activeCount} {activeCount === 1 ? 'Alert' : 'Alerts'} Active</span>
-            </button>
-          )}
-
-          <div className="flex items-center gap-1.5 font-mono text-caption text-ink-soft" title={`Real-time Stream: ${connectionStatus}`}>
-            <span
-              className={`h-2 w-2 rounded-full ${
-                connectionStatus === 'connected' ? 'bg-ok' : connectionStatus === 'connecting' ? 'bg-signal' : 'bg-steel'
-              }`}
-            />
-            <span>{connectionStatus === 'connected' ? 'live monitoring' : 'offline fallback'}</span>
-          </div>
-
-          <div className="h-3 w-px bg-line" />
-
-          {setRole && (
-            <button
-              type="button"
-              onClick={() => setRole(role === 'operator' ? 'supervisor' : 'operator')}
-              title="Responsible-AI view mode (presentation filter, not enforced access)"
-              className="font-mono text-caption text-ink-soft hover:text-ink"
-            >
-              view: <span className="font-semibold text-ink">{role}</span>
+              <span>{activeCount} {activeCount === 1 ? 'Hazard Alert' : 'Hazard Alerts'} Active</span>
             </button>
           )}
 
@@ -99,25 +77,19 @@ export default function Header({ backendStatus }) {
                     )
                   }
                 }}
-                title={
-                  voice.enabled
-                    ? 'Voice alerts on'
-                    : voice.voiceAvailable
-                      ? 'Enable voice alerts'
-                      : 'Enable voice alerts (no installed voice for this language — will read English)'
-                }
-                className={`inline-flex items-center gap-1 font-mono text-caption ${
-                  voice.enabled ? 'text-ink' : 'text-ink-soft hover:text-ink'
+                title={voice.enabled ? 'Voice alerts active' : 'Enable voice alerts'}
+                className={`inline-flex items-center gap-1 text-caption font-medium transition-colors cursor-pointer ${
+                  voice.enabled ? 'text-ink font-semibold' : 'text-ink-soft hover:text-ink'
                 }`}
               >
-                {voice.enabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                voice
+                {voice.enabled ? <Volume2 size={13} className="text-signal" /> : <VolumeX size={13} />}
+                <span>Voice</span>
               </button>
               {voice.enabled && (
                 <select
                   value={voice.lang}
                   onChange={(e) => voice.setLang(e.target.value)}
-                  className="border border-line bg-paper px-1 py-0.5 font-mono text-caption text-ink focus:border-ink"
+                  className="border border-line bg-paper px-1 py-0.5 text-caption text-ink focus:border-ink"
                 >
                   {voice.langs.map((l) => (
                     <option key={l.code} value={l.code}>
@@ -131,9 +103,47 @@ export default function Header({ backendStatus }) {
 
           <div className="h-3 w-px bg-line" />
 
-          <div className="flex items-center gap-2 font-mono text-caption text-ink-soft">
-            <span className={`h-2 w-2 ${s.dot}`} />
-            {s.label}
+          {/* Backend Status indicator */}
+          <div className="flex items-center gap-1.5 font-mono text-caption text-ink-soft" title={s.label}>
+            <span className={`h-2 w-2 rounded-full ${s.dot}`} />
+            <span className="hidden sm:inline">{s.label}</span>
+          </div>
+
+          <div className="h-3 w-px bg-line" />
+
+          {/* Role Switcher */}
+          <div className="flex items-center gap-1.5 text-caption">
+            <span className="font-medium text-ink-soft">Role:</span>
+            <div
+              className="inline-flex rounded border border-line bg-paper p-0.5"
+              role="group"
+              aria-label="Select role view"
+            >
+              <button
+                type="button"
+                onClick={() => setRole?.('supervisor')}
+                className={`rounded px-2.5 py-0.5 text-caption font-medium transition-colors cursor-pointer ${
+                  role === 'supervisor'
+                    ? 'bg-ink text-paper font-semibold shadow-sm'
+                    : 'text-ink-soft hover:text-ink hover:bg-surface'
+                }`}
+                title="Switch to Supervisor view (all screens & intelligence)"
+              >
+                Supervisor
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole?.('operator')}
+                className={`rounded px-2.5 py-0.5 text-caption font-medium transition-colors cursor-pointer ${
+                  role === 'operator'
+                    ? 'bg-ink text-paper font-semibold shadow-sm'
+                    : 'text-ink-soft hover:text-ink hover:bg-surface'
+                }`}
+                title="Switch to Operator view (shop-floor operations)"
+              >
+                Operator
+              </button>
+            </div>
           </div>
         </div>
       </div>

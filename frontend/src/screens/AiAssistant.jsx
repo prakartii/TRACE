@@ -90,19 +90,19 @@ export default function AiAssistant() {
   return (
     <div className="flex flex-col gap-3 pb-2">
       {/* Top Header */}
-      <section className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-2">
+      <section className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
         <div>
           <div className="flex items-center gap-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-ink text-paper">
               <Bot size={15} />
             </span>
-            <h1 className="font-display text-display font-semibold text-ink">Safety Assistant</h1>
-            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-[11px] font-medium text-ok">
-              Live
+            <h1 className="text-xl font-bold text-ink">Supervisor AI Assistant</h1>
+            <span className="border border-ok/40 bg-ok/10 px-2 py-0.5 text-[11px] font-bold text-ok">
+              Live Grounded Agent
             </span>
           </div>
-          <p className="mt-0.5 text-caption text-ink-soft">
-            Ask about warehouse safety alerts, high-risk areas, or safe handling guidelines.
+          <p className="mt-1 text-small text-ink-soft">
+            Natural language safety intelligence grounded strictly in verified camera detections, shift reports, and deterministic physics rules.
           </p>
         </div>
 
@@ -110,19 +110,19 @@ export default function AiAssistant() {
           <button
             type="button"
             onClick={handleClear}
-            className="inline-flex items-center gap-1.5 border border-line bg-surface px-2.5 py-1 text-caption font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
+            className="inline-flex items-center gap-1.5 border border-line bg-surface px-3 py-1.5 text-caption font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink cursor-pointer"
           >
-            <RotateCcw size={12} />
-            clear chat
+            <RotateCcw size={13} />
+            Clear Chat
           </button>
         )}
       </section>
 
       {/* Quick Intent Pills */}
-      <section className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-caption">
-        <span className="inline-flex items-center gap-1 text-ink-faint shrink-0">
+      <section className="flex items-center gap-1.5 overflow-x-auto pb-1 text-caption">
+        <span className="inline-flex items-center gap-1 font-bold text-ink-faint shrink-0 uppercase text-[10px]">
           <ListFilter size={12} />
-          quick questions:
+          Quick Questions:
         </span>
         {CATEGORY_PROMPTS.map((cp) => (
           <button
@@ -130,15 +130,15 @@ export default function AiAssistant() {
             type="button"
             onClick={() => send(cp.query)}
             disabled={loading}
-            className="shrink-0 border border-line bg-surface px-2 py-0.5 text-caption font-medium text-ink-soft transition-all hover:border-ink hover:bg-paper hover:text-ink disabled:opacity-50"
+            className="shrink-0 border border-line bg-surface px-2.5 py-1 text-caption font-semibold text-ink-soft transition-all hover:border-ink hover:bg-paper hover:text-ink disabled:opacity-50 cursor-pointer"
           >
             {cp.label}
           </button>
         ))}
       </section>
 
-      {/* Chat Container - Compact Height & Scrollable */}
-      <section className="flex h-[480px] max-h-[60vh] flex-col border border-line bg-surface shadow-xs">
+      {/* Chat Container - Spacious & Scrollable */}
+      <section className="flex h-[620px] max-h-[75vh] flex-col border border-line bg-surface shadow-sm">
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3 scroll-smooth">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center py-6 text-center">

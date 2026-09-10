@@ -34,7 +34,7 @@ export default function ScenarioCoverage() {
             <Crosshair size={13} />
             <span>Safety Overview</span>
           </div>
-          <h1 className="mt-1 font-display text-display font-semibold text-ink">
+          <h1 className="mt-1 text-2xl font-bold text-ink">
             Scenario Coverage &amp; Hazard Catalog
           </h1>
           <p className="mt-1 text-body text-ink-soft">

@@ -83,14 +83,14 @@ export default function SceneOverlay({ snapshot, sourceWidth, sourceHeight }) {
             <text
               x={px(node) + 12}
               y={py(node) + 5}
-              fontSize="24"
+              fontSize="22"
               fontWeight="600"
               fill={color}
               stroke="#fff"
               strokeWidth="3"
               paintOrder="stroke"
             >
-              {node.entity_class} {node.entity_id.split(':').pop()}
+              {node.entity_class === 'person' ? 'Worker' : node.entity_class === 'box' ? 'Cargo' : node.entity_class === 'pallet' ? 'Pallet' : node.entity_class}
             </text>
           </g>
         )

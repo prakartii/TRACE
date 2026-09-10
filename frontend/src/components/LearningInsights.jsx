@@ -43,7 +43,7 @@ export default function LearningInsights() {
   return (
     <section className="flex flex-col gap-6">
       <div className="flex items-baseline justify-between">
-        <h2 className="font-display text-display-md font-semibold text-ink">Pattern memory</h2>
+        <h2 className="text-xl font-bold text-ink">Pattern memory</h2>
         <span className="font-mono text-caption text-ink-faint">
           aggregated from the event log — no autonomous learning
         </span>

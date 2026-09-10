@@ -24,11 +24,56 @@ from backend.db.db import get_db
 from backend.db.events import get_event_by_id
 from backend.perception.pipeline import PerceptionPipeline
 from backend.planner.whatif import run_what_if_trajectory
+from backend.planner.whatif_safety import (
+    build_what_if_safety_simulation,
+    get_supported_what_if_events,
+)
 from backend.video.registry import VideoRegistry
 from backend.world_model.scene_graph import WorldModel
 
 router = APIRouter(prefix="/api/planner", tags=["whatif_trajectory"])
 canonical_router = APIRouter(prefix="/planner", tags=["whatif_canonical"])
+
+
+@router.get("/whatif/supported")
+def list_supported_whatif_events(
+    video_id: Optional[str] = Query(default=None, description="Optional video ID filter"),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[dict]:
+    """Authoritative capability check: returns only validated events supported for What-If safety simulation."""
+    return get_supported_what_if_events(db_conn=conn, video_id=video_id)
+
+
+@canonical_router.get("/whatif/supported")
+def list_supported_whatif_events_canonical(
+    video_id: Optional[str] = Query(default=None),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[dict]:
+    return get_supported_what_if_events(db_conn=conn, video_id=video_id)
+
+
+@router.get("/whatif/simulation/{event_id}")
+def get_safety_whatif_simulation(
+    event_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Retrieves human-readable evidence-grounded What-If Safety Simulation for an event."""
+    sim = build_what_if_safety_simulation(event_id=event_id, db_conn=conn)
+    if sim is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"What-If simulation not supported or not found for Event #{event_id}.",
+        )
+    return sim
+
+
+@canonical_router.get("/whatif/simulation/{event_id}")
+def get_safety_whatif_simulation_canonical(
+    event_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    return get_safety_whatif_simulation(event_id=event_id, conn=conn)
+
 
 
 @router.post("/whatif", response_model=WhatIfTrajectoryResult)
@@ -147,6 +192,31 @@ def simulate_trajectory_whatif_canonical(
     """Canonical path alias for POST /planner/whatif (ARCHITECTURE.md Part 6 Screen 9)."""
     return simulate_trajectory_whatif(
         req=req,
+        registry=registry,
+        pipelines=pipelines,
+        world_model=world_model,
+        conn=conn,
+    )
+
+
+@canonical_router.get("/whatif/{event_id}", response_model=WhatIfTrajectoryResult)
+def get_event_trajectory_whatif_canonical(
+    event_id: int,
+    candidate_id: Optional[str] = Query(default=None),
+    model: str = Query(default="pilot"),
+    window_before: float = Query(default=3.0, ge=0.0),
+    window_after: float = Query(default=4.0, ge=0.0),
+    registry: VideoRegistry = Depends(get_registry),
+    pipelines: dict[str, PerceptionPipeline] = Depends(get_pipeline_registry),
+    world_model: WorldModel = Depends(get_world_model),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> WhatIfTrajectoryResult:
+    return get_event_trajectory_whatif(
+        event_id=event_id,
+        candidate_id=candidate_id,
+        model=model,
+        window_before=window_before,
+        window_after=window_after,
         registry=registry,
         pipelines=pipelines,
         world_model=world_model,

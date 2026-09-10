@@ -69,3 +69,41 @@ export async function getEventTrajectory(eventId, candidateId = null, model = 'p
   }
   return res.json()
 }
+
+/**
+ * Retrieves the authoritative list of validated events supported for What-If safety simulation.
+ *
+ * @param {string} [videoId]
+ * @returns {Promise<Array<Object>>}
+ */
+export async function getSupportedWhatIfEvents(videoId = null) {
+  const url = videoId
+    ? `${API_BASE_URL}/api/planner/whatif/supported?video_id=${encodeURIComponent(videoId)}`
+    : `${API_BASE_URL}/api/planner/whatif/supported`
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`Failed to load supported What-If events (HTTP ${res.status})`)
+  }
+  return res.json()
+}
+
+/**
+ * Retrieves evidence-grounded What-If Safety Simulation for an event.
+ *
+ * @param {number|string} eventId
+ * @returns {Promise<Object>}
+ */
+export async function getSafetyWhatIfSimulation(eventId) {
+  const url = `${API_BASE_URL}/api/planner/whatif/simulation/${eventId}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    let errorMsg = `Failed to load What-If simulation for event #${eventId} (HTTP ${res.status})`
+    try {
+      const data = await res.json()
+      if (data.detail) errorMsg = data.detail
+    } catch (_) {}
+    throw new Error(errorMsg)
+  }
+  return res.json()
+}
+

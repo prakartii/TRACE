@@ -9,6 +9,8 @@ venv/
 # Backend runtime data
 backend/db/*.db
 backend/db/*.sqlite3
+*.db
+
 
 # Node / frontend
 frontend/node_modules/

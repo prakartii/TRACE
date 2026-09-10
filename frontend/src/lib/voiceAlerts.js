@@ -139,9 +139,7 @@ export function spokenTextFor(alert, langCode) {
   if (!alert) return ''
   const byScenario = SPOKEN[alert.scenario]
   if (byScenario && byScenario[langCode]) return byScenario[langCode]
-  if (langCode === 'en') return alert.immediate_action || byScenario?.en || GENERIC.en
-  // No reviewed translation for this phrase → speak the English action, and the
-  // caller surfaces that it was not translated.
+  if (byScenario && byScenario.en) return byScenario.en
   return alert.immediate_action || GENERIC[langCode] || GENERIC.en
 }
 

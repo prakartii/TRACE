@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, ShieldAlert, Volume2, X } from 'lucide-react'
 import { useIntervention } from '../../context/InterventionContext.jsx'
 import { spokenTextFor } from '../../lib/voiceAlerts.js'
+import { humanizeAction, humanizeTitle } from '../../lib/format.js'
 
 export default function InterventionBanner({ onOpenDetail }) {
   const {
@@ -65,55 +66,54 @@ export default function InterventionBanner({ onOpenDetail }) {
 
   return (
     <div
-      className={`mb-6 overflow-hidden rounded-xl border-2 shadow-sm transition-all ${borderClass}`}
+      className={`mb-4 overflow-hidden rounded-lg border-2 shadow-xs transition-all ${borderClass}`}
       role="alert"
     >
-      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
         {/* Left: What is happening + Urgency */}
-        <div className="flex items-start gap-3.5">
+        <div className="flex items-center gap-3">
           <div
-            className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
               isCritical ? 'bg-danger text-white' : 'bg-signal text-ink'
             }`}
           >
-            <ShieldAlert className="h-5 w-5" />
+            <ShieldAlert className="h-4 w-4" />
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`rounded px-2 py-0.5 text-[11px] font-bold tracking-wider uppercase ${badgeClass}`}
+                className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wider uppercase ${badgeClass}`}
               >
                 {bannerAlert.severity} — {bannerAlert.urgency}
               </span>
+              <h3 className="text-small font-bold text-ink inline">
+                {humanizeTitle(bannerAlert.title, bannerAlert.scenario)}
+              </h3>
             </div>
 
-            <h3 className="mt-1 text-base font-bold text-ink">
-              {bannerAlert.title}
-            </h3>
-
             {/* WHAT TO DO NOW (Primary prominent scan element) */}
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-ink-soft">
+            <div className="mt-0.5 flex items-baseline gap-1.5">
+              <span className="text-label font-bold uppercase tracking-wider text-ink-soft">
                 Action:
               </span>
-              <p className="text-sm font-semibold text-ink">
-                {bannerAlert.immediate_action}
+              <p className="text-small font-bold text-ink">
+                {humanizeAction(bannerAlert.immediate_action, bannerAlert.scenario)}
               </p>
             </div>
           </div>
         </div>
 
         {/* Right: Operational Actions */}
-        <div className="flex items-center gap-2.5 sm:self-center">
+        <div className="flex items-center gap-2 shrink-0 sm:self-center">
           {bannerAlert.state === 'NEW' && (
             <button
               type="button"
               onClick={handleAcknowledge}
               disabled={acknowledging}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-ink/20 bg-ink px-3.5 py-1.5 text-xs font-semibold text-paper shadow-sm transition-all hover:bg-ink/90 active:scale-95 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md border border-ink/20 bg-ink px-3 py-1 text-caption font-semibold text-paper shadow-xs transition-all hover:bg-ink/90 active:scale-95 disabled:opacity-50 cursor-pointer"
             >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              {acknowledging ? 'Acknowledging...' : 'Acknowledge'}
+              <CheckCircle2 className="h-3 w-3" />
+              {acknowledging ? 'Acknowledging…' : 'Acknowledge'}
             </button>
           )}
 
@@ -124,7 +124,7 @@ export default function InterventionBanner({ onOpenDetail }) {
                 voice.speak(spokenTextFor(bannerAlert, voice.lang), { force: true })
               }
               title={`Speak this alert${voice.enabled ? '' : ' (voice alerts off)'}`}
-              className="rounded-lg border border-line-strong bg-paper p-1.5 text-ink shadow-sm transition-all hover:bg-paper-subtle active:scale-95"
+              className="rounded-md border border-line-strong bg-paper p-1 text-ink shadow-xs transition-all hover:bg-paper-subtle active:scale-95 cursor-pointer"
             >
               <Volume2 className="h-3.5 w-3.5" />
             </button>
@@ -133,16 +133,16 @@ export default function InterventionBanner({ onOpenDetail }) {
           <button
             type="button"
             onClick={() => onOpenDetail && onOpenDetail(bannerAlert)}
-            className="inline-flex items-center gap-1 rounded-lg border border-line-strong bg-paper px-3 py-1.5 text-xs font-medium text-ink shadow-sm transition-all hover:bg-paper-subtle active:scale-95"
+            className="inline-flex items-center gap-1 rounded-md border border-line-strong bg-paper px-2.5 py-1 text-caption font-semibold text-ink shadow-xs transition-all hover:bg-paper-subtle active:scale-95 cursor-pointer"
           >
             <span>View Safe Plan</span>
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="h-3 w-3" />
           </button>
 
           <button
             type="button"
             onClick={() => dismissBanner(bannerAlert.alert_id)}
-            className="rounded p-1.5 text-ink-faint transition-colors hover:bg-paper hover:text-ink"
+            className="rounded p-1 text-ink-faint transition-colors hover:bg-paper hover:text-ink cursor-pointer"
             title="Dismiss from banner"
           >
             <X className="h-4 w-4" />

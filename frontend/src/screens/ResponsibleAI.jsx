@@ -82,7 +82,7 @@ export default function ResponsibleAI() {
       <section>
         <div className="flex items-center gap-2">
           <ShieldCheck size={20} className="text-ok" />
-          <h1 className="font-display text-display-lg font-semibold text-ink">Responsible AI</h1>
+          <h1 className="text-2xl font-bold text-ink">Responsible AI</h1>
         </div>
         {status && (
           <p className="mt-2 max-w-3xl border-l-2 border-ok bg-ok/5 px-3 py-2 text-small text-ink">
@@ -326,7 +326,7 @@ function Stat({ label, value, tone }) {
     tone === 'danger' ? 'text-danger' : tone === 'signal' ? 'text-[#8a5f00]' : 'text-ink'
   return (
     <div className="bg-paper p-3">
-      <div className={`font-display text-display-md font-semibold tabular-nums ${toneCls}`}>{value}</div>
+      <div className={`text-xl font-semibold tabular-nums ${toneCls}`}>{value}</div>
       <div className="text-label text-ink-faint">{label}</div>
     </div>
   )

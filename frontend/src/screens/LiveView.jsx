@@ -320,77 +320,82 @@ export default function LiveView() {
           </div>
         )}
 
-        {selectedVideo && (
-          <div className="flex items-center justify-between border border-line border-t-0 bg-surface px-3 py-1.5 text-caption text-ink-soft">
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-ok" />
-              <span className="font-medium text-ink">Worker Privacy Active:</span>
-              <span>Personnel faces obscured by default</span>
+        {/* Compact Viewport Controls & Privacy Status */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-surface px-4 py-2 text-caption">
+          <div className="flex items-center gap-4">
+            <details className="relative">
+              <summary className="cursor-pointer font-medium text-ink-soft hover:text-ink select-none flex items-center gap-1.5">
+                <span>Vision Overlays ({entities.length} tracked)</span>
+                <span className="font-mono text-[10px]">▾</span>
+              </summary>
+              <div className="absolute left-0 top-full mt-1.5 z-20 w-64 border border-line bg-surface p-3 shadow-md space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={overlayEnabled}
+                    disabled={!selectedVideo}
+                    onChange={(e) => {
+                      setOverlayEnabled(e.target.checked)
+                      if (e.target.checked) setPilotModelEnabled(true)
+                    }}
+                    className="accent-ink"
+                  />
+                  <span className="font-medium text-ink">Object Detections</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={sceneEnabled}
+                    disabled={!selectedVideo}
+                    onChange={(e) => setSceneEnabled(e.target.checked)}
+                    className="accent-ink"
+                  />
+                  <span className="font-medium text-ink">Support &amp; Stacking Relations</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={findingsEnabled}
+                    disabled={!selectedVideo}
+                    onChange={(e) => setFindingsEnabled(e.target.checked)}
+                    className="accent-ink"
+                  />
+                  <span className="font-medium text-ink">Active Hazard Evaluation</span>
+                </label>
+              </div>
+            </details>
+
+            <span className="text-ink-faint">|</span>
+
+            <span className="flex items-center gap-1.5 text-ink-soft">
+              <span className="h-1.5 w-1.5 rounded-full bg-ok" />
+              <span>Face Privacy Active</span>
             </span>
-            <span className="font-mono text-[11px] text-ink-faint">live stream</span>
-          </div>
-        )}
-
-        {/* Streamlined Controls Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border border-line bg-surface px-4 py-2.5 text-caption">
-          <div className="flex flex-wrap items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={overlayEnabled}
-                disabled={!selectedVideo}
-                onChange={(e) => {
-                  setOverlayEnabled(e.target.checked)
-                  if (e.target.checked) setPilotModelEnabled(true)
-                }}
-                className="accent-ink"
-              />
-              <span className="font-medium text-ink">Object Detection</span>
-              <span className="text-ink-faint">({entities.length} tracked)</span>
-            </label>
-
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={sceneEnabled}
-                disabled={!selectedVideo}
-                onChange={(e) => setSceneEnabled(e.target.checked)}
-                className="accent-ink"
-              />
-              <span className="font-medium text-ink">Stacking &amp; Alignment Overlays</span>
-            </label>
-
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={findingsEnabled}
-                disabled={!selectedVideo}
-                onChange={(e) => setFindingsEnabled(e.target.checked)}
-                className="accent-ink"
-              />
-              <span className="font-medium text-ink">Live Hazard Warnings</span>
-            </label>
           </div>
 
-          <button
-            type="button"
-            onClick={() => navigateTo('Incident Replay', { videoId: selectedId })}
-            className="font-medium text-ink-soft hover:text-ink hover:underline text-caption"
-          >
-            Replay in Forensics →
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigateTo('Incident Replay', { videoId: selectedId, timestamp: currentTime })}
+              className="font-semibold text-ink hover:underline text-caption cursor-pointer"
+            >
+              Investigate Incident Evidence (Step 3) →
+            </button>
+          </div>
         </div>
 
         {findingsEnabled && (
-          <div className="border border-line bg-surface p-4">
-            <FindingsPanel
-              findings={findings.data}
-              loading={findings.loading}
-              error={findings.error}
-              currentTime={currentTime}
-              onSimulateWhatIf={handleSimulateWhatIf}
-            />
-          </div>
+          <FindingsPanel
+            findings={findings.data}
+            loading={findings.loading}
+            error={findings.error}
+            currentTime={currentTime}
+            onSimulateWhatIf={handleSimulateWhatIf}
+            onReviewHazard={() => navigateTo('Incidents', { videoId: selectedId, timestamp: currentTime })}
+            onReplayIncident={() => navigateTo('Incident Replay', { videoId: selectedId, timestamp: currentTime })}
+          />
         )}
 
         {(whatIfSimulation || whatIfLoading || whatIfError) && (
