@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from backend.contracts.models import BoundingBox, Entity, EntityClass
 from backend.perception.config import STOCK_COCO_IDENTITY, TRACE_PILOT_IDENTITY
+from backend.perception.pose import PersonPose
 from backend.perception.tracker import TrackedObject
 
 STOCK_COCO_CLASS_MAP: dict[str, EntityClass] = {
@@ -58,24 +59,65 @@ CLASS_MAP_BY_MODEL_IDENTITY: dict[str, dict[str, EntityClass]] = {
 CLASS_MAP = STOCK_COCO_CLASS_MAP
 
 
+def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """Intersection-over-union between two (x1, y1, x2, y2) boxes."""
+    x1 = max(a[0], b[0])
+    y1 = max(a[1], b[1])
+    x2 = min(a[2], b[2])
+    y2 = min(a[3], b[3])
+    inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    area_a = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    area_b = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _match_pose(
+    tracked_bbox: tuple[float, float, float, float],
+    pose_persons: list[PersonPose],
+    min_iou: float = 0.3,
+) -> PersonPose | None:
+    """Best pose match for a tracked person box by IoU, else None."""
+    best: PersonPose | None = None
+    best_iou = 0.0
+    for pp in pose_persons:
+        iou = _iou(tracked_bbox, pp.bbox)
+        if iou > best_iou:
+            best_iou = iou
+            best = pp
+    return best if best_iou >= min_iou else None
+
+
 def tracked_objects_to_entities(
     tracked_objects: list[TrackedObject],
     *,
     source_id: str,
     timestamp: float,
     model_identity: str = STOCK_COCO_IDENTITY,
+    pose_persons: list[PersonPose] | None = None,
 ) -> list[Entity]:
     """Converts one frame's `TrackedObject`s into `Entity`s, silently
     dropping any object whose class isn't in the active model's class map
     (see module docstring) rather than fabricating a TRACE class for it.
     An unrecognized `model_identity` falls back to the stock map — the
-    safe default is "detect nothing new", never "guess"."""
+    safe default is "detect nothing new", never "guess".
+
+    When `pose_persons` is supplied, a matching pose (by bbox IoU) is attached
+    to each `person` entity's ``keypoints``; unmatched persons carry None.
+    """
+    pose_persons = pose_persons or []
     class_map = CLASS_MAP_BY_MODEL_IDENTITY.get(model_identity, STOCK_COCO_CLASS_MAP)
     entities: list[Entity] = []
     for obj in tracked_objects:
         entity_class = class_map.get(obj.class_name)
         if entity_class is None:
             continue
+        bbox = (obj.x1, obj.y1, obj.x2, obj.y2)
+        keypoints = None
+        if entity_class == EntityClass.PERSON and pose_persons:
+            match = _match_pose(bbox, pose_persons)
+            if match is not None:
+                keypoints = match.keypoints
         entities.append(
             Entity(
                 id=f"{source_id}:{obj.track_id}",
@@ -84,7 +126,7 @@ def tracked_objects_to_entities(
                 bbox=BoundingBox(x1=obj.x1, y1=obj.y1, x2=obj.x2, y2=obj.y2),
                 confidence=min(max(obj.confidence, 0.0), 1.0),
                 timestamp=timestamp,
-                keypoints=None,  # pose estimation is not implemented in Phase 3/4
+                keypoints=keypoints,
                 tracking_status=getattr(obj, "tracking_status", "TRACKED"),
             )
         )
